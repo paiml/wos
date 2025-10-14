@@ -111,6 +111,20 @@ pub enum SystemCall {
         /// Size in bytes
         size: usize,
     },
+
+    /// Send message to another process
+    Send {
+        /// Target process ID
+        target_pid: ProcessId,
+        /// Message payload
+        data: Vec<u8>,
+    },
+
+    /// Receive message (blocking)
+    Recv {
+        /// Timeout in microseconds (0 = no timeout)
+        timeout: u64,
+    },
 }
 
 /// System call output
@@ -452,6 +466,50 @@ pub fn dispatch_syscall(
             } else {
                 Err(KernelError::ProcessNotFound(calling_pid))
             }
+        }
+
+        SystemCall::Send { target_pid, data } => {
+            // Send message to target process
+            let mut new_state = state;
+
+            // Check if target process exists
+            if !new_state.processes.contains_key(&target_pid) {
+                return Err(KernelError::ProcessNotFound(target_pid));
+            }
+
+            // Create message
+            let message = crate::state::Message::new(calling_pid, target_pid, data);
+
+            // Add message to target's queue
+            if let Some(target_process) = new_state.get_process_mut(target_pid) {
+                target_process.message_queue.push_back(message);
+                Ok((new_state, SyscallOutput::Success))
+            } else {
+                Err(KernelError::ProcessNotFound(target_pid))
+            }
+        }
+
+        SystemCall::Recv { timeout: _ } => {
+            // Receive message from queue
+            let mut new_state = state;
+
+            // Get the calling process
+            let process = new_state
+                .get_process_mut(calling_pid)
+                .ok_or(KernelError::ProcessNotFound(calling_pid))?;
+
+            // Check if there are messages in the queue
+            if process.message_queue.is_empty() {
+                // No messages - would block in real implementation
+                // For now, return an error to indicate no messages available
+                return Err(KernelError::InvalidProcessState);
+            }
+
+            // Pop first message from queue (FIFO)
+            let message = process.message_queue.remove(0);
+
+            // Return message data
+            Ok((new_state, SyscallOutput::Data(message.payload)))
         }
     }
 }
@@ -1727,6 +1785,280 @@ mod tests {
                 let content = String::from_utf8(data).unwrap();
                 assert!(content.contains("State:\tTerminated"));
             }
+            _ => panic!("Expected Data"),
+        }
+    }
+
+    #[test]
+    fn test_sys_send_delivers_message() {
+        let mut state = KernelState::new();
+
+        // Create sender process
+        let sender_pid = state.allocate_pid();
+        let sender_proc = Process::new(sender_pid, None);
+        state.add_process(sender_proc);
+
+        // Create receiver process
+        let receiver_pid = state.allocate_pid();
+        let receiver_proc = Process::new(receiver_pid, None);
+        state.add_process(receiver_proc);
+
+        // Send message
+        let data = b"Hello, World!".to_vec();
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Send {
+                target_pid: receiver_pid,
+                data: data.clone(),
+            },
+            sender_pid,
+        );
+
+        assert!(result.is_ok());
+        let (new_state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+
+        // Verify message is in receiver's queue
+        let receiver = new_state.get_process(receiver_pid).unwrap();
+        assert_eq!(receiver.message_queue.len(), 1);
+        assert_eq!(receiver.message_queue[0].sender, sender_pid);
+        assert_eq!(receiver.message_queue[0].receiver, receiver_pid);
+        assert_eq!(receiver.message_queue[0].payload, data);
+    }
+
+    #[test]
+    fn test_sys_send_nonexistent_target() {
+        let mut state = KernelState::new();
+        let sender_pid = state.allocate_pid();
+        let sender_proc = Process::new(sender_pid, None);
+        state.add_process(sender_proc);
+
+        // Try to send to nonexistent process
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Send {
+                target_pid: 999,
+                data: vec![1, 2, 3],
+            },
+            sender_pid,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), KernelError::ProcessNotFound(999));
+    }
+
+    #[test]
+    fn test_sys_recv_receives_message() {
+        let mut state = KernelState::new();
+
+        // Create two processes
+        let sender_pid = state.allocate_pid();
+        let sender_proc = Process::new(sender_pid, None);
+        state.add_process(sender_proc);
+
+        let receiver_pid = state.allocate_pid();
+        let receiver_proc = Process::new(receiver_pid, None);
+        state.add_process(receiver_proc);
+
+        // Send message
+        let data = b"Test message".to_vec();
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Send {
+                target_pid: receiver_pid,
+                data: data.clone(),
+            },
+            sender_pid,
+        );
+        let (state, _) = result.unwrap();
+
+        // Receive message
+        let result = dispatch_syscall(state, SystemCall::Recv { timeout: 0 }, receiver_pid);
+
+        assert!(result.is_ok());
+        let (new_state, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(received_data) => {
+                assert_eq!(received_data, data);
+            }
+            _ => panic!("Expected Data"),
+        }
+
+        // Verify queue is now empty
+        let receiver = new_state.get_process(receiver_pid).unwrap();
+        assert_eq!(receiver.message_queue.len(), 0);
+    }
+
+    #[test]
+    fn test_sys_recv_empty_queue() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to receive when queue is empty
+        let result = dispatch_syscall(state, SystemCall::Recv { timeout: 0 }, pid);
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), KernelError::InvalidProcessState);
+    }
+
+    #[test]
+    fn test_send_recv_pipeline() {
+        let mut state = KernelState::new();
+
+        // Create sender and receiver
+        let sender_pid = state.allocate_pid();
+        let sender_proc = Process::new(sender_pid, None);
+        state.add_process(sender_proc);
+
+        let receiver_pid = state.allocate_pid();
+        let receiver_proc = Process::new(receiver_pid, None);
+        state.add_process(receiver_proc);
+
+        // Send multiple messages
+        let msg1 = b"Message 1".to_vec();
+        let msg2 = b"Message 2".to_vec();
+        let msg3 = b"Message 3".to_vec();
+
+        let result1 = dispatch_syscall(
+            state,
+            SystemCall::Send {
+                target_pid: receiver_pid,
+                data: msg1.clone(),
+            },
+            sender_pid,
+        );
+        let (state, _) = result1.unwrap();
+
+        let result2 = dispatch_syscall(
+            state,
+            SystemCall::Send {
+                target_pid: receiver_pid,
+                data: msg2.clone(),
+            },
+            sender_pid,
+        );
+        let (state, _) = result2.unwrap();
+
+        let result3 = dispatch_syscall(
+            state,
+            SystemCall::Send {
+                target_pid: receiver_pid,
+                data: msg3.clone(),
+            },
+            sender_pid,
+        );
+        let (state, _) = result3.unwrap();
+
+        // Verify all messages in queue
+        let receiver = state.get_process(receiver_pid).unwrap();
+        assert_eq!(receiver.message_queue.len(), 3);
+
+        // Receive messages in order (FIFO)
+        let result1 = dispatch_syscall(state, SystemCall::Recv { timeout: 0 }, receiver_pid);
+        let (state, output1) = result1.unwrap();
+        match output1 {
+            SyscallOutput::Data(data) => assert_eq!(data, msg1),
+            _ => panic!("Expected Data"),
+        }
+
+        let result2 = dispatch_syscall(state, SystemCall::Recv { timeout: 0 }, receiver_pid);
+        let (state, output2) = result2.unwrap();
+        match output2 {
+            SyscallOutput::Data(data) => assert_eq!(data, msg2),
+            _ => panic!("Expected Data"),
+        }
+
+        let result3 = dispatch_syscall(state, SystemCall::Recv { timeout: 0 }, receiver_pid);
+        let (new_state, output3) = result3.unwrap();
+        match output3 {
+            SyscallOutput::Data(data) => assert_eq!(data, msg3),
+            _ => panic!("Expected Data"),
+        }
+
+        // Queue should be empty
+        let receiver = new_state.get_process(receiver_pid).unwrap();
+        assert_eq!(receiver.message_queue.len(), 0);
+    }
+
+    #[test]
+    fn test_send_recv_multiple_processes() {
+        let mut state = KernelState::new();
+
+        // Create three processes
+        let pid1 = state.allocate_pid();
+        state.add_process(Process::new(pid1, None));
+
+        let pid2 = state.allocate_pid();
+        state.add_process(Process::new(pid2, None));
+
+        let pid3 = state.allocate_pid();
+        state.add_process(Process::new(pid3, None));
+
+        // Pid1 sends to pid2
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Send {
+                target_pid: pid2,
+                data: b"1->2".to_vec(),
+            },
+            pid1,
+        );
+        let (state, _) = result.unwrap();
+
+        // Pid1 sends to pid3
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Send {
+                target_pid: pid3,
+                data: b"1->3".to_vec(),
+            },
+            pid1,
+        );
+        let (state, _) = result.unwrap();
+
+        // Pid2 sends to pid3
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Send {
+                target_pid: pid3,
+                data: b"2->3".to_vec(),
+            },
+            pid2,
+        );
+        let (state, _) = result.unwrap();
+
+        // Verify queues
+        let proc1 = state.get_process(pid1).unwrap();
+        let proc2 = state.get_process(pid2).unwrap();
+        let proc3 = state.get_process(pid3).unwrap();
+
+        assert_eq!(proc1.message_queue.len(), 0);
+        assert_eq!(proc2.message_queue.len(), 1);
+        assert_eq!(proc3.message_queue.len(), 2);
+
+        // Pid2 receives its message
+        let result = dispatch_syscall(state, SystemCall::Recv { timeout: 0 }, pid2);
+        let (state, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => assert_eq!(data, b"1->2".to_vec()),
+            _ => panic!("Expected Data"),
+        }
+
+        // Pid3 receives first message
+        let result = dispatch_syscall(state, SystemCall::Recv { timeout: 0 }, pid3);
+        let (state, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => assert_eq!(data, b"1->3".to_vec()),
+            _ => panic!("Expected Data"),
+        }
+
+        // Pid3 receives second message
+        let result = dispatch_syscall(state, SystemCall::Recv { timeout: 0 }, pid3);
+        let (_, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => assert_eq!(data, b"2->3".to_vec()),
             _ => panic!("Expected Data"),
         }
     }

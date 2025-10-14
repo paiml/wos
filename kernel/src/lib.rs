@@ -20,7 +20,7 @@ pub use memory::{
     PhysicalPage, VirtualAddress, VirtualMemory, VirtualPage, PAGE_SIZE,
 };
 pub use scheduler::Scheduler;
-pub use state::{FileDescriptor, KernelState, Process, ProcessId, ProcessState};
+pub use state::{FileDescriptor, KernelState, Message, Process, ProcessId, ProcessState};
 pub use syscall::{dispatch_syscall, KernelError, SyscallOutput, SyscallResult, SystemCall};
 pub use trace::{KernelHistory, SystemCallTrace};
 

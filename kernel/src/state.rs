@@ -36,6 +36,28 @@ pub enum ProcessState {
     Terminated(i32),
 }
 
+/// Inter-process message
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Message {
+    /// Sender process ID
+    pub sender: ProcessId,
+    /// Receiver process ID
+    pub receiver: ProcessId,
+    /// Message payload
+    pub payload: Vec<u8>,
+}
+
+impl Message {
+    /// Create a new message
+    pub fn new(sender: ProcessId, receiver: ProcessId, payload: Vec<u8>) -> Self {
+        Self {
+            sender,
+            receiver,
+            payload,
+        }
+    }
+}
+
 /// Process control block
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Process {
@@ -51,6 +73,8 @@ pub struct Process {
     pub open_files: HashMap<FileDescriptor, PathBuf>,
     /// Virtual memory
     pub memory: VirtualMemory,
+    /// Message queue (FIFO)
+    pub message_queue: im::Vector<Message>,
 }
 
 impl Process {
@@ -69,6 +93,7 @@ impl Process {
             memory_pages: Vec::new(),
             open_files,
             memory: VirtualMemory::new(),
+            message_queue: im::Vector::new(),
         }
     }
 
