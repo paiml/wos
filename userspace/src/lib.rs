@@ -9,9 +9,11 @@
 #![warn(missing_docs)]
 
 pub mod init;
+pub mod programs;
 pub mod shell;
 
 pub use init::{init_main_loop, InitProcess};
+pub use programs::{echo_main_loop, ls_main_loop, ps_main_loop, Echo, Ls, Ps};
 pub use shell::{shell_main_loop, Command, Shell};
 
 /// Placeholder for userspace implementation
