@@ -9,6 +9,10 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod state;
+
+pub use state::{FileDescriptor, KernelState, Process, ProcessId, ProcessState};
+
 /// Placeholder for kernel implementation
 pub fn kernel_version() -> &'static str {
     "0.1.0"
