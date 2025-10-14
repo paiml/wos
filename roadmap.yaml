@@ -1,0 +1,648 @@
+# WOS: WASM Operating System - Implementation Roadmap
+# Educational Microkernel with Extreme TDD Quality
+
+meta:
+  project: wos
+  code_name: WASM Operating System
+  version: 0.1.0-alpha
+  repository: github.com/noahgift/wos
+  approach: Extreme Test-Driven Development (WASM Labs Methodology)
+  spec_reference: docs/specifications/wos-spec-v1.md
+  quality_gates:
+    max_complexity: 20
+    max_cognitive: 15
+    min_coverage: 0.85
+    min_branch_coverage: 0.90
+    min_mutation_score: 0.90
+    satd_tolerance: 0
+    tdg_min_score: 0.90  # A grade minimum
+    max_wasm_size_kb: 500
+    max_wasm_gzip_kb: 100
+  execution:
+    ticket_workflow: RED-GREEN-REFACTOR
+    commit_strategy: atomic_per_ticket
+    build_verification: mandatory_clean
+    cycle_time: 10_minutes_max
+    branch_policy: main_only  # No branching per project guidelines
+  mvp_scope:
+    focus: local_development_only
+    deployment: out_of_scope
+    infrastructure: zero_infrastructure
+
+phases:
+  # PHASE 1: Foundation + Quality Infrastructure (Weeks 1-3)
+  - id: phase-1
+    name: "Foundation"
+    goal: "Core kernel structures with Toyota Way quality framework"
+    duration: 3_weeks
+    cycles: 15
+    tickets:
+      - id: WOS-001
+        title: "Project scaffolding and quality gate infrastructure"
+        priority: critical
+        cycle: 1
+        time_estimate: 4_hours
+        spec_ref: "Section 5.1, 6.1"
+        requirements:
+          - "Cargo workspace setup (shared, kernel, userspace, wos crates)"
+          - "PMAT integration (.pmat-gates.toml)"
+          - "Pre-commit hooks (format, clippy, tests, complexity, SATD)"
+          - "GitHub Actions CI/CD"
+          - "wasm32-unknown-unknown target"
+          - "Toyota Way quality gates configured"
+        tests:
+          - "test_workspace_structure"
+          - "test_quality_gates_configured"
+          - "test_wasm_target_available"
+          - "test_pmat_integration"
+        acceptance:
+          - "cargo build --release --workspace succeeds"
+          - "Pre-commit hook blocks on quality violations"
+          - "PMAT TDG analysis runs successfully"
+          - "All crates compile"
+        complexity_target: 5
+        coverage_target: 100
+
+      - id: WOS-002
+        title: "Kernel state types and serialization"
+        priority: critical
+        cycle: 2
+        time_estimate: 3_hours
+        spec_ref: "Section 3.5, 7.1"
+        requirements:
+          - "KernelState struct with process table"
+          - "Process struct with PID, state, memory, files"
+          - "ProcessState enum (Ready, Running, Blocked, Terminated)"
+          - "Serialize + Deserialize + Clone + PartialEq"
+          - "Use im-rs for process table (persistent data structures)"
+        tests:
+          - "test_kernel_state_creation"
+          - "test_process_serialization_roundtrip"
+          - "test_process_state_transitions"
+          - "proptest_kernel_state_cloning_cheap"
+          - "bench_kernel_state_clone_under_100us"
+        acceptance:
+          - "All types serialize/deserialize correctly"
+          - "Process state transitions are valid"
+          - "Clone is O(1) with im-rs"
+          - "Coverage ≥85%"
+        complexity_target: 10
+        coverage_target: 90
+
+      - id: WOS-003
+        title: "Round-robin process scheduler"
+        priority: critical
+        cycle: 3-4
+        time_estimate: 6_hours
+        spec_ref: "Section 3.6, 7.3"
+        requirements:
+          - "Scheduler struct with ready queue"
+          - "schedule() -> Option<ProcessId> (select next process)"
+          - "Round-robin fairness algorithm"
+          - "No starvation guarantee"
+        tests:
+          - "test_scheduler_round_robin"
+          - "test_scheduler_handles_empty_queue"
+          - "test_scheduler_pid_uniqueness"
+          - "proptest_scheduler_fairness (10K iterations)"
+          - "proptest_no_starvation (10K iterations)"
+        acceptance:
+          - "Scheduler selects processes fairly"
+          - "No process is starved"
+          - "Property tests pass 10K iterations"
+          - "Mutation score ≥90%"
+        complexity_target: 15
+        coverage_target: 90
+
+      - id: WOS-004
+        title: "System call dispatcher"
+        priority: critical
+        cycle: 5
+        time_estimate: 4_hours
+        spec_ref: "Section 3.7, 7.3"
+        requirements:
+          - "SystemCall enum with variants (GetPid, Fork, Exit, etc.)"
+          - "dispatch_syscall() function"
+          - "Pure functional dispatch (state in, state out)"
+          - "Error handling with KernelError type"
+        tests:
+          - "test_syscall_dispatch_routing"
+          - "test_syscall_error_handling"
+          - "test_syscall_unknown_variant"
+          - "proptest_syscall_never_panics"
+        acceptance:
+          - "All syscall variants compile"
+          - "Dispatcher routes correctly"
+          - "Never panics on invalid input"
+          - "Coverage ≥85%"
+        complexity_target: 12
+        coverage_target: 85
+
+      - id: WOS-005
+        title: "Basic process syscalls (getpid, fork, exit, waitpid)"
+        priority: critical
+        cycle: 6-7
+        time_estimate: 8_hours
+        spec_ref: "Section 3.7"
+        requirements:
+          - "sys_getpid() -> current process ID"
+          - "sys_fork() -> create child process"
+          - "sys_exit(code) -> terminate process"
+          - "sys_waitpid(pid) -> wait for child"
+          - "PID allocation and management"
+        tests:
+          - "test_sys_getpid"
+          - "test_sys_fork_creates_child"
+          - "test_sys_exit_terminates_process"
+          - "test_sys_waitpid_blocks_until_exit"
+          - "test_fork_wait_pipeline"
+          - "proptest_pid_uniqueness"
+          - "proptest_parent_child_relationship"
+        acceptance:
+          - "All syscalls work correctly"
+          - "PIDs are unique"
+          - "Parent-child relationships valid"
+          - "Property tests pass"
+          - "Mutation score ≥90%"
+        complexity_target: 18
+        coverage_target: 90
+
+      - id: WOS-005A
+        title: "Toyota Way quality gates and TDG monitoring"
+        priority: high
+        cycle: 8
+        time_estimate: 4_hours
+        spec_ref: "Tech Review Section 1"
+        requirements:
+          - "TDG scoring infrastructure"
+          - "Real-time quality monitoring setup"
+          - "Quality ratchet pattern enforcement"
+          - "SATD detection (zero tolerance)"
+        tests:
+          - "test_tdg_calculation"
+          - "test_quality_gate_enforcement"
+          - "test_satd_detection"
+        acceptance:
+          - "TDG scores calculated correctly"
+          - "Quality gates block commits on violations"
+          - "Zero SATD policy enforced"
+        complexity_target: 10
+        coverage_target: 85
+
+      - id: WOS-005B
+        title: "Tracing infrastructure and time-travel debugging"
+        priority: medium
+        cycle: 9
+        time_estimate: 5_hours
+        spec_ref: "Tech Review Section 9.2, 9.1"
+        requirements:
+          - "SystemCallTrace struct"
+          - "KernelHistory with state snapshots"
+          - "step_back() / step_forward() navigation"
+          - "Trace export (JSON)"
+        tests:
+          - "test_syscall_tracing"
+          - "test_time_travel_step_back"
+          - "test_time_travel_step_forward"
+          - "test_trace_export"
+        acceptance:
+          - "Syscalls are traced correctly"
+          - "Time-travel works for all operations"
+          - "Trace exports to JSON"
+          - "Coverage ≥85%"
+        complexity_target: 15
+        coverage_target: 85
+
+  # PHASE 2: Memory Management (Weeks 4-6)
+  - id: phase-2
+    name: "Memory Management"
+    goal: "Virtual memory with page allocation and protection"
+    duration: 3_weeks
+    cycles: 15
+    tickets:
+      - id: WOS-006
+        title: "Virtual memory structures"
+        priority: critical
+        cycle: 10-11
+        time_estimate: 6_hours
+        spec_ref: "Section 3.6, 7.3"
+        requirements:
+          - "VirtualMemory struct with page table"
+          - "Page table using im::HashMap<VirtualPage, PhysicalPage>"
+          - "Address translation (virtual → physical)"
+          - "Memory layout (code, data, heap, stack)"
+        tests:
+          - "test_virtual_memory_creation"
+          - "test_address_translation"
+          - "test_page_table_operations"
+          - "proptest_address_translation_deterministic"
+        acceptance:
+          - "Address translation works correctly"
+          - "Page table operations are O(log n)"
+          - "Memory layout is correct"
+          - "Coverage ≥85%"
+        complexity_target: 15
+        coverage_target: 85
+
+      - id: WOS-007
+        title: "Memory allocation (mmap, munmap)"
+        priority: critical
+        cycle: 12-13
+        time_estimate: 8_hours
+        spec_ref: "Section 3.7, 7.3"
+        requirements:
+          - "sys_mmap(size, flags) -> allocate pages"
+          - "sys_munmap(addr, size) -> free pages"
+          - "Free page tracking"
+          - "Allocation never overlaps"
+        tests:
+          - "test_sys_mmap_allocates_pages"
+          - "test_sys_munmap_frees_pages"
+          - "test_mmap_munmap_cycle"
+          - "proptest_allocations_never_overlap (10K iterations)"
+          - "proptest_total_memory_bounded"
+        acceptance:
+          - "Allocations work correctly"
+          - "No overlapping allocations"
+          - "Free/allocate is deterministic"
+          - "Property tests pass"
+          - "Mutation score ≥90%"
+        complexity_target: 18
+        coverage_target: 90
+
+      - id: WOS-008
+        title: "Memory protection (page permissions)"
+        priority: high
+        cycle: 14-15
+        time_estimate: 5_hours
+        spec_ref: "Section 3.6"
+        requirements:
+          - "Page permissions (read, write, execute)"
+          - "Permission checking on memory access"
+          - "Protection violation errors"
+        tests:
+          - "test_page_permissions"
+          - "test_permission_violations"
+          - "test_read_only_pages"
+          - "test_execute_only_pages"
+        acceptance:
+          - "Permissions enforced correctly"
+          - "Violations return errors"
+          - "Coverage ≥85%"
+        complexity_target: 15
+        coverage_target: 85
+
+  # PHASE 3: File System (Weeks 7-9)
+  - id: phase-3
+    name: "File System"
+    goal: "VFS integration with file I/O operations"
+    duration: 3_weeks
+    cycles: 15
+    tickets:
+      - id: WOS-009
+        title: "Extend WASM Labs VFS for OS usage"
+        priority: critical
+        cycle: 16-17
+        time_estimate: 6_hours
+        spec_ref: "Section 3.8"
+        requirements:
+          - "Integrate wasm-labs-shared VFS"
+          - "File descriptor table per process"
+          - "sys_open(path, flags) -> fd"
+          - "sys_close(fd)"
+          - "Standard streams (stdin=0, stdout=1, stderr=2)"
+        tests:
+          - "test_sys_open_creates_fd"
+          - "test_sys_close_releases_fd"
+          - "test_standard_streams"
+          - "test_fd_table_per_process"
+        acceptance:
+          - "Open/close work correctly"
+          - "FD table isolated per process"
+          - "Standard streams available"
+          - "Coverage ≥85%"
+        complexity_target: 15
+        coverage_target: 85
+
+      - id: WOS-010
+        title: "File I/O operations (read, write)"
+        priority: critical
+        cycle: 18-20
+        time_estimate: 8_hours
+        spec_ref: "Section 3.8"
+        requirements:
+          - "sys_read(fd, count) -> bytes"
+          - "sys_write(fd, data) -> bytes written"
+          - "Handle EOF, errors"
+          - "Stdout/stderr buffering"
+        tests:
+          - "test_sys_read_from_file"
+          - "test_sys_write_to_file"
+          - "test_read_write_cycle"
+          - "test_eof_handling"
+          - "proptest_read_write_deterministic"
+        acceptance:
+          - "Read/write work correctly"
+          - "EOF handled properly"
+          - "Property tests pass"
+          - "Mutation score ≥90%"
+        complexity_target: 18
+        coverage_target: 90
+
+      - id: WOS-010A
+        title: "ProcFS (/proc) implementation"
+        priority: medium
+        cycle: 21
+        time_estimate: 4_hours
+        spec_ref: "Section 3.8"
+        requirements:
+          - "ProcFS mount at /proc"
+          - "/proc/PID/status (process info)"
+          - "/proc/PID/cmdline (command line)"
+          - "/proc/self (symlink to current process)"
+        tests:
+          - "test_procfs_mount"
+          - "test_read_proc_status"
+          - "test_read_proc_cmdline"
+          - "test_proc_self_symlink"
+        acceptance:
+          - "ProcFS accessible"
+          - "Process info readable"
+          - "/proc/self works"
+          - "Coverage ≥80%"
+        complexity_target: 12
+        coverage_target: 80
+
+  # PHASE 4: Basic IPC (Weeks 10-11)
+  - id: phase-4
+    name: "Inter-Process Communication"
+    goal: "Message passing between processes"
+    duration: 2_weeks
+    cycles: 10
+    tickets:
+      - id: WOS-012
+        title: "Message passing IPC"
+        priority: critical
+        cycle: 22-24
+        time_estimate: 8_hours
+        spec_ref: "Section 3.7"
+        requirements:
+          - "Message struct with sender, receiver, payload"
+          - "sys_send(pid, message)"
+          - "sys_recv(timeout) -> message"
+          - "Message queues per process"
+          - "Blocking recv"
+        tests:
+          - "test_sys_send_delivers_message"
+          - "test_sys_recv_receives_message"
+          - "test_send_recv_pipeline"
+          - "test_recv_blocks_when_empty"
+          - "proptest_message_ordering_fifo"
+        acceptance:
+          - "Send/recv work correctly"
+          - "Messages delivered in order"
+          - "Blocking recv works"
+          - "Property tests pass"
+          - "Mutation score ≥90%"
+        complexity_target: 18
+        coverage_target: 90
+
+  # PHASE 5: User Space (Weeks 12-14)
+  - id: phase-5
+    name: "User Space"
+    goal: "Init process, shell, and core user programs"
+    duration: 3_weeks
+    cycles: 15
+    tickets:
+      - id: WOS-015
+        title: "Init process (PID 1)"
+        priority: critical
+        cycle: 25-26
+        time_estimate: 5_hours
+        spec_ref: "Section 6.5"
+        requirements:
+          - "Init process (always PID 1)"
+          - "Launches shell on startup"
+          - "Reaps orphaned processes"
+          - "Never exits"
+        tests:
+          - "test_init_is_pid_1"
+          - "test_init_launches_shell"
+          - "test_init_reaps_orphans"
+          - "test_init_never_exits"
+        acceptance:
+          - "Init starts correctly"
+          - "Shell launches"
+          - "Orphans reparented to init"
+          - "Coverage ≥85%"
+        complexity_target: 15
+        coverage_target: 85
+
+      - id: WOS-016
+        title: "Shell process"
+        priority: critical
+        cycle: 27-29
+        time_estimate: 10_hours
+        spec_ref: "Section 6.5"
+        requirements:
+          - "Command parser (nom-based)"
+          - "Built-in commands (cd, exit, help)"
+          - "External command execution (fork/exec)"
+          - "Command history"
+          - "Environment variables"
+        tests:
+          - "test_shell_parse_command"
+          - "test_shell_builtin_cd"
+          - "test_shell_builtin_exit"
+          - "test_shell_exec_external"
+          - "test_shell_history"
+          - "test_shell_env_vars"
+        acceptance:
+          - "Parser works correctly"
+          - "Built-ins work"
+          - "External commands execute"
+          - "History maintained"
+          - "Coverage ≥85%"
+        complexity_target: 20
+        coverage_target: 85
+
+      - id: WOS-017
+        title: "Core user programs (echo, ls, ps)"
+        priority: high
+        cycle: 30-32
+        time_estimate: 8_hours
+        spec_ref: "Section 6.5"
+        requirements:
+          - "echo: print arguments"
+          - "ls: list files in directory"
+          - "ps: list running processes"
+          - "Each program uses syscalls"
+        tests:
+          - "test_echo_prints_args"
+          - "test_ls_lists_directory"
+          - "test_ps_lists_processes"
+          - "integration_test_shell_with_programs"
+        acceptance:
+          - "All programs work correctly"
+          - "Programs use syscalls properly"
+          - "Integration tests pass"
+          - "Coverage ≥80%"
+        complexity_target: 10
+        coverage_target: 80
+
+  # PHASE 6: Browser Interface (Weeks 15-17)
+  - id: phase-6
+    name: "Browser Interface"
+    goal: "HTML terminal, WASM bindings, E2E tests"
+    duration: 3_weeks
+    cycles: 15
+    tickets:
+      - id: WOS-018
+        title: "WASM bindings with wasm-bindgen"
+        priority: critical
+        cycle: 33-34
+        time_estimate: 6_hours
+        spec_ref: "Section 6.6"
+        requirements:
+          - "WosWasm struct with #[wasm_bindgen]"
+          - "execute_command() export"
+          - "get_state() / set_state() for persistence"
+          - "JavaScript glue code"
+        tests:
+          - "test_wasm_exports_compile"
+          - "test_wasm_execute_command"
+          - "test_wasm_state_serialization"
+        acceptance:
+          - "WASM compiles with bindings"
+          - "JS can call Rust functions"
+          - "State serializes correctly"
+          - "Coverage ≥80%"
+        complexity_target: 10
+        coverage_target: 80
+
+      - id: WOS-019
+        title: "HTML terminal interface"
+        priority: critical
+        cycle: 35-37
+        time_estimate: 10_hours
+        spec_ref: "Section 6.6"
+        requirements:
+          - "Terminal UI (HTML/CSS)"
+          - "Input handling (keyboard, Enter, Ctrl+C)"
+          - "Output rendering (stdout, stderr)"
+          - "Command history (↑/↓ keys)"
+          - "localStorage persistence"
+        tests:
+          - "e2e_test_terminal_renders"
+          - "e2e_test_command_execution"
+          - "e2e_test_command_history"
+          - "e2e_test_persistence"
+        acceptance:
+          - "Terminal renders correctly"
+          - "Commands execute in browser"
+          - "History works"
+          - "State persists across reloads"
+          - "E2E tests pass (Playwright)"
+        complexity_target: 15
+        coverage_target: N/A  # E2E tests
+
+      - id: WOS-020
+        title: "Quality dashboard integration"
+        priority: medium
+        cycle: 38-39
+        time_estimate: 6_hours
+        spec_ref: "Tech Review Section 4"
+        requirements:
+          - "Embed quality metrics in UI"
+          - "TDG grade display"
+          - "Real-time quality monitoring"
+          - "Export quality reports (JSON, HTML)"
+        tests:
+          - "test_dashboard_displays_metrics"
+          - "test_export_quality_report"
+        acceptance:
+          - "Dashboard shows current TDG"
+          - "Reports export correctly"
+          - "UI integrates cleanly"
+        complexity_target: 10
+        coverage_target: 80
+
+      - id: WOS-021
+        title: "Multi-format export and final quality validation"
+        priority: high
+        cycle: 40
+        time_estimate: 4_hours
+        spec_ref: "Tech Review Section 8"
+        requirements:
+          - "Export formats: JSON, SARIF, HTML, Markdown"
+          - "Final quality gate run"
+          - "TDG grade A+ validation"
+          - "Documentation completeness check"
+        tests:
+          - "test_export_all_formats"
+          - "test_final_quality_gates_pass"
+        acceptance:
+          - "All export formats work"
+          - "All quality gates pass"
+          - "TDG grade ≥ A (90+)"
+          - "Documentation 100% complete"
+        complexity_target: 8
+        coverage_target: 85
+
+# Future phases (post-MVP)
+future_phases:
+  - id: phase-7
+    name: "Advanced Features"
+    status: deferred
+    features:
+      - "Priority scheduling (WOS-022)"
+      - "Preemptive multitasking (WOS-023)"
+      - "Virtual memory paging (WOS-024)"
+      - "Network stack (WOS-025)"
+      - "Exec system call (WOS-026)"
+      - "Signals (WOS-027)"
+      - "Pipes and redirection (WOS-028)"
+      - "Multi-core support (WOS-029)"
+      - "Debugging tools (WOS-030)"
+      - "Special filesystems (DevFS, TmpFS)"
+      - "Shared memory IPC (WOS-013)"
+      - "Synchronization primitives (WOS-014)"
+
+# Quality metrics tracking
+quality_tracking:
+  baseline:
+    tdg_grade: "C"
+    complexity_avg: 25
+    coverage: 0.70
+    mutation_score: 0.75
+    satd_count: 10
+
+  sprint_targets:
+    sprint_1:
+      tdg_grade: "B"
+      complexity_avg: 20
+      coverage: 0.80
+      mutation_score: 0.85
+      satd_count: 0
+
+    sprint_2:
+      tdg_grade: "A"
+      complexity_avg: 15
+      coverage: 0.85
+      mutation_score: 0.90
+      satd_count: 0
+
+    sprint_3:
+      tdg_grade: "A+"
+      complexity_avg: 12
+      coverage: 0.90
+      mutation_score: 0.92
+      satd_count: 0
+
+# Development velocity estimation
+velocity:
+  estimated_hours_per_week: 12
+  estimated_weeks: 17
+  total_estimated_hours: 204
+  tickets_total: 24
+  avg_hours_per_ticket: 8.5

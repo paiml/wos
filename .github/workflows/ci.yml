@@ -1,0 +1,91 @@
+name: WOS Quality Gates & CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  quality:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          components: rustfmt, clippy
+
+      - name: Add WASM target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-features --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Build WASM
+        run: cargo build --target wasm32-unknown-unknown --release -p wos
+
+      - name: Test
+        run: cargo test --workspace --all-features
+
+      - name: Install coverage tools
+        run: cargo install cargo-llvm-cov --locked || echo "already installed"
+
+      - name: Coverage
+        run: |
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --no-report test --lib --all-features
+          cargo llvm-cov report --lcov --output-path lcov.info
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./lcov.info
+          fail_ci_if_error: false
+
+      - name: Check WASM size
+        run: |
+          WASM_FILE="target/wasm32-unknown-unknown/release/wos.wasm"
+          if [ -f "$WASM_FILE" ]; then
+            SIZE=$(stat -c%s "$WASM_FILE")
+            SIZE_KB=$((SIZE / 1024))
+            echo "WASM size: ${SIZE_KB} KB"
+            if [ $SIZE -gt 512000 ]; then
+              echo "❌ WASM binary exceeds 500KB limit"
+              exit 1
+            fi
+            echo "✅ WASM size OK"
+          fi
