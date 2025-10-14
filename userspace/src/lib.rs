@@ -9,8 +9,10 @@
 #![warn(missing_docs)]
 
 pub mod init;
+pub mod shell;
 
 pub use init::{init_main_loop, InitProcess};
+pub use shell::{shell_main_loop, Command, Shell};
 
 /// Placeholder for userspace implementation
 pub fn userspace_version() -> &'static str {
