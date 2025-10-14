@@ -9,8 +9,10 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod scheduler;
 pub mod state;
 
+pub use scheduler::Scheduler;
 pub use state::{FileDescriptor, KernelState, Process, ProcessId, ProcessState};
 
 /// Placeholder for kernel implementation
