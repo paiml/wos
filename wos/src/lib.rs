@@ -5,6 +5,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod quality;
+
+pub use quality::{BuildStatus, QualityMetrics};
 use wasm_bindgen::prelude::*;
 use wos_kernel::{dispatch_syscall, KernelState, SystemCall};
 
@@ -102,6 +105,27 @@ impl WosWasm {
     #[wasm_bindgen]
     pub fn reset(&mut self) {
         self.state = KernelState::new();
+    }
+
+    /// Get quality metrics as JSON
+    #[wasm_bindgen(js_name = getQualityMetrics)]
+    pub fn get_quality_metrics(&self) -> Result<String, String> {
+        let metrics = QualityMetrics::new();
+        metrics.to_json()
+    }
+
+    /// Export quality report as HTML
+    #[wasm_bindgen(js_name = exportQualityHtml)]
+    pub fn export_quality_html(&self) -> String {
+        let metrics = QualityMetrics::new();
+        metrics.to_html()
+    }
+
+    /// Export quality report as Markdown
+    #[wasm_bindgen(js_name = exportQualityMarkdown)]
+    pub fn export_quality_markdown(&self) -> String {
+        let metrics = QualityMetrics::new();
+        metrics.to_markdown()
     }
 }
 
@@ -270,5 +294,37 @@ mod tests {
         let result = wos.execute_command("echo hello");
 
         assert!(result.contains("echo hello"));
+    }
+
+    #[test]
+    fn test_wos_wasm_get_quality_metrics() {
+        let wos = WosWasm::new();
+        let metrics_json = wos.get_quality_metrics().unwrap();
+
+        // Should be valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&metrics_json).unwrap();
+        assert!(parsed.is_object());
+        assert!(parsed.get("tdg_grade").is_some());
+        assert!(parsed.get("test_count").is_some());
+    }
+
+    #[test]
+    fn test_wos_wasm_export_quality_html() {
+        let wos = WosWasm::new();
+        let html = wos.export_quality_html();
+
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("WOS Quality Report"));
+        assert!(html.contains("TDG Grade"));
+    }
+
+    #[test]
+    fn test_wos_wasm_export_quality_markdown() {
+        let wos = WosWasm::new();
+        let md = wos.export_quality_markdown();
+
+        assert!(md.contains("# WOS Quality Report"));
+        assert!(md.contains("TDG Grade"));
+        assert!(md.contains("Test Coverage"));
     }
 }

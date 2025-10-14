@@ -60,6 +60,11 @@ class Terminal {
         document.getElementById('btn-save').addEventListener('click', () => this.saveState());
         document.getElementById('btn-load').addEventListener('click', () => this.loadState());
 
+        // Quality export buttons
+        document.getElementById('btn-export-json').addEventListener('click', () => this.exportQualityJson());
+        document.getElementById('btn-export-html').addEventListener('click', () => this.exportQualityHtml());
+        document.getElementById('btn-export-md').addEventListener('click', () => this.exportQualityMarkdown());
+
         // Keep input focused
         this.terminalElement.addEventListener('click', () => {
             this.input.focus();
@@ -234,9 +239,107 @@ class Terminal {
         }
     }
 
+    updateQualityMetrics() {
+        if (!this.wos || !this.wos.getQualityMetrics) return;
+
+        try {
+            const metricsJson = this.wos.getQualityMetrics();
+            const metrics = JSON.parse(metricsJson);
+
+            // Update TDG grade with color coding
+            const gradeElement = document.getElementById('tdg-grade');
+            gradeElement.textContent = metrics.tdg_grade;
+            gradeElement.className = 'grade-value grade-' + metrics.tdg_grade.toLowerCase().replace('+', '-plus');
+
+            // Update TDG score
+            document.getElementById('tdg-score').textContent = `${metrics.tdg_score.toFixed(1)}%`;
+
+            // Update test count
+            const testCountElement = document.getElementById('test-count');
+            testCountElement.textContent = metrics.test_count;
+            testCountElement.className = 'metric-value good';
+
+            // Update coverage
+            const coverageElement = document.getElementById('coverage');
+            coverageElement.textContent = `${metrics.coverage.toFixed(1)}%`;
+            coverageElement.className = metrics.coverage >= 85.0 ? 'metric-value good' : 'metric-value warning';
+
+            // Update complexity
+            const complexityElement = document.getElementById('complexity');
+            complexityElement.textContent = `${metrics.max_complexity} / ${metrics.avg_complexity.toFixed(1)}`;
+            complexityElement.className = metrics.max_complexity <= 20 ? 'metric-value good' : 'metric-value warning';
+
+            // Update SATD count
+            const satdElement = document.getElementById('satd-count');
+            satdElement.textContent = metrics.satd_count;
+            satdElement.className = metrics.satd_count === 0 ? 'metric-value good' : 'metric-value error';
+
+        } catch (error) {
+            console.error('Error updating quality metrics:', error);
+        }
+    }
+
+    async exportQualityJson() {
+        if (!this.wos || !this.wos.getQualityMetrics) {
+            this.printLine('WASM not initialized', 'error');
+            return;
+        }
+
+        try {
+            const metricsJson = this.wos.getQualityMetrics();
+            this.downloadFile('wos-quality-metrics.json', metricsJson, 'application/json');
+            this.printLine('Quality metrics exported to JSON', 'success');
+        } catch (error) {
+            this.printLine(`Export error: ${error}`, 'error');
+        }
+    }
+
+    async exportQualityHtml() {
+        if (!this.wos || !this.wos.exportQualityHtml) {
+            this.printLine('WASM not initialized', 'error');
+            return;
+        }
+
+        try {
+            const html = this.wos.exportQualityHtml();
+            this.downloadFile('wos-quality-report.html', html, 'text/html');
+            this.printLine('Quality report exported to HTML', 'success');
+        } catch (error) {
+            this.printLine(`Export error: ${error}`, 'error');
+        }
+    }
+
+    async exportQualityMarkdown() {
+        if (!this.wos || !this.wos.exportQualityMarkdown) {
+            this.printLine('WASM not initialized', 'error');
+            return;
+        }
+
+        try {
+            const markdown = this.wos.exportQualityMarkdown();
+            this.downloadFile('wos-quality-report.md', markdown, 'text/markdown');
+            this.printLine('Quality report exported to Markdown', 'success');
+        } catch (error) {
+            this.printLine(`Export error: ${error}`, 'error');
+        }
+    }
+
+    downloadFile(filename, content, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
     setWOS(wos) {
         this.wos = wos;
         this.updateSystemInfo();
+        this.updateQualityMetrics();
     }
 }
 
@@ -257,7 +360,38 @@ async function init() {
             reset: () => {},
             getState: () => JSON.stringify({ processes: {} }),
             setState: (state) => {},
-            executeCommand: (cmd) => `Command executed: ${cmd}\n(WASM integration pending)`
+            executeCommand: (cmd) => `Command executed: ${cmd}\n(WASM integration pending)`,
+            getQualityMetrics: () => JSON.stringify({
+                tdg_grade: "A",
+                tdg_score: 92.0,
+                test_count: 227,
+                unit_test_count: 192,
+                property_test_count: 35,
+                coverage: 87.5,
+                max_complexity: 18,
+                avg_complexity: 8.2,
+                satd_count: 0,
+                lines_of_code: 6500,
+                unsafe_count: 0,
+                clippy_warnings: 0,
+                build_status: "Passing"
+            }),
+            exportQualityHtml: () => `<!DOCTYPE html>
+<html><head><title>WOS Quality Report</title></head>
+<body><h1>WOS Quality Report - Mock</h1>
+<p>TDG Grade: A (92.0%)</p>
+<p>Tests: 227 | Coverage: 87.5%</p>
+<p>This is a mock report. Build WASM for full report.</p>
+</body></html>`,
+            exportQualityMarkdown: () => `# WOS Quality Report - Mock
+
+## Summary
+- **TDG Grade**: A
+- **TDG Score**: 92.0%
+- **Test Count**: 227
+- **Coverage**: 87.5%
+
+*This is a mock report. Build WASM for full report.*`
         };
 
         terminal.setWOS(mockWOS);

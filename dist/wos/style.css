@@ -302,3 +302,117 @@ footer a:hover {
 @keyframes blink {
     50% { opacity: 0; }
 }
+
+/* Quality Dashboard */
+.quality-panel .info-content {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.quality-grade {
+    text-align: center;
+    padding: 15px;
+    background: var(--bg-terminal);
+    border-radius: 6px;
+    border: 2px solid var(--accent);
+}
+
+.grade-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+}
+
+.grade-value {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: var(--accent);
+    line-height: 1;
+}
+
+.grade-value.grade-a-plus,
+.grade-value.grade-a {
+    color: var(--success);
+}
+
+.grade-value.grade-b {
+    color: #00d4aa;
+}
+
+.grade-value.grade-c,
+.grade-value.grade-d {
+    color: #ffa500;
+}
+
+.grade-value.grade-f {
+    color: var(--error);
+}
+
+.grade-score {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-top: 5px;
+}
+
+.quality-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.quality-metric {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px;
+    background: var(--bg-terminal);
+    border-radius: 4px;
+}
+
+.quality-metric .metric-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.quality-metric .metric-value {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.quality-metric .metric-value.good {
+    color: var(--success);
+}
+
+.quality-metric .metric-value.warning {
+    color: #ffa500;
+}
+
+.quality-metric .metric-value.error {
+    color: var(--error);
+}
+
+.quality-exports {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.export-btn {
+    flex: 1;
+    min-width: 80px;
+    background: var(--bg-terminal);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+}
+
+.export-btn:hover {
+    background: var(--accent);
+    color: var(--bg-primary);
+}
