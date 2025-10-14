@@ -6,12 +6,22 @@ use crate::memory::VirtualMemory;
 use im::HashMap;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use wos_shared::VirtualFileSystem;
 
 /// Process identifier
 pub type ProcessId = u32;
 
 /// File descriptor
 pub type FileDescriptor = u32;
+
+/// Standard input file descriptor
+pub const STDIN_FD: FileDescriptor = 0;
+
+/// Standard output file descriptor
+pub const STDOUT_FD: FileDescriptor = 1;
+
+/// Standard error file descriptor
+pub const STDERR_FD: FileDescriptor = 2;
 
 /// Process execution state
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,12 +56,18 @@ pub struct Process {
 impl Process {
     /// Create a new process
     pub fn new(pid: ProcessId, parent_pid: Option<ProcessId>) -> Self {
+        let mut open_files = HashMap::new();
+        // Set up standard streams (stdin, stdout, stderr)
+        open_files.insert(STDIN_FD, PathBuf::from("/dev/stdin"));
+        open_files.insert(STDOUT_FD, PathBuf::from("/dev/stdout"));
+        open_files.insert(STDERR_FD, PathBuf::from("/dev/stderr"));
+
         Self {
             pid,
             state: ProcessState::Ready,
             parent_pid,
             memory_pages: Vec::new(),
-            open_files: HashMap::new(),
+            open_files,
             memory: VirtualMemory::new(),
         }
     }
@@ -65,6 +81,42 @@ impl Process {
     pub fn is_terminated(&self) -> bool {
         matches!(self.state, ProcessState::Terminated(_))
     }
+
+    /// Allocate next available file descriptor
+    pub fn allocate_fd(&self) -> FileDescriptor {
+        // Find first available FD starting from 3 (after stdin, stdout, stderr)
+        let mut fd = 3;
+        while self.open_files.contains_key(&fd) {
+            fd += 1;
+        }
+        fd
+    }
+
+    /// Open a file (add file descriptor)
+    pub fn open_file(&mut self, path: PathBuf) -> FileDescriptor {
+        let fd = self.allocate_fd();
+        self.open_files.insert(fd, path);
+        fd
+    }
+
+    /// Close a file (remove file descriptor)
+    pub fn close_file(&mut self, fd: FileDescriptor) -> Option<PathBuf> {
+        // Don't allow closing standard streams
+        if fd == STDIN_FD || fd == STDOUT_FD || fd == STDERR_FD {
+            return None;
+        }
+        self.open_files.remove(&fd)
+    }
+
+    /// Get file path for file descriptor
+    pub fn get_file_path(&self, fd: FileDescriptor) -> Option<&PathBuf> {
+        self.open_files.get(&fd)
+    }
+
+    /// Check if file descriptor is open
+    pub fn is_fd_open(&self, fd: FileDescriptor) -> bool {
+        self.open_files.contains_key(&fd)
+    }
 }
 
 /// Complete kernel state
@@ -76,6 +128,8 @@ pub struct KernelState {
     pub next_pid: ProcessId,
     /// Currently running process
     pub current_pid: Option<ProcessId>,
+    /// Virtual file system
+    pub vfs: VirtualFileSystem,
 }
 
 impl KernelState {
@@ -85,6 +139,7 @@ impl KernelState {
             processes: HashMap::new(),
             next_pid: 1, // PID 0 reserved for kernel
             current_pid: None,
+            vfs: VirtualFileSystem::new(),
         }
     }
 
