@@ -16,8 +16,8 @@ pub mod syscall;
 pub mod trace;
 
 pub use memory::{
-    MemoryLayout, MemoryRegion, PhysicalAddress, PhysicalPage, VirtualAddress, VirtualMemory,
-    VirtualPage, PAGE_SIZE,
+    MemoryAccess, MemoryLayout, MemoryRegion, PagePermissions, PageTableEntry, PhysicalAddress,
+    PhysicalPage, VirtualAddress, VirtualMemory, VirtualPage, PAGE_SIZE,
 };
 pub use scheduler::Scheduler;
 pub use state::{FileDescriptor, KernelState, Process, ProcessId, ProcessState};

@@ -20,6 +20,104 @@ pub type VirtualAddress = u64;
 /// Physical address
 pub type PhysicalAddress = u64;
 
+/// Page permissions
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PagePermissions {
+    /// Page is readable
+    pub read: bool,
+    /// Page is writable
+    pub write: bool,
+    /// Page is executable
+    pub execute: bool,
+}
+
+impl PagePermissions {
+    /// Create read-only permissions
+    pub const fn read_only() -> Self {
+        Self {
+            read: true,
+            write: false,
+            execute: false,
+        }
+    }
+
+    /// Create read-write permissions
+    pub const fn read_write() -> Self {
+        Self {
+            read: true,
+            write: true,
+            execute: false,
+        }
+    }
+
+    /// Create read-execute permissions
+    pub const fn read_execute() -> Self {
+        Self {
+            read: true,
+            write: false,
+            execute: true,
+        }
+    }
+
+    /// Create read-write-execute permissions
+    pub const fn read_write_execute() -> Self {
+        Self {
+            read: true,
+            write: true,
+            execute: true,
+        }
+    }
+
+    /// Create no permissions
+    pub const fn none() -> Self {
+        Self {
+            read: false,
+            write: false,
+            execute: false,
+        }
+    }
+
+    /// Check if permission allows read access
+    pub fn allows_read(&self) -> bool {
+        self.read
+    }
+
+    /// Check if permission allows write access
+    pub fn allows_write(&self) -> bool {
+        self.write
+    }
+
+    /// Check if permission allows execute access
+    pub fn allows_execute(&self) -> bool {
+        self.execute
+    }
+}
+
+impl Default for PagePermissions {
+    fn default() -> Self {
+        Self::read_write()
+    }
+}
+
+/// Page table entry with permissions
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageTableEntry {
+    /// Physical page number
+    pub physical_page: PhysicalPage,
+    /// Page permissions
+    pub permissions: PagePermissions,
+}
+
+impl PageTableEntry {
+    /// Create new page table entry
+    pub fn new(physical_page: PhysicalPage, permissions: PagePermissions) -> Self {
+        Self {
+            physical_page,
+            permissions,
+        }
+    }
+}
+
 /// Memory region type
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MemoryRegion {
@@ -86,11 +184,22 @@ impl MemoryLayout {
     }
 }
 
+/// Memory access type for permission checking
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemoryAccess {
+    /// Read access
+    Read,
+    /// Write access
+    Write,
+    /// Execute access
+    Execute,
+}
+
 /// Virtual memory management with page tables
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VirtualMemory {
-    /// Page table (virtual page -> physical page mapping)
-    page_table: HashMap<VirtualPage, PhysicalPage>,
+    /// Page table (virtual page -> page table entry with permissions)
+    page_table: HashMap<VirtualPage, PageTableEntry>,
     /// Memory layout
     layout: MemoryLayout,
     /// Next physical page to allocate
@@ -127,27 +236,82 @@ impl VirtualMemory {
         &self.layout
     }
 
-    /// Map virtual page to physical page
-    pub fn map_page(&mut self, vpage: VirtualPage, ppage: PhysicalPage) {
-        self.page_table.insert(vpage, ppage);
+    /// Map virtual page to physical page with permissions
+    pub fn map_page(
+        &mut self,
+        vpage: VirtualPage,
+        ppage: PhysicalPage,
+        permissions: PagePermissions,
+    ) {
+        let entry = PageTableEntry::new(ppage, permissions);
+        self.page_table.insert(vpage, entry);
     }
 
     /// Unmap virtual page
-    pub fn unmap_page(&mut self, vpage: VirtualPage) -> Option<PhysicalPage> {
+    pub fn unmap_page(&mut self, vpage: VirtualPage) -> Option<PageTableEntry> {
         self.page_table.remove(&vpage)
     }
 
-    /// Allocate a new physical page and map it to virtual page
-    pub fn allocate_page(&mut self, vpage: VirtualPage) -> PhysicalPage {
+    /// Allocate a new physical page and map it to virtual page with permissions
+    pub fn allocate_page(
+        &mut self,
+        vpage: VirtualPage,
+        permissions: PagePermissions,
+    ) -> PhysicalPage {
         let ppage = self.next_physical_page;
         self.next_physical_page += 1;
-        self.page_table.insert(vpage, ppage);
+        let entry = PageTableEntry::new(ppage, permissions);
+        self.page_table.insert(vpage, entry);
         ppage
     }
 
     /// Get physical page for virtual page
     pub fn get_physical_page(&self, vpage: VirtualPage) -> Option<PhysicalPage> {
-        self.page_table.get(&vpage).copied()
+        self.page_table.get(&vpage).map(|entry| entry.physical_page)
+    }
+
+    /// Get page table entry for virtual page
+    pub fn get_page_entry(&self, vpage: VirtualPage) -> Option<&PageTableEntry> {
+        self.page_table.get(&vpage)
+    }
+
+    /// Get page permissions for virtual page
+    pub fn get_page_permissions(&self, vpage: VirtualPage) -> Option<PagePermissions> {
+        self.page_table.get(&vpage).map(|entry| entry.permissions)
+    }
+
+    /// Set page permissions for virtual page
+    pub fn set_page_permissions(
+        &mut self,
+        vpage: VirtualPage,
+        permissions: PagePermissions,
+    ) -> bool {
+        if let Some(entry) = self.page_table.get(&vpage) {
+            let new_entry = PageTableEntry::new(entry.physical_page, permissions);
+            self.page_table.insert(vpage, new_entry);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if access to virtual page is allowed
+    pub fn check_permission(&self, vpage: VirtualPage, access: MemoryAccess) -> bool {
+        if let Some(entry) = self.page_table.get(&vpage) {
+            match access {
+                MemoryAccess::Read => entry.permissions.allows_read(),
+                MemoryAccess::Write => entry.permissions.allows_write(),
+                MemoryAccess::Execute => entry.permissions.allows_execute(),
+            }
+        } else {
+            false // Unmapped page = no permission
+        }
+    }
+
+    /// Check if access to virtual address is allowed
+    pub fn check_address_permission(&self, vaddr: VirtualAddress, access: MemoryAccess) -> bool {
+        let vpage = Self::vaddr_to_page(vaddr);
+        self.check_permission(vpage, access)
     }
 
     /// Translate virtual address to physical address
@@ -157,7 +321,7 @@ impl VirtualMemory {
 
         self.page_table
             .get(&vpage)
-            .map(|&ppage| (ppage as u64) * PAGE_SIZE as u64 + offset)
+            .map(|entry| (entry.physical_page as u64) * PAGE_SIZE as u64 + offset)
     }
 
     /// Check if virtual page is mapped
@@ -183,8 +347,20 @@ impl VirtualMemory {
     /// Allocate contiguous virtual memory region (mmap)
     ///
     /// Returns the starting virtual address of the allocated region.
-    /// Allocates page-aligned memory in the heap region.
+    /// Allocates page-aligned memory in the heap region with read-write permissions.
     pub fn mmap(&mut self, size_bytes: usize) -> Option<VirtualAddress> {
+        self.mmap_with_permissions(size_bytes, PagePermissions::read_write())
+    }
+
+    /// Allocate contiguous virtual memory region with specific permissions
+    ///
+    /// Returns the starting virtual address of the allocated region.
+    /// Allocates page-aligned memory in the heap region.
+    pub fn mmap_with_permissions(
+        &mut self,
+        size_bytes: usize,
+        permissions: PagePermissions,
+    ) -> Option<VirtualAddress> {
         if size_bytes == 0 {
             return None;
         }
@@ -200,13 +376,14 @@ impl VirtualMemory {
             return None; // Out of memory
         }
 
-        // Allocate pages
+        // Allocate pages with permissions
         for i in 0..num_pages {
             let vaddr = start_addr + (i * PAGE_SIZE) as u64;
             let vpage = Self::vaddr_to_page(vaddr);
             let ppage = self.next_physical_page;
             self.next_physical_page += 1;
-            self.page_table.insert(vpage, ppage);
+            let entry = PageTableEntry::new(ppage, permissions);
+            self.page_table.insert(vpage, entry);
         }
 
         // Update next heap address
@@ -288,11 +465,12 @@ mod tests {
     #[test]
     fn test_page_table_operations() {
         let mut vm = VirtualMemory::new();
+        let perms = PagePermissions::read_write();
 
         // Map pages
-        vm.map_page(0, 100);
-        vm.map_page(1, 101);
-        vm.map_page(2, 102);
+        vm.map_page(0, 100, perms);
+        vm.map_page(1, 101, perms);
+        vm.map_page(2, 102, perms);
 
         assert_eq!(vm.mapped_page_count(), 3);
 
@@ -303,7 +481,9 @@ mod tests {
         assert_eq!(vm.get_physical_page(3), None);
 
         // Unmap
-        assert_eq!(vm.unmap_page(1), Some(101));
+        let entry = vm.unmap_page(1);
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap().physical_page, 101);
         assert_eq!(vm.mapped_page_count(), 2);
         assert_eq!(vm.get_physical_page(1), None);
     }
@@ -311,9 +491,10 @@ mod tests {
     #[test]
     fn test_address_translation() {
         let mut vm = VirtualMemory::new();
+        let perms = PagePermissions::read_write();
 
         // Map virtual page 0 to physical page 100
-        vm.map_page(0, 100);
+        vm.map_page(0, 100, perms);
 
         // Translate address in page 0
         let vaddr = 0x0000; // Offset 0 in page 0
@@ -334,12 +515,13 @@ mod tests {
     #[test]
     fn test_allocate_page() {
         let mut vm = VirtualMemory::new();
+        let perms = PagePermissions::read_write();
 
-        let ppage0 = vm.allocate_page(0);
+        let ppage0 = vm.allocate_page(0, perms);
         assert_eq!(ppage0, 0);
         assert_eq!(vm.get_physical_page(0), Some(0));
 
-        let ppage1 = vm.allocate_page(1);
+        let ppage1 = vm.allocate_page(1, perms);
         assert_eq!(ppage1, 1);
         assert_eq!(vm.get_physical_page(1), Some(1));
 
@@ -396,9 +578,10 @@ mod tests {
     #[test]
     fn test_is_mapped() {
         let mut vm = VirtualMemory::new();
+        let perms = PagePermissions::read_write();
         assert!(!vm.is_mapped(0));
 
-        vm.map_page(0, 100);
+        vm.map_page(0, 100, perms);
         assert!(vm.is_mapped(0));
         assert!(!vm.is_mapped(1));
     }
@@ -634,6 +817,216 @@ mod tests {
         assert!(addr2 > addr1);
     }
 
+    #[test]
+    fn test_page_permissions() {
+        let mut vm = VirtualMemory::new();
+
+        // Map page with read-only permissions
+        let vpage = 0;
+        vm.map_page(vpage, 100, PagePermissions::read_only());
+
+        // Check permissions
+        let perms = vm.get_page_permissions(vpage).unwrap();
+        assert!(perms.allows_read());
+        assert!(!perms.allows_write());
+        assert!(!perms.allows_execute());
+    }
+
+    #[test]
+    fn test_permission_checking() {
+        let mut vm = VirtualMemory::new();
+        let vpage = 0;
+
+        // Map with read-only permissions
+        vm.map_page(vpage, 100, PagePermissions::read_only());
+
+        // Read should succeed
+        assert!(vm.check_permission(vpage, MemoryAccess::Read));
+        // Write should fail
+        assert!(!vm.check_permission(vpage, MemoryAccess::Write));
+        // Execute should fail
+        assert!(!vm.check_permission(vpage, MemoryAccess::Execute));
+    }
+
+    #[test]
+    fn test_set_page_permissions() {
+        let mut vm = VirtualMemory::new();
+        let vpage = 0;
+
+        // Map with read-write permissions
+        vm.map_page(vpage, 100, PagePermissions::read_write());
+
+        // Verify initial permissions
+        assert!(vm.check_permission(vpage, MemoryAccess::Read));
+        assert!(vm.check_permission(vpage, MemoryAccess::Write));
+        assert!(!vm.check_permission(vpage, MemoryAccess::Execute));
+
+        // Change to read-only
+        assert!(vm.set_page_permissions(vpage, PagePermissions::read_only()));
+
+        // Verify updated permissions
+        assert!(vm.check_permission(vpage, MemoryAccess::Read));
+        assert!(!vm.check_permission(vpage, MemoryAccess::Write));
+        assert!(!vm.check_permission(vpage, MemoryAccess::Execute));
+    }
+
+    #[test]
+    fn test_set_permissions_unmapped_fails() {
+        let mut vm = VirtualMemory::new();
+        let vpage = 0;
+
+        // Try to set permissions on unmapped page
+        assert!(!vm.set_page_permissions(vpage, PagePermissions::read_only()));
+    }
+
+    #[test]
+    fn test_read_only_pages() {
+        let mut vm = VirtualMemory::new();
+        let vpage = 0;
+
+        // Map with read-only permissions
+        vm.map_page(vpage, 100, PagePermissions::read_only());
+
+        // Read should be allowed
+        assert!(vm.check_permission(vpage, MemoryAccess::Read));
+        // Write should be denied
+        assert!(!vm.check_permission(vpage, MemoryAccess::Write));
+        // Execute should be denied
+        assert!(!vm.check_permission(vpage, MemoryAccess::Execute));
+
+        // Physical page should still be mapped
+        assert_eq!(vm.get_physical_page(vpage), Some(100));
+    }
+
+    #[test]
+    fn test_execute_only_pages() {
+        let mut vm = VirtualMemory::new();
+        let vpage = 0;
+
+        // Map with read-execute permissions (code pages)
+        vm.map_page(vpage, 100, PagePermissions::read_execute());
+
+        // Read should be allowed
+        assert!(vm.check_permission(vpage, MemoryAccess::Read));
+        // Write should be denied
+        assert!(!vm.check_permission(vpage, MemoryAccess::Write));
+        // Execute should be allowed
+        assert!(vm.check_permission(vpage, MemoryAccess::Execute));
+    }
+
+    #[test]
+    fn test_no_permissions() {
+        let mut vm = VirtualMemory::new();
+        let vpage = 0;
+
+        // Map with no permissions
+        vm.map_page(vpage, 100, PagePermissions::none());
+
+        // All accesses should be denied
+        assert!(!vm.check_permission(vpage, MemoryAccess::Read));
+        assert!(!vm.check_permission(vpage, MemoryAccess::Write));
+        assert!(!vm.check_permission(vpage, MemoryAccess::Execute));
+
+        // Page should still be mapped
+        assert!(vm.is_mapped(vpage));
+    }
+
+    #[test]
+    fn test_unmapped_page_permissions() {
+        let vm = VirtualMemory::new();
+        let vpage = 0;
+
+        // Unmapped page should deny all accesses
+        assert!(!vm.check_permission(vpage, MemoryAccess::Read));
+        assert!(!vm.check_permission(vpage, MemoryAccess::Write));
+        assert!(!vm.check_permission(vpage, MemoryAccess::Execute));
+        assert_eq!(vm.get_page_permissions(vpage), None);
+    }
+
+    #[test]
+    fn test_check_address_permission() {
+        let mut vm = VirtualMemory::new();
+        let layout = vm.layout().clone();
+
+        // Map heap page with read-write
+        let heap_addr = layout.heap_start;
+        let vpage = VirtualMemory::vaddr_to_page(heap_addr);
+        vm.map_page(vpage, 100, PagePermissions::read_write());
+
+        // Check address permissions
+        assert!(vm.check_address_permission(heap_addr, MemoryAccess::Read));
+        assert!(vm.check_address_permission(heap_addr, MemoryAccess::Write));
+        assert!(!vm.check_address_permission(heap_addr, MemoryAccess::Execute));
+
+        // Check offset within page
+        let offset_addr = heap_addr + 1024;
+        assert!(vm.check_address_permission(offset_addr, MemoryAccess::Read));
+        assert!(vm.check_address_permission(offset_addr, MemoryAccess::Write));
+    }
+
+    #[test]
+    fn test_mmap_with_permissions() {
+        let mut vm = VirtualMemory::new();
+
+        // Allocate with read-only permissions
+        let addr = vm
+            .mmap_with_permissions(PAGE_SIZE, PagePermissions::read_only())
+            .unwrap();
+        let vpage = VirtualMemory::vaddr_to_page(addr);
+
+        // Verify permissions
+        assert!(vm.check_permission(vpage, MemoryAccess::Read));
+        assert!(!vm.check_permission(vpage, MemoryAccess::Write));
+        assert!(!vm.check_permission(vpage, MemoryAccess::Execute));
+    }
+
+    #[test]
+    fn test_mmap_default_permissions() {
+        let mut vm = VirtualMemory::new();
+
+        // Default mmap should be read-write
+        let addr = vm.mmap(PAGE_SIZE).unwrap();
+        let vpage = VirtualMemory::vaddr_to_page(addr);
+
+        // Verify read-write permissions
+        assert!(vm.check_permission(vpage, MemoryAccess::Read));
+        assert!(vm.check_permission(vpage, MemoryAccess::Write));
+        assert!(!vm.check_permission(vpage, MemoryAccess::Execute));
+    }
+
+    #[test]
+    fn test_page_permissions_constants() {
+        // Test read-only
+        let ro = PagePermissions::read_only();
+        assert!(ro.allows_read());
+        assert!(!ro.allows_write());
+        assert!(!ro.allows_execute());
+
+        // Test read-write
+        let rw = PagePermissions::read_write();
+        assert!(rw.allows_read());
+        assert!(rw.allows_write());
+        assert!(!rw.allows_execute());
+
+        // Test read-execute
+        let rx = PagePermissions::read_execute();
+        assert!(rx.allows_read());
+        assert!(!rx.allows_write());
+        assert!(rx.allows_execute());
+
+        // Test read-write-execute
+        let rwx = PagePermissions::read_write_execute();
+        assert!(rwx.allows_read());
+        assert!(rwx.allows_write());
+        assert!(rwx.allows_execute());
+
+        // Test none
+        let none = PagePermissions::none();
+        assert!(!none.allows_read());
+        assert!(!none.allows_write());
+        assert!(!none.allows_execute());
+    }
+
     // Property-based tests
     #[cfg(test)]
     mod proptests {
@@ -649,7 +1042,8 @@ mod tests {
                 offset in 0..PAGE_SIZE as u64,
             ) {
                 let mut vm = VirtualMemory::new();
-                vm.map_page(vpage, ppage);
+                let perms = PagePermissions::read_write();
+                vm.map_page(vpage, ppage, perms);
 
                 let vaddr = (vpage as u64) * PAGE_SIZE as u64 + offset;
                 let paddr1 = vm.translate(vaddr);
@@ -666,9 +1060,10 @@ mod tests {
             ) {
                 let mut vm = VirtualMemory::new();
                 let mut ppages = Vec::new();
+                let perms = PagePermissions::read_write();
 
                 for i in 0..num_pages {
-                    let ppage = vm.allocate_page(i as VirtualPage);
+                    let ppage = vm.allocate_page(i as VirtualPage, perms);
                     ppages.push(ppage);
                 }
 
@@ -685,18 +1080,19 @@ mod tests {
             ) {
                 let mut vm = VirtualMemory::new();
                 let mut expected = std::collections::HashMap::new();
+                let perms = PagePermissions::read_write();
 
                 for (op, vpage, ppage) in operations {
                     match op {
                         0 => {
                             // Map
-                            vm.map_page(vpage, ppage);
+                            vm.map_page(vpage, ppage, perms);
                             expected.insert(vpage, ppage);
                         }
                         1 => {
                             // Unmap
                             let result = vm.unmap_page(vpage);
-                            let expected_result = expected.remove(&vpage);
+                            let expected_result = expected.remove(&vpage).map(|ppage| PageTableEntry::new(ppage, perms));
                             prop_assert_eq!(result, expected_result);
                         }
                         _ => {
@@ -716,7 +1112,8 @@ mod tests {
                 ppage in 0..10000u32,
             ) {
                 let mut vm = VirtualMemory::new();
-                vm.map_page(vpage, ppage);
+                let perms = PagePermissions::read_write();
+                vm.map_page(vpage, ppage, perms);
 
                 // First byte of page
                 let vaddr_start = (vpage as u64) * PAGE_SIZE as u64;
@@ -940,6 +1337,127 @@ mod tests {
                 // Zero-size is_range_mapped returns true
                 prop_assert!(vm.is_range_mapped(0, 0));
                 prop_assert!(vm.is_range_mapped(vm.layout().heap_start, 0));
+            }
+
+            /// Property: Permission checking is consistent
+            #[test]
+            fn proptest_permission_checking(
+                vpage in 0..1000u32,
+                read in proptest::bool::ANY,
+                write in proptest::bool::ANY,
+                execute in proptest::bool::ANY,
+            ) {
+                let mut vm = VirtualMemory::new();
+                let perms = PagePermissions { read, write, execute };
+                vm.map_page(vpage, 100, perms);
+
+                // Check consistency
+                prop_assert_eq!(vm.check_permission(vpage, MemoryAccess::Read), read);
+                prop_assert_eq!(vm.check_permission(vpage, MemoryAccess::Write), write);
+                prop_assert_eq!(vm.check_permission(vpage, MemoryAccess::Execute), execute);
+
+                // Verify permissions match
+                let retrieved_perms = vm.get_page_permissions(vpage).unwrap();
+                prop_assert_eq!(retrieved_perms.allows_read(), read);
+                prop_assert_eq!(retrieved_perms.allows_write(), write);
+                prop_assert_eq!(retrieved_perms.allows_execute(), execute);
+            }
+
+            /// Property: Set permissions always succeeds on mapped pages
+            #[test]
+            fn proptest_set_permissions_mapped(
+                vpage in 0..1000u32,
+                new_read in proptest::bool::ANY,
+                new_write in proptest::bool::ANY,
+                new_execute in proptest::bool::ANY,
+            ) {
+                let mut vm = VirtualMemory::new();
+                // Map with initial permissions
+                vm.map_page(vpage, 100, PagePermissions::read_write());
+
+                // Set new permissions
+                let new_perms = PagePermissions { read: new_read, write: new_write, execute: new_execute };
+                let result = vm.set_page_permissions(vpage, new_perms);
+                prop_assert!(result);
+
+                // Verify new permissions
+                let retrieved_perms = vm.get_page_permissions(vpage).unwrap();
+                prop_assert_eq!(retrieved_perms, new_perms);
+            }
+
+            /// Property: Set permissions always fails on unmapped pages
+            #[test]
+            fn proptest_set_permissions_unmapped(
+                vpage in 0..1000u32,
+            ) {
+                let vm = VirtualMemory::new();
+                // Try to set permissions on unmapped page
+                let result = vm.clone().set_page_permissions(vpage, PagePermissions::read_only());
+                prop_assert!(!result);
+            }
+
+            /// Property: Unmapped pages deny all access
+            #[test]
+            fn proptest_unmapped_denies_access(
+                vpage in 0..1000u32,
+            ) {
+                let vm = VirtualMemory::new();
+                // All accesses to unmapped pages should be denied
+                prop_assert!(!vm.check_permission(vpage, MemoryAccess::Read));
+                prop_assert!(!vm.check_permission(vpage, MemoryAccess::Write));
+                prop_assert!(!vm.check_permission(vpage, MemoryAccess::Execute));
+            }
+
+            /// Property: mmap_with_permissions sets correct permissions
+            #[test]
+            fn proptest_mmap_with_permissions(
+                size in 1..10000usize,
+                read in proptest::bool::ANY,
+                write in proptest::bool::ANY,
+                execute in proptest::bool::ANY,
+            ) {
+                let mut vm = VirtualMemory::new();
+                let perms = PagePermissions { read, write, execute };
+
+                if let Some(addr) = vm.mmap_with_permissions(size, perms) {
+                    // All allocated pages should have the specified permissions
+                    let num_pages = size.div_ceil(PAGE_SIZE);
+                    for i in 0..num_pages {
+                        let vpage = VirtualMemory::vaddr_to_page(addr + (i * PAGE_SIZE) as u64);
+                        let page_perms = vm.get_page_permissions(vpage).unwrap();
+                        prop_assert_eq!(page_perms, perms);
+                    }
+                }
+            }
+
+            /// Property: Address permission checking matches page checking
+            #[test]
+            fn proptest_address_permission_consistent(
+                vpage in 0..1000u32,
+                offset in 0..PAGE_SIZE as u64,
+                read in proptest::bool::ANY,
+                write in proptest::bool::ANY,
+                execute in proptest::bool::ANY,
+            ) {
+                let mut vm = VirtualMemory::new();
+                let perms = PagePermissions { read, write, execute };
+                vm.map_page(vpage, 100, perms);
+
+                let vaddr = (vpage as u64) * PAGE_SIZE as u64 + offset;
+
+                // Address check should match page check
+                prop_assert_eq!(
+                    vm.check_address_permission(vaddr, MemoryAccess::Read),
+                    vm.check_permission(vpage, MemoryAccess::Read)
+                );
+                prop_assert_eq!(
+                    vm.check_address_permission(vaddr, MemoryAccess::Write),
+                    vm.check_permission(vpage, MemoryAccess::Write)
+                );
+                prop_assert_eq!(
+                    vm.check_address_permission(vaddr, MemoryAccess::Execute),
+                    vm.check_permission(vpage, MemoryAccess::Execute)
+                );
             }
         }
     }
