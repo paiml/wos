@@ -12,10 +12,12 @@
 pub mod scheduler;
 pub mod state;
 pub mod syscall;
+pub mod trace;
 
 pub use scheduler::Scheduler;
 pub use state::{FileDescriptor, KernelState, Process, ProcessId, ProcessState};
 pub use syscall::{dispatch_syscall, KernelError, SyscallOutput, SyscallResult, SystemCall};
+pub use trace::{KernelHistory, SystemCallTrace};
 
 /// Placeholder for kernel implementation
 pub fn kernel_version() -> &'static str {
