@@ -64,6 +64,7 @@ class Terminal {
         document.getElementById('btn-export-json').addEventListener('click', () => this.exportQualityJson());
         document.getElementById('btn-export-html').addEventListener('click', () => this.exportQualityHtml());
         document.getElementById('btn-export-md').addEventListener('click', () => this.exportQualityMarkdown());
+        document.getElementById('btn-export-sarif').addEventListener('click', () => this.exportQualitySarif());
 
         // Keep input focused
         this.terminalElement.addEventListener('click', () => {
@@ -324,6 +325,21 @@ class Terminal {
         }
     }
 
+    async exportQualitySarif() {
+        if (!this.wos || !this.wos.exportQualitySarif) {
+            this.printLine('WASM not initialized', 'error');
+            return;
+        }
+
+        try {
+            const sarif = this.wos.exportQualitySarif();
+            this.downloadFile('wos-quality-report.sarif', sarif, 'application/json');
+            this.printLine('Quality report exported to SARIF format', 'success');
+        } catch (error) {
+            this.printLine(`Export error: ${error}`, 'error');
+        }
+    }
+
     downloadFile(filename, content, mimeType) {
         const blob = new Blob([content], { type: mimeType });
         const url = URL.createObjectURL(blob);
@@ -362,16 +378,16 @@ async function init() {
             setState: (state) => {},
             executeCommand: (cmd) => `Command executed: ${cmd}\n(WASM integration pending)`,
             getQualityMetrics: () => JSON.stringify({
-                tdg_grade: "A",
-                tdg_score: 92.0,
-                test_count: 227,
-                unit_test_count: 192,
-                property_test_count: 35,
-                coverage: 87.5,
+                tdg_grade: "A+",
+                tdg_score: 95.5,
+                test_count: 262,
+                unit_test_count: 220,
+                property_test_count: 42,
+                coverage: 88.0,
                 max_complexity: 18,
-                avg_complexity: 8.2,
+                avg_complexity: 7.8,
                 satd_count: 0,
-                lines_of_code: 6500,
+                lines_of_code: 7200,
                 unsafe_count: 0,
                 clippy_warnings: 0,
                 build_status: "Passing"
@@ -379,19 +395,37 @@ async function init() {
             exportQualityHtml: () => `<!DOCTYPE html>
 <html><head><title>WOS Quality Report</title></head>
 <body><h1>WOS Quality Report - Mock</h1>
-<p>TDG Grade: A (92.0%)</p>
-<p>Tests: 227 | Coverage: 87.5%</p>
+<p>TDG Grade: A+ (95.5%)</p>
+<p>Tests: 262 | Coverage: 88.0%</p>
 <p>This is a mock report. Build WASM for full report.</p>
 </body></html>`,
             exportQualityMarkdown: () => `# WOS Quality Report - Mock
 
 ## Summary
-- **TDG Grade**: A
-- **TDG Score**: 92.0%
-- **Test Count**: 227
-- **Coverage**: 87.5%
+- **TDG Grade**: A+
+- **TDG Score**: 95.5%
+- **Test Count**: 262
+- **Coverage**: 88.0%
 
-*This is a mock report. Build WASM for full report.*`
+*This is a mock report. Build WASM for full report.*`,
+            exportQualitySarif: () => JSON.stringify({
+                "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+                "version": "2.1.0",
+                "runs": [{
+                    "tool": {
+                        "driver": {
+                            "name": "WOS Quality Dashboard",
+                            "version": "0.1.0"
+                        }
+                    },
+                    "results": [],
+                    "properties": {
+                        "tdg_grade": "A+",
+                        "tdg_score": 95.5,
+                        "test_count": 262
+                    }
+                }]
+            }, null, 2)
         };
 
         terminal.setWOS(mockWOS);

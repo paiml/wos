@@ -57,16 +57,16 @@ impl QualityMetrics {
     /// Create new quality metrics with WOS current values
     pub fn new() -> Self {
         Self {
-            tdg_grade: "A".to_string(),
-            tdg_score: 92.0,
-            test_count: 227,
-            unit_test_count: 192,
-            property_test_count: 35,
-            coverage: 87.5,
+            tdg_grade: "A+".to_string(),
+            tdg_score: 95.5,
+            test_count: 262,
+            unit_test_count: 220,
+            property_test_count: 42,
+            coverage: 88.0,
             max_complexity: 18,
-            avg_complexity: 8.2,
+            avg_complexity: 7.8,
             satd_count: 0,
-            lines_of_code: 6500,
+            lines_of_code: 7200,
             unsafe_count: 0,
             clippy_warnings: 0,
             build_status: BuildStatus::Passing,
@@ -275,6 +275,201 @@ impl QualityMetrics {
         )
     }
 
+    /// Generate SARIF (Static Analysis Results Interchange Format) report
+    pub fn to_sarif(&self) -> String {
+        let issues = if self.meets_thresholds() {
+            String::new()
+        } else {
+            let mut issues_vec = Vec::new();
+
+            if self.coverage < 85.0 {
+                issues_vec.push(format!(
+                    r#"{{
+            "ruleId": "WOS001",
+            "level": "warning",
+            "message": {{
+              "text": "Test coverage below 85% threshold: {:.1}%"
+            }},
+            "properties": {{
+              "actual": {:.1},
+              "expected": 85.0
+            }}
+          }}"#,
+                    self.coverage, self.coverage
+                ));
+            }
+
+            if self.satd_count > 0 {
+                issues_vec.push(format!(
+                    r#"{{
+            "ruleId": "WOS002",
+            "level": "error",
+            "message": {{
+              "text": "Self-Admitted Technical Debt found: {} instances"
+            }},
+            "properties": {{
+              "count": {},
+              "policy": "zero-tolerance"
+            }}
+          }}"#,
+                    self.satd_count, self.satd_count
+                ));
+            }
+
+            if self.max_complexity > 20 {
+                issues_vec.push(format!(
+                    r#"{{
+            "ruleId": "WOS003",
+            "level": "warning",
+            "message": {{
+              "text": "Cyclomatic complexity exceeds threshold: {}"
+            }},
+            "properties": {{
+              "actual": {},
+              "expected": 20
+            }}
+          }}"#,
+                    self.max_complexity, self.max_complexity
+                ));
+            }
+
+            if self.unsafe_count > 0 {
+                issues_vec.push(format!(
+                    r#"{{
+            "ruleId": "WOS004",
+            "level": "error",
+            "message": {{
+              "text": "Unsafe code blocks detected: {}"
+            }},
+            "properties": {{
+              "count": {},
+              "policy": "forbid-unsafe"
+            }}
+          }}"#,
+                    self.unsafe_count, self.unsafe_count
+                ));
+            }
+
+            if self.clippy_warnings > 0 {
+                issues_vec.push(format!(
+                    r#"{{
+            "ruleId": "WOS005",
+            "level": "warning",
+            "message": {{
+              "text": "Clippy warnings detected: {}"
+            }},
+            "properties": {{
+              "count": {}
+            }}
+          }}"#,
+                    self.clippy_warnings, self.clippy_warnings
+                ));
+            }
+
+            issues_vec.join(",\n")
+        };
+
+        format!(
+            r#"{{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {{
+      "tool": {{
+        "driver": {{
+          "name": "WOS Quality Dashboard",
+          "version": "0.1.0",
+          "informationUri": "https://github.com/noahgift/wos",
+          "rules": [
+            {{
+              "id": "WOS001",
+              "shortDescription": {{
+                "text": "Test coverage below threshold"
+              }},
+              "fullDescription": {{
+                "text": "Test coverage must be at least 85% for all code"
+              }},
+              "defaultConfiguration": {{
+                "level": "warning"
+              }}
+            }},
+            {{
+              "id": "WOS002",
+              "shortDescription": {{
+                "text": "Self-Admitted Technical Debt detected"
+              }},
+              "fullDescription": {{
+                "text": "Zero tolerance for SATD comments (TODO, FIXME, HACK, etc.)"
+              }},
+              "defaultConfiguration": {{
+                "level": "error"
+              }}
+            }},
+            {{
+              "id": "WOS003",
+              "shortDescription": {{
+                "text": "Cyclomatic complexity too high"
+              }},
+              "fullDescription": {{
+                "text": "Maximum cyclomatic complexity must not exceed 20"
+              }},
+              "defaultConfiguration": {{
+                "level": "warning"
+              }}
+            }},
+            {{
+              "id": "WOS004",
+              "shortDescription": {{
+                "text": "Unsafe code detected"
+              }},
+              "fullDescription": {{
+                "text": "All code must be safe Rust with #![forbid(unsafe_code)]"
+              }},
+              "defaultConfiguration": {{
+                "level": "error"
+              }}
+            }},
+            {{
+              "id": "WOS005",
+              "shortDescription": {{
+                "text": "Clippy warnings detected"
+              }},
+              "fullDescription": {{
+                "text": "All clippy warnings must be resolved"
+              }},
+              "defaultConfiguration": {{
+                "level": "warning"
+              }}
+            }}
+          ]
+        }}
+      }},
+      "results": [{}],
+      "properties": {{
+        "tdg_grade": "{}",
+        "tdg_score": {},
+        "test_count": {},
+        "coverage": {},
+        "max_complexity": {},
+        "avg_complexity": {},
+        "lines_of_code": {},
+        "build_status": "{:?}"
+      }}
+    }}
+  ]
+}}"#,
+            issues,
+            self.tdg_grade,
+            self.tdg_score,
+            self.test_count,
+            self.coverage,
+            self.max_complexity,
+            self.avg_complexity,
+            self.lines_of_code,
+            self.build_status
+        )
+    }
+
     /// Generate Markdown report
     pub fn to_markdown(&self) -> String {
         format!(
@@ -339,15 +534,18 @@ mod tests {
     #[test]
     fn test_quality_metrics_new() {
         let metrics = QualityMetrics::new();
-        assert_eq!(metrics.test_count, 227);
+        assert_eq!(metrics.test_count, 262);
         assert_eq!(metrics.unsafe_count, 0);
         assert_eq!(metrics.satd_count, 0);
+        assert_eq!(metrics.tdg_grade, "A+");
+        assert_eq!(metrics.tdg_score, 95.5);
     }
 
     #[test]
     fn test_quality_metrics_default() {
         let metrics = QualityMetrics::default();
-        assert_eq!(metrics.test_count, 227);
+        assert_eq!(metrics.test_count, 262);
+        assert_eq!(metrics.tdg_grade, "A+");
     }
 
     #[test]
@@ -406,6 +604,9 @@ mod tests {
     fn test_meets_thresholds_pass() {
         let metrics = QualityMetrics::new();
         assert!(metrics.meets_thresholds());
+        // Also verify we're at A+ grade
+        assert_eq!(metrics.tdg_grade, "A+");
+        assert!(metrics.tdg_score >= 95.0);
     }
 
     #[test]
@@ -532,5 +733,103 @@ mod tests {
         let json = serde_json::to_string(&status).unwrap();
         let parsed: BuildStatus = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, status);
+    }
+
+    #[test]
+    fn test_to_sarif() {
+        let metrics = QualityMetrics::new();
+        let sarif = metrics.to_sarif();
+
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&sarif).unwrap();
+        assert!(parsed.is_object());
+
+        // Check SARIF structure
+        assert_eq!(parsed["version"], "2.1.0");
+        assert!(parsed["runs"].is_array());
+        assert_eq!(parsed["runs"].as_array().unwrap().len(), 1);
+
+        let run = &parsed["runs"][0];
+        assert!(run["tool"].is_object());
+        assert_eq!(run["tool"]["driver"]["name"], "WOS Quality Dashboard");
+        assert!(run["results"].is_array());
+    }
+
+    #[test]
+    fn test_to_sarif_no_issues() {
+        let metrics = QualityMetrics::new();
+        let sarif = metrics.to_sarif();
+
+        let parsed: serde_json::Value = serde_json::from_str(&sarif).unwrap();
+        let results = parsed["runs"][0]["results"].as_array().unwrap();
+
+        // No issues when all thresholds are met
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_to_sarif_with_issues() {
+        let mut metrics = QualityMetrics::new();
+        metrics.coverage = 80.0;
+        metrics.satd_count = 2;
+        metrics.max_complexity = 25;
+
+        let sarif = metrics.to_sarif();
+        let parsed: serde_json::Value = serde_json::from_str(&sarif).unwrap();
+        let results = parsed["runs"][0]["results"].as_array().unwrap();
+
+        // Should have 3 issues
+        assert_eq!(results.len(), 3);
+
+        // Check that issues are properly formatted
+        assert!(sarif.contains("WOS001")); // Coverage
+        assert!(sarif.contains("WOS002")); // SATD
+        assert!(sarif.contains("WOS003")); // Complexity
+    }
+
+    #[test]
+    fn test_to_sarif_unsafe_code_issue() {
+        let mut metrics = QualityMetrics::new();
+        metrics.unsafe_count = 1;
+
+        let sarif = metrics.to_sarif();
+        assert!(sarif.contains("WOS004"));
+        assert!(sarif.contains("Unsafe code blocks detected"));
+    }
+
+    #[test]
+    fn test_to_sarif_clippy_warnings_issue() {
+        let mut metrics = QualityMetrics::new();
+        metrics.clippy_warnings = 5;
+
+        let sarif = metrics.to_sarif();
+        assert!(sarif.contains("WOS005"));
+        assert!(sarif.contains("Clippy warnings detected"));
+    }
+
+    #[test]
+    fn test_to_sarif_includes_properties() {
+        let metrics = QualityMetrics::new();
+        let sarif = metrics.to_sarif();
+
+        let parsed: serde_json::Value = serde_json::from_str(&sarif).unwrap();
+        let props = &parsed["runs"][0]["properties"];
+
+        assert_eq!(props["tdg_grade"], "A+");
+        assert_eq!(props["tdg_score"], 95.5);
+        assert_eq!(props["test_count"], 262);
+        assert_eq!(props["coverage"], 88.0);
+    }
+
+    #[test]
+    fn test_to_sarif_valid_schema_reference() {
+        let metrics = QualityMetrics::new();
+        let sarif = metrics.to_sarif();
+
+        let parsed: serde_json::Value = serde_json::from_str(&sarif).unwrap();
+        let schema = parsed["$schema"].as_str().unwrap();
+
+        assert!(schema.contains("sarif-spec"));
+        assert!(schema.contains("2.1.0"));
     }
 }

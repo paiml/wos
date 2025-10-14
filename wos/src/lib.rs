@@ -127,6 +127,13 @@ impl WosWasm {
         let metrics = QualityMetrics::new();
         metrics.to_markdown()
     }
+
+    /// Export quality report as SARIF
+    #[wasm_bindgen(js_name = exportQualitySarif)]
+    pub fn export_quality_sarif(&self) -> String {
+        let metrics = QualityMetrics::new();
+        metrics.to_sarif()
+    }
 }
 
 #[cfg(test)]
@@ -326,5 +333,19 @@ mod tests {
         assert!(md.contains("# WOS Quality Report"));
         assert!(md.contains("TDG Grade"));
         assert!(md.contains("Test Coverage"));
+    }
+
+    #[test]
+    fn test_wos_wasm_export_quality_sarif() {
+        let wos = WosWasm::new();
+        let sarif = wos.export_quality_sarif();
+
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&sarif).unwrap();
+        assert!(parsed.is_object());
+
+        // Check SARIF structure
+        assert_eq!(parsed["version"], "2.1.0");
+        assert!(parsed["runs"].is_array());
     }
 }
