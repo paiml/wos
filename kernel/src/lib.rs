@@ -9,11 +9,16 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod memory;
 pub mod scheduler;
 pub mod state;
 pub mod syscall;
 pub mod trace;
 
+pub use memory::{
+    MemoryLayout, MemoryRegion, PhysicalAddress, PhysicalPage, VirtualAddress, VirtualMemory,
+    VirtualPage, PAGE_SIZE,
+};
 pub use scheduler::Scheduler;
 pub use state::{FileDescriptor, KernelState, Process, ProcessId, ProcessState};
 pub use syscall::{dispatch_syscall, KernelError, SyscallOutput, SyscallResult, SystemCall};
