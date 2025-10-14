@@ -95,22 +95,28 @@ pub struct VirtualMemory {
     layout: MemoryLayout,
     /// Next physical page to allocate
     next_physical_page: PhysicalPage,
+    /// Next virtual address for heap allocations
+    next_heap_addr: VirtualAddress,
 }
 
 impl VirtualMemory {
     /// Create new virtual memory with default layout
     pub fn new() -> Self {
+        let layout = MemoryLayout::default();
         Self {
             page_table: HashMap::new(),
-            layout: MemoryLayout::default(),
+            next_heap_addr: layout.heap_start,
+            layout,
             next_physical_page: 0,
         }
     }
 
     /// Create with custom layout
     pub fn with_layout(layout: MemoryLayout) -> Self {
+        let next_heap_addr = layout.heap_start;
         Self {
             page_table: HashMap::new(),
+            next_heap_addr,
             layout,
             next_physical_page: 0,
         }
@@ -172,6 +178,89 @@ impl VirtualMemory {
     /// Page number to virtual address
     pub fn page_to_vaddr(vpage: VirtualPage) -> VirtualAddress {
         (vpage as u64) * PAGE_SIZE as u64
+    }
+
+    /// Allocate contiguous virtual memory region (mmap)
+    ///
+    /// Returns the starting virtual address of the allocated region.
+    /// Allocates page-aligned memory in the heap region.
+    pub fn mmap(&mut self, size_bytes: usize) -> Option<VirtualAddress> {
+        if size_bytes == 0 {
+            return None;
+        }
+
+        // Round up to page boundary
+        let num_pages = size_bytes.div_ceil(PAGE_SIZE);
+        let start_addr = self.next_heap_addr;
+
+        // Check if allocation fits in heap region
+        let end_addr = start_addr + (num_pages * PAGE_SIZE) as u64;
+        let heap_end = self.layout.heap_start + self.layout.heap_size as u64;
+        if end_addr > heap_end {
+            return None; // Out of memory
+        }
+
+        // Allocate pages
+        for i in 0..num_pages {
+            let vaddr = start_addr + (i * PAGE_SIZE) as u64;
+            let vpage = Self::vaddr_to_page(vaddr);
+            let ppage = self.next_physical_page;
+            self.next_physical_page += 1;
+            self.page_table.insert(vpage, ppage);
+        }
+
+        // Update next heap address
+        self.next_heap_addr = end_addr;
+
+        Some(start_addr)
+    }
+
+    /// Free virtual memory region (munmap)
+    ///
+    /// Unmaps all pages in the specified range.
+    /// Returns true if successful, false if any page was not mapped.
+    pub fn munmap(&mut self, addr: VirtualAddress, size_bytes: usize) -> bool {
+        if size_bytes == 0 {
+            return true;
+        }
+
+        // Round up to page boundary
+        let num_pages = size_bytes.div_ceil(PAGE_SIZE);
+
+        // Check if all pages are mapped before unmapping
+        let mut pages_to_unmap = Vec::new();
+        for i in 0..num_pages {
+            let vaddr = addr + (i * PAGE_SIZE) as u64;
+            let vpage = Self::vaddr_to_page(vaddr);
+            if !self.is_mapped(vpage) {
+                return false; // Can't unmap unmapped page
+            }
+            pages_to_unmap.push(vpage);
+        }
+
+        // Unmap all pages
+        for vpage in pages_to_unmap {
+            self.unmap_page(vpage);
+        }
+
+        true
+    }
+
+    /// Check if address range is fully mapped
+    pub fn is_range_mapped(&self, addr: VirtualAddress, size_bytes: usize) -> bool {
+        if size_bytes == 0 {
+            return true;
+        }
+
+        let num_pages = size_bytes.div_ceil(PAGE_SIZE);
+        for i in 0..num_pages {
+            let vaddr = addr + (i * PAGE_SIZE) as u64;
+            let vpage = Self::vaddr_to_page(vaddr);
+            if !self.is_mapped(vpage) {
+                return false;
+            }
+        }
+        true
     }
 }
 

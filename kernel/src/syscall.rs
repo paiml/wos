@@ -84,6 +84,20 @@ pub enum SystemCall {
         /// Data to write
         data: Vec<u8>,
     },
+
+    /// Allocate memory (mmap)
+    Mmap {
+        /// Size in bytes
+        size: usize,
+    },
+
+    /// Free memory (munmap)
+    Munmap {
+        /// Address to free
+        addr: u64,
+        /// Size in bytes
+        size: usize,
+    },
 }
 
 /// System call output
@@ -100,6 +114,9 @@ pub enum SyscallOutput {
 
     /// Byte data
     Data(Vec<u8>),
+
+    /// Address (for mmap)
+    Address(u64),
 }
 
 /// Dispatch a system call
@@ -217,6 +234,42 @@ pub fn dispatch_syscall(
         SystemCall::Write { .. } => {
             // Not implemented yet - placeholder
             Err(KernelError::NotImplemented)
+        }
+
+        SystemCall::Mmap { size } => {
+            // Allocate memory for process
+            let mut new_state = state;
+
+            // Get mutable access to process
+            if let Some(process) = new_state.get_process_mut(calling_pid) {
+                // Allocate memory
+                if let Some(addr) = process.memory.mmap(size) {
+                    Ok((new_state, SyscallOutput::Address(addr)))
+                } else {
+                    Err(KernelError::ResourceExhausted("Out of memory".to_string()))
+                }
+            } else {
+                Err(KernelError::ProcessNotFound(calling_pid))
+            }
+        }
+
+        SystemCall::Munmap { addr, size } => {
+            // Free memory for process
+            let mut new_state = state;
+
+            // Get mutable access to process
+            if let Some(process) = new_state.get_process_mut(calling_pid) {
+                // Free memory
+                if process.memory.munmap(addr, size) {
+                    Ok((new_state, SyscallOutput::Success))
+                } else {
+                    Err(KernelError::InvalidParameters(
+                        "Invalid munmap range".to_string(),
+                    ))
+                }
+            } else {
+                Err(KernelError::ProcessNotFound(calling_pid))
+            }
         }
     }
 }

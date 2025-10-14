@@ -2,6 +2,7 @@
 //!
 //! Core state types for the WOS microkernel with persistent data structures.
 
+use crate::memory::VirtualMemory;
 use im::HashMap;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -38,6 +39,8 @@ pub struct Process {
     pub memory_pages: Vec<u32>,
     /// Open file descriptors
     pub open_files: HashMap<FileDescriptor, PathBuf>,
+    /// Virtual memory
+    pub memory: VirtualMemory,
 }
 
 impl Process {
@@ -49,6 +52,7 @@ impl Process {
             parent_pid,
             memory_pages: Vec::new(),
             open_files: HashMap::new(),
+            memory: VirtualMemory::new(),
         }
     }
 
