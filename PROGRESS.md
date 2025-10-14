@@ -4,8 +4,8 @@
 
 WOS (WebAssembly Operating System) is an educational microkernel designed to demonstrate OS concepts in a pure Rust, safe environment that compiles to WebAssembly.
 
-**Current Status**: 15 tickets completed across 5 development phases
-**Total Tests**: 184 passing (153 kernel + 17 shared + 13 userspace + 1 root)
+**Current Status**: 16 tickets completed across 5 development phases
+**Total Tests**: 202 passing (153 kernel + 17 shared + 31 userspace + 1 root)
 **Test Coverage**: Exceeding 85% target with extensive property-based testing
 **Code Quality**: Zero unsafe code, all clippy lints passing
 
@@ -34,7 +34,7 @@ WOS (WebAssembly Operating System) is an educational microkernel designed to dem
 
 ### Phase 5: User Space (Weeks 12-14)
 - ✅ **WOS-015**: Init process (PID 1)
-- 🚧 **WOS-016**: Shell process (next)
+- ✅ **WOS-016**: Shell process with command parsing and built-ins
 
 ## Architecture Highlights
 
@@ -59,8 +59,9 @@ WOS (WebAssembly Operating System) is an educational microkernel designed to dem
 - **VFS**: In-memory file system with persistent data structures
 - **Context**: Deterministic execution context
 
-#### Userspace (13 tests)
+#### Userspace (31 tests)
 - **Init Process**: PID 1 with shell launching and orphan reaping
+- **Shell Process**: Command parsing, built-ins, history, environment variables
 
 ### Technical Achievements
 
@@ -84,8 +85,9 @@ WOS (WebAssembly Operating System) is an educational microkernel designed to dem
 - VFS: 15 tests
 - Context: 3 tests
 
-### Userspace Tests (13 total)
+### Userspace Tests (31 total)
 - Init: 12 tests
+- Shell: 18 tests
 - Version: 1 test
 
 ## Quality Gates
@@ -93,18 +95,10 @@ WOS (WebAssembly Operating System) is an educational microkernel designed to dem
 All commits pass:
 - ✅ Code formatting (`cargo fmt`)
 - ✅ Clippy lints (all warnings as errors)
-- ✅ Unit tests (184 tests)
+- ✅ Unit tests (202 tests)
 - ✅ Fast quality gate (<30s)
 
 ## Next Steps
-
-### Immediate (WOS-016)
-- Shell process implementation
-- Command parser (nom-based)
-- Built-in commands (cd, exit, help)
-- External command execution
-- Command history
-- Environment variables
 
 ### Future Phases
 - Phase 6: WASM Integration
@@ -115,7 +109,7 @@ All commits pass:
 
 - **Lines of Code**: ~6,000+ (estimated)
 - **Test-to-Code Ratio**: >1.5:1
-- **Commits**: 17 feature commits
+- **Commits**: 18 feature commits
 - **Development Time**: ~15 hours equivalent
 - **Bugs Found in Production**: 0 (caught by tests)
 
