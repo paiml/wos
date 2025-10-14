@@ -4,6 +4,7 @@
 
 use crate::state::{KernelState, ProcessId};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use thiserror::Error;
 
 /// System call error types
@@ -28,6 +29,18 @@ pub enum KernelError {
     /// Permission denied
     #[error("Permission denied")]
     PermissionDenied,
+
+    /// File not found
+    #[error("File not found: {0}")]
+    FileNotFound(String),
+
+    /// File already exists
+    #[error("File already exists: {0}")]
+    FileAlreadyExists(String),
+
+    /// Invalid file descriptor
+    #[error("Invalid file descriptor: {0}")]
+    InvalidFileDescriptor(u32),
 
     /// Not implemented yet
     #[error("System call not implemented")]
@@ -117,6 +130,9 @@ pub enum SyscallOutput {
 
     /// Address (for mmap)
     Address(u64),
+
+    /// File descriptor
+    FileDescriptor(u32),
 }
 
 /// Dispatch a system call
@@ -216,14 +232,44 @@ pub fn dispatch_syscall(
             Err(KernelError::NotImplemented)
         }
 
-        SystemCall::Open { .. } => {
-            // Not implemented yet - placeholder
-            Err(KernelError::NotImplemented)
+        SystemCall::Open { path, flags: _ } => {
+            // Open file: create file descriptor
+            let mut new_state = state;
+            let path_buf = PathBuf::from(&path);
+
+            // Check if file exists in VFS
+            if !new_state.vfs.exists(&path_buf) {
+                // File doesn't exist - for now, return error
+                // TODO: Handle O_CREAT flag to create file if it doesn't exist
+                return Err(KernelError::FileNotFound(path));
+            }
+
+            // Get mutable access to process
+            if let Some(process) = new_state.get_process_mut(calling_pid) {
+                // Open file (allocate file descriptor)
+                let fd = process.open_file(path_buf);
+                Ok((new_state, SyscallOutput::FileDescriptor(fd)))
+            } else {
+                Err(KernelError::ProcessNotFound(calling_pid))
+            }
         }
 
-        SystemCall::Close { .. } => {
-            // Not implemented yet - placeholder
-            Err(KernelError::NotImplemented)
+        SystemCall::Close { fd } => {
+            // Close file: remove file descriptor
+            let mut new_state = state;
+
+            // Get mutable access to process
+            if let Some(process) = new_state.get_process_mut(calling_pid) {
+                // Close file descriptor
+                if process.close_file(fd).is_some() {
+                    Ok((new_state, SyscallOutput::Success))
+                } else {
+                    // FD not found or is a standard stream
+                    Err(KernelError::InvalidFileDescriptor(fd))
+                }
+            } else {
+                Err(KernelError::ProcessNotFound(calling_pid))
+            }
         }
 
         SystemCall::Read { .. } => {
@@ -315,14 +361,10 @@ mod tests {
         let proc = Process::new(pid, None);
         state.add_process(proc);
 
-        // Test unimplemented syscalls (Sleep, Open, Close, Read, Write)
+        // Test unimplemented syscalls (Sleep, Read, Write)
+        // Note: Open and Close are now implemented
         let syscalls = vec![
             SystemCall::Sleep(1000),
-            SystemCall::Open {
-                path: "/test".to_string(),
-                flags: 0,
-            },
-            SystemCall::Close { fd: 0 },
             SystemCall::Read { fd: 0, count: 100 },
             SystemCall::Write {
                 fd: 0,
@@ -747,6 +789,280 @@ mod tests {
     }
 
     #[test]
+    fn test_sys_open_creates_fd() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file in VFS
+        let path = PathBuf::from("/test.txt");
+        state
+            .vfs
+            .create_file(path.clone(), b"Hello".to_vec())
+            .unwrap();
+
+        // Open the file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+
+        let (new_state, output) = result.unwrap();
+        let fd = match output {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor output"),
+        };
+
+        // FD should be 3 (after stdin=0, stdout=1, stderr=2)
+        assert_eq!(fd, 3);
+
+        // Verify FD is open in process
+        let proc = new_state.get_process(pid).unwrap();
+        assert!(proc.is_fd_open(fd));
+        assert_eq!(proc.get_file_path(fd), Some(&path));
+    }
+
+    #[test]
+    fn test_sys_open_nonexistent_file() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to open non-existent file
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Open {
+                path: "/nonexistent.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn test_sys_open_multiple_files() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create files in VFS
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), vec![])
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file2.txt"), vec![])
+            .unwrap();
+
+        // Open first file
+        let result1 = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/file1.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        let (state, output1) = result1.unwrap();
+        let fd1 = match output1 {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Open second file
+        let result2 = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/file2.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        let (new_state, output2) = result2.unwrap();
+        let fd2 = match output2 {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // FDs should be different
+        assert_ne!(fd1, fd2);
+        assert_eq!(fd1, 3);
+        assert_eq!(fd2, 4);
+
+        // Both should be open
+        let proc = new_state.get_process(pid).unwrap();
+        assert!(proc.is_fd_open(fd1));
+        assert!(proc.is_fd_open(fd2));
+    }
+
+    #[test]
+    fn test_sys_close_releases_fd() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create and open file
+        state
+            .vfs
+            .create_file(PathBuf::from("/test.txt"), vec![])
+            .unwrap();
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        let (state, output) = result.unwrap();
+        let fd = match output {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Close the file
+        let result = dispatch_syscall(state.clone(), SystemCall::Close { fd }, pid);
+        assert!(result.is_ok());
+
+        let (new_state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+
+        // FD should be closed
+        let proc = new_state.get_process(pid).unwrap();
+        assert!(!proc.is_fd_open(fd));
+    }
+
+    #[test]
+    fn test_sys_close_invalid_fd() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to close invalid FD
+        let result = dispatch_syscall(state, SystemCall::Close { fd: 999 }, pid);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            KernelError::InvalidFileDescriptor(999)
+        ));
+    }
+
+    #[test]
+    fn test_sys_close_standard_streams() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to close stdin
+        let result = dispatch_syscall(state.clone(), SystemCall::Close { fd: 0 }, pid);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            KernelError::InvalidFileDescriptor(0)
+        ));
+
+        // Try to close stdout
+        let result = dispatch_syscall(state.clone(), SystemCall::Close { fd: 1 }, pid);
+        assert!(result.is_err());
+
+        // Try to close stderr
+        let result = dispatch_syscall(state, SystemCall::Close { fd: 2 }, pid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_standard_streams_initialized() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Verify standard streams are initialized
+        let proc = state.get_process(pid).unwrap();
+        assert!(proc.is_fd_open(0)); // stdin
+        assert!(proc.is_fd_open(1)); // stdout
+        assert!(proc.is_fd_open(2)); // stderr
+
+        assert_eq!(proc.get_file_path(0), Some(&PathBuf::from("/dev/stdin")));
+        assert_eq!(proc.get_file_path(1), Some(&PathBuf::from("/dev/stdout")));
+        assert_eq!(proc.get_file_path(2), Some(&PathBuf::from("/dev/stderr")));
+    }
+
+    #[test]
+    fn test_fd_table_per_process() {
+        let mut state = KernelState::new();
+
+        // Create two processes
+        let pid1 = state.allocate_pid();
+        let proc1 = Process::new(pid1, None);
+        state.add_process(proc1);
+
+        let pid2 = state.allocate_pid();
+        let proc2 = Process::new(pid2, None);
+        state.add_process(proc2);
+
+        // Create file in VFS
+        state
+            .vfs
+            .create_file(PathBuf::from("/shared.txt"), vec![])
+            .unwrap();
+
+        // Open file in process 1
+        let result1 = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/shared.txt".to_string(),
+                flags: 0,
+            },
+            pid1,
+        );
+        let (state, output1) = result1.unwrap();
+        let fd1 = match output1 {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Open same file in process 2
+        let result2 = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/shared.txt".to_string(),
+                flags: 0,
+            },
+            pid2,
+        );
+        let (new_state, output2) = result2.unwrap();
+        let fd2 = match output2 {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Both should have FD 3 (independent FD tables)
+        assert_eq!(fd1, 3);
+        assert_eq!(fd2, 3);
+
+        // FD should be open in both processes
+        let proc1 = new_state.get_process(pid1).unwrap();
+        let proc2 = new_state.get_process(pid2).unwrap();
+        assert!(proc1.is_fd_open(fd1));
+        assert!(proc2.is_fd_open(fd2));
+    }
+
+    #[test]
     fn test_syscall_serialization() {
         // Test SystemCall serialization
         let syscall = SystemCall::GetPid;
@@ -774,6 +1090,21 @@ mod tests {
             addr: 0x3000_0000,
             size: 4096,
         };
+        let json = serde_json::to_string(&syscall).unwrap();
+        let syscall2: SystemCall = serde_json::from_str(&json).unwrap();
+        assert_eq!(syscall, syscall2);
+
+        // Test open
+        let syscall = SystemCall::Open {
+            path: "/test.txt".to_string(),
+            flags: 0,
+        };
+        let json = serde_json::to_string(&syscall).unwrap();
+        let syscall2: SystemCall = serde_json::from_str(&json).unwrap();
+        assert_eq!(syscall, syscall2);
+
+        // Test close
+        let syscall = SystemCall::Close { fd: 3 };
         let json = serde_json::to_string(&syscall).unwrap();
         let syscall2: SystemCall = serde_json::from_str(&json).unwrap();
         assert_eq!(syscall, syscall2);
