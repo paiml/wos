@@ -272,14 +272,72 @@ pub fn dispatch_syscall(
             }
         }
 
-        SystemCall::Read { .. } => {
-            // Not implemented yet - placeholder
-            Err(KernelError::NotImplemented)
+        SystemCall::Read { fd, count } => {
+            // Read from file descriptor
+            let new_state = state;
+
+            // Get the process
+            let process = new_state
+                .get_process(calling_pid)
+                .ok_or(KernelError::ProcessNotFound(calling_pid))?;
+
+            // Get file path from FD table
+            let path = process
+                .get_file_path(fd)
+                .ok_or(KernelError::InvalidFileDescriptor(fd))?;
+
+            // Read from VFS
+            match new_state.vfs.read_file(path) {
+                Ok(content) => {
+                    // Return up to 'count' bytes
+                    let bytes_to_return = content.len().min(count);
+                    let data = content[..bytes_to_return].to_vec();
+                    Ok((new_state, SyscallOutput::Data(data)))
+                }
+                Err(wos_shared::vfs::VfsError::NotFound) => {
+                    Err(KernelError::FileNotFound(path.display().to_string()))
+                }
+                Err(wos_shared::vfs::VfsError::PermissionDenied) => {
+                    Err(KernelError::PermissionDenied)
+                }
+                Err(_) => Err(KernelError::InvalidParameters(
+                    "VFS error during read".to_string(),
+                )),
+            }
         }
 
-        SystemCall::Write { .. } => {
-            // Not implemented yet - placeholder
-            Err(KernelError::NotImplemented)
+        SystemCall::Write { fd, data } => {
+            // Write to file descriptor
+            let mut new_state = state;
+
+            // Get file path from FD table
+            let path = {
+                let process = new_state
+                    .get_process(calling_pid)
+                    .ok_or(KernelError::ProcessNotFound(calling_pid))?;
+
+                process
+                    .get_file_path(fd)
+                    .ok_or(KernelError::InvalidFileDescriptor(fd))?
+                    .clone()
+            };
+
+            // Write to VFS
+            match new_state.vfs.write_file(&path, data.clone()) {
+                Ok(_) => {
+                    // Return number of bytes written
+                    Ok((new_state, SyscallOutput::Value(data.len() as i32)))
+                }
+                Err(wos_shared::vfs::VfsError::NotFound) => {
+                    Err(KernelError::FileNotFound(path.display().to_string()))
+                }
+                Err(wos_shared::vfs::VfsError::PermissionDenied) => {
+                    Err(KernelError::PermissionDenied)
+                }
+                Err(_) => Err(KernelError::InvalidParameters(
+                    "VFS error during write".to_string(),
+                )),
+            }
         }
 
         SystemCall::Mmap { size } => {
@@ -361,16 +419,9 @@ mod tests {
         let proc = Process::new(pid, None);
         state.add_process(proc);
 
-        // Test unimplemented syscalls (Sleep, Read, Write)
-        // Note: Open and Close are now implemented
-        let syscalls = vec![
-            SystemCall::Sleep(1000),
-            SystemCall::Read { fd: 0, count: 100 },
-            SystemCall::Write {
-                fd: 0,
-                data: vec![1, 2, 3],
-            },
-        ];
+        // Test unimplemented syscalls (Sleep)
+        // Note: Open, Close, Read, Write are now implemented
+        let syscalls = vec![SystemCall::Sleep(1000)];
 
         for syscall in syscalls {
             let result = dispatch_syscall(state.clone(), syscall, pid);
@@ -1060,6 +1111,362 @@ mod tests {
         let proc2 = new_state.get_process(pid2).unwrap();
         assert!(proc1.is_fd_open(fd1));
         assert!(proc2.is_fd_open(fd2));
+    }
+
+    #[test]
+    fn test_sys_read_from_file() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create file with content
+        let content = b"Hello, World!".to_vec();
+        state
+            .vfs
+            .create_file(PathBuf::from("/test.txt"), content.clone())
+            .unwrap();
+
+        // Open file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        let (state, output) = result.unwrap();
+        let fd = match output {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Read from file
+        let result = dispatch_syscall(state, SystemCall::Read { fd, count: 100 }, pid);
+        let (_, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => {
+                assert_eq!(data, content);
+            }
+            _ => panic!("Expected Data"),
+        }
+    }
+
+    #[test]
+    fn test_sys_read_partial() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create file with content
+        let content = b"Hello, World!".to_vec();
+        state
+            .vfs
+            .create_file(PathBuf::from("/test.txt"), content.clone())
+            .unwrap();
+
+        // Open file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        let (state, output) = result.unwrap();
+        let fd = match output {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Read only 5 bytes
+        let result = dispatch_syscall(state, SystemCall::Read { fd, count: 5 }, pid);
+        let (_, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => {
+                assert_eq!(data, b"Hello".to_vec());
+            }
+            _ => panic!("Expected Data"),
+        }
+    }
+
+    #[test]
+    fn test_sys_read_invalid_fd() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to read from invalid FD
+        let result = dispatch_syscall(state, SystemCall::Read { fd: 99, count: 100 }, pid);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), KernelError::InvalidFileDescriptor(99));
+    }
+
+    #[test]
+    fn test_sys_read_nonexistent_file() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let mut proc = Process::new(pid, None);
+
+        // Manually add FD pointing to nonexistent file
+        proc.open_file(PathBuf::from("/nonexistent.txt"));
+        state.add_process(proc);
+
+        // Try to read
+        let result = dispatch_syscall(state, SystemCall::Read { fd: 3, count: 100 }, pid);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            KernelError::FileNotFound(_) => {}
+            _ => panic!("Expected FileNotFound"),
+        }
+    }
+
+    #[test]
+    fn test_sys_write_to_file() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create empty file
+        state
+            .vfs
+            .create_file(PathBuf::from("/test.txt"), vec![])
+            .unwrap();
+
+        // Open file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        let (state, output) = result.unwrap();
+        let fd = match output {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Write to file
+        let data = b"Hello, World!".to_vec();
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Write {
+                fd,
+                data: data.clone(),
+            },
+            pid,
+        );
+        let (new_state, output) = result.unwrap();
+
+        // Should return number of bytes written
+        match output {
+            SyscallOutput::Value(bytes_written) => {
+                assert_eq!(bytes_written, data.len() as i32);
+            }
+            _ => panic!("Expected Value"),
+        }
+
+        // Verify file was written
+        let file_content = new_state
+            .vfs
+            .read_file(&PathBuf::from("/test.txt"))
+            .unwrap();
+        assert_eq!(file_content, data);
+    }
+
+    #[test]
+    fn test_sys_write_invalid_fd() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to write to invalid FD
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Write {
+                fd: 99,
+                data: vec![1, 2, 3],
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), KernelError::InvalidFileDescriptor(99));
+    }
+
+    #[test]
+    fn test_sys_write_nonexistent_file() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let mut proc = Process::new(pid, None);
+
+        // Manually add FD pointing to nonexistent file
+        proc.open_file(PathBuf::from("/nonexistent.txt"));
+        state.add_process(proc);
+
+        // Try to write
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Write {
+                fd: 3,
+                data: vec![1, 2, 3],
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            KernelError::FileNotFound(_) => {}
+            _ => panic!("Expected FileNotFound"),
+        }
+    }
+
+    #[test]
+    fn test_read_write_cycle() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create empty file
+        state
+            .vfs
+            .create_file(PathBuf::from("/test.txt"), vec![])
+            .unwrap();
+
+        // Open file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        let (state, output) = result.unwrap();
+        let fd = match output {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Write data
+        let write_data = b"Test data".to_vec();
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Write {
+                fd,
+                data: write_data.clone(),
+            },
+            pid,
+        );
+        let (state, _) = result.unwrap();
+
+        // Read data back
+        let result = dispatch_syscall(state, SystemCall::Read { fd, count: 100 }, pid);
+        let (_, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => {
+                assert_eq!(data, write_data);
+            }
+            _ => panic!("Expected Data"),
+        }
+    }
+
+    #[test]
+    fn test_read_permission_denied() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create file with no read permission
+        state
+            .vfs
+            .create_file(PathBuf::from("/secret.txt"), b"secret".to_vec())
+            .unwrap();
+        let no_read_perms = wos_shared::vfs::FilePermissions {
+            read: false,
+            write: true,
+            execute: false,
+        };
+        state
+            .vfs
+            .set_permissions(&PathBuf::from("/secret.txt"), no_read_perms)
+            .unwrap();
+
+        // Open file (doesn't check permissions)
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/secret.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        let (state, output) = result.unwrap();
+        let fd = match output {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Try to read (should fail with permission denied)
+        let result = dispatch_syscall(state, SystemCall::Read { fd, count: 100 }, pid);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), KernelError::PermissionDenied);
+    }
+
+    #[test]
+    fn test_write_permission_denied() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create file with no write permission
+        state
+            .vfs
+            .create_file(PathBuf::from("/readonly.txt"), vec![])
+            .unwrap();
+        state
+            .vfs
+            .set_permissions(
+                &PathBuf::from("/readonly.txt"),
+                wos_shared::vfs::FilePermissions::read_only(),
+            )
+            .unwrap();
+
+        // Open file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/readonly.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        let (state, output) = result.unwrap();
+        let fd = match output {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Try to write (should fail with permission denied)
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Write {
+                fd,
+                data: b"data".to_vec(),
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), KernelError::PermissionDenied);
     }
 
     #[test]
