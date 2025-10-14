@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WOS - WebAssembly Operating System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>WOS - WebAssembly Operating System</h1>
+            <p class="subtitle">Educational microkernel running in your browser</p>
+        </header>
+
+        <main>
+            <div class="terminal-container">
+                <div class="terminal-header">
+                    <span class="terminal-title">Terminal</span>
+                    <div class="terminal-controls">
+                        <button id="btn-clear" title="Clear terminal (Ctrl+L)">Clear</button>
+                        <button id="btn-reset" title="Reset OS state">Reset</button>
+                        <button id="btn-save" title="Save state to localStorage">Save</button>
+                        <button id="btn-load" title="Load state from localStorage">Load</button>
+                    </div>
+                </div>
+                <div class="terminal" id="terminal">
+                    <div id="terminal-output"></div>
+                    <div class="terminal-input-line">
+                        <span class="terminal-prompt">wos$ </span>
+                        <input
+                            type="text"
+                            id="terminal-input"
+                            class="terminal-input"
+                            autocomplete="off"
+                            spellcheck="false"
+                            autofocus
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-panels">
+                <div class="info-panel">
+                    <h3>Process List</h3>
+                    <div id="process-list" class="info-content">
+                        <p class="info-placeholder">No processes running</p>
+                    </div>
+                </div>
+
+                <div class="info-panel">
+                    <h3>System Info</h3>
+                    <div id="system-info" class="info-content">
+                        <p><strong>Status:</strong> <span id="status">Initializing...</span></p>
+                        <p><strong>Processes:</strong> <span id="process-count">0</span></p>
+                        <p><strong>Version:</strong> <span id="version">Loading...</span></p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>
+                <strong>Keyboard Shortcuts:</strong>
+                ↑/↓ Command history |
+                Ctrl+L Clear terminal |
+                Ctrl+C Interrupt (not implemented)
+            </p>
+            <p class="credits">
+                Built with Rust + WebAssembly |
+                <a href="https://github.com/anthropics/wos" target="_blank">View Source</a>
+            </p>
+        </footer>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
