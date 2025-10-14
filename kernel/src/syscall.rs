@@ -123,18 +123,75 @@ pub fn dispatch_syscall(
         }
 
         SystemCall::Fork => {
-            // Not implemented yet - placeholder
-            Err(KernelError::NotImplemented)
+            // Fork: create child process
+            let mut new_state = state;
+
+            // Allocate new PID for child
+            let child_pid = new_state.allocate_pid();
+
+            // Get parent process
+            let parent = new_state
+                .get_process(calling_pid)
+                .ok_or(KernelError::ProcessNotFound(calling_pid))?
+                .clone();
+
+            // Create child process (copy of parent)
+            let mut child = parent.clone();
+            child.pid = child_pid;
+            child.parent_pid = Some(calling_pid);
+
+            // Add child to process table
+            new_state.add_process(child);
+
+            // Return child PID to parent
+            Ok((new_state, SyscallOutput::Pid(child_pid)))
         }
 
-        SystemCall::Exit(_code) => {
-            // Not implemented yet - placeholder
-            Err(KernelError::NotImplemented)
+        SystemCall::Exit(code) => {
+            // Exit: terminate calling process
+            let mut new_state = state;
+
+            // Update process state to Terminated
+            if let Some(process) = new_state.get_process_mut(calling_pid) {
+                process.state = crate::state::ProcessState::Terminated(code);
+            } else {
+                return Err(KernelError::ProcessNotFound(calling_pid));
+            }
+
+            Ok((new_state, SyscallOutput::Success))
         }
 
-        SystemCall::WaitPid(_pid) => {
-            // Not implemented yet - placeholder
-            Err(KernelError::NotImplemented)
+        SystemCall::WaitPid(wait_pid) => {
+            // WaitPid: wait for child process to terminate
+            let state_ref = &state;
+
+            // Verify calling process exists
+            if !state_ref.processes.contains_key(&calling_pid) {
+                return Err(KernelError::ProcessNotFound(calling_pid));
+            }
+
+            // Verify target process exists
+            let target = state_ref
+                .get_process(wait_pid)
+                .ok_or(KernelError::ProcessNotFound(wait_pid))?;
+
+            // Verify target is a child of caller
+            if target.parent_pid != Some(calling_pid) {
+                return Err(KernelError::PermissionDenied);
+            }
+
+            // Check if child has terminated
+            match target.state {
+                crate::state::ProcessState::Terminated(exit_code) => {
+                    // Child has exited, return exit code
+                    Ok((state, SyscallOutput::Value(exit_code)))
+                }
+                _ => {
+                    // Child still running - in real OS, would block
+                    // For now, return error to indicate blocking needed
+                    Err(KernelError::InvalidProcessState)
+                }
+            }
         }
 
         SystemCall::Sleep(_duration) => {
@@ -205,11 +262,8 @@ mod tests {
         let proc = Process::new(pid, None);
         state.add_process(proc);
 
-        // Test unimplemented syscalls
+        // Test unimplemented syscalls (Sleep, Open, Close, Read, Write)
         let syscalls = vec![
-            SystemCall::Fork,
-            SystemCall::Exit(0),
-            SystemCall::WaitPid(1),
             SystemCall::Sleep(1000),
             SystemCall::Open {
                 path: "/test".to_string(),
@@ -228,6 +282,156 @@ mod tests {
             assert!(result.is_err());
             assert_eq!(result.unwrap_err(), KernelError::NotImplemented);
         }
+    }
+
+    #[test]
+    fn test_sys_getpid() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        let result = dispatch_syscall(state.clone(), SystemCall::GetPid, pid);
+        assert!(result.is_ok());
+        let (new_state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Pid(pid));
+        assert_eq!(new_state, state); // State unchanged
+    }
+
+    #[test]
+    fn test_sys_fork_creates_child() {
+        let mut state = KernelState::new();
+        let parent_pid = state.allocate_pid();
+        let parent = Process::new(parent_pid, None);
+        state.add_process(parent);
+
+        let result = dispatch_syscall(state.clone(), SystemCall::Fork, parent_pid);
+        assert!(result.is_ok());
+
+        let (new_state, output) = result.unwrap();
+
+        // Should return child PID
+        let child_pid = match output {
+            SyscallOutput::Pid(pid) => pid,
+            _ => panic!("Expected Pid output"),
+        };
+
+        // Child should exist in new state
+        let child = new_state.get_process(child_pid).expect("Child not found");
+        assert_eq!(child.pid, child_pid);
+        assert_eq!(child.parent_pid, Some(parent_pid));
+
+        // Parent should still exist
+        assert!(new_state.get_process(parent_pid).is_some());
+
+        // Process count should increase by 1
+        assert_eq!(new_state.process_count(), state.process_count() + 1);
+    }
+
+    #[test]
+    fn test_sys_exit_terminates_process() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        let exit_code = 42;
+        let result = dispatch_syscall(state, SystemCall::Exit(exit_code), pid);
+        assert!(result.is_ok());
+
+        let (new_state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+
+        // Process should be terminated
+        let proc = new_state.get_process(pid).expect("Process not found");
+        assert!(proc.is_terminated());
+        assert_eq!(
+            proc.state,
+            crate::state::ProcessState::Terminated(exit_code)
+        );
+    }
+
+    #[test]
+    fn test_sys_waitpid_blocks_until_exit() {
+        let mut state = KernelState::new();
+
+        // Create parent
+        let parent_pid = state.allocate_pid();
+        let parent = Process::new(parent_pid, None);
+        state.add_process(parent);
+
+        // Create child (fork)
+        let result = dispatch_syscall(state, SystemCall::Fork, parent_pid);
+        assert!(result.is_ok());
+        let (state, output) = result.unwrap();
+
+        let child_pid = match output {
+            SyscallOutput::Pid(pid) => pid,
+            _ => panic!("Expected Pid output"),
+        };
+
+        // Waitpid on running child should fail (would block)
+        let result = dispatch_syscall(state.clone(), SystemCall::WaitPid(child_pid), parent_pid);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), KernelError::InvalidProcessState);
+
+        // Exit child
+        let result = dispatch_syscall(state, SystemCall::Exit(123), child_pid);
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Now waitpid should succeed
+        let result = dispatch_syscall(state, SystemCall::WaitPid(child_pid), parent_pid);
+        assert!(result.is_ok());
+        let (_state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Value(123));
+    }
+
+    #[test]
+    fn test_fork_wait_pipeline() {
+        let mut state = KernelState::new();
+
+        // Create init process
+        let init_pid = state.allocate_pid();
+        let init = Process::new(init_pid, None);
+        state.add_process(init);
+
+        // Fork
+        let (state, output) = dispatch_syscall(state, SystemCall::Fork, init_pid).unwrap();
+        let child_pid = match output {
+            SyscallOutput::Pid(pid) => pid,
+            _ => panic!("Expected Pid"),
+        };
+
+        // Child exits
+        let (state, _) = dispatch_syscall(state, SystemCall::Exit(0), child_pid).unwrap();
+
+        // Parent waits
+        let (state, output) =
+            dispatch_syscall(state, SystemCall::WaitPid(child_pid), init_pid).unwrap();
+        assert_eq!(output, SyscallOutput::Value(0));
+
+        // Verify state is consistent
+        assert_eq!(state.process_count(), 2); // init + child (still in table)
+    }
+
+    #[test]
+    fn test_waitpid_permission_denied() {
+        let mut state = KernelState::new();
+
+        // Create two unrelated processes
+        let pid1 = state.allocate_pid();
+        let proc1 = Process::new(pid1, None);
+        state.add_process(proc1);
+
+        let pid2 = state.allocate_pid();
+        let proc2 = Process::new(pid2, None);
+        state.add_process(proc2);
+
+        // pid1 tries to wait on pid2 (not its child)
+        let result = dispatch_syscall(state, SystemCall::WaitPid(pid2), pid1);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), KernelError::PermissionDenied);
     }
 
     #[test]
@@ -388,6 +592,162 @@ mod tests {
                     let (new_state, _) = result.unwrap();
                     prop_assert_eq!(new_state, original_state.clone());
                 }
+            }
+
+            /// Property: Fork creates unique PIDs
+            #[test]
+            fn proptest_fork_pid_uniqueness(
+                num_forks in 1..100usize,
+            ) {
+                let mut state = KernelState::new();
+
+                // Create parent
+                let parent_pid = state.allocate_pid();
+                let parent = Process::new(parent_pid, None);
+                state.add_process(parent);
+
+                let mut child_pids = std::collections::HashSet::new();
+
+                // Fork multiple times
+                for _ in 0..num_forks {
+                    let result = dispatch_syscall(state, SystemCall::Fork, parent_pid);
+                    prop_assert!(result.is_ok());
+
+                    let (new_state, output) = result.unwrap();
+                    state = new_state;
+
+                    let child_pid = match output {
+                        SyscallOutput::Pid(pid) => pid,
+                        _ => return Err(proptest::test_runner::TestCaseError::fail("Expected Pid")),
+                    };
+
+                    // All child PIDs must be unique
+                    prop_assert!(child_pids.insert(child_pid), "Duplicate child PID");
+                }
+
+                // Should have created num_forks unique children
+                prop_assert_eq!(child_pids.len(), num_forks);
+            }
+
+            /// Property: Parent-child relationships are always valid
+            #[test]
+            fn proptest_parent_child_relationship(
+                num_children in 1..50usize,
+            ) {
+                let mut state = KernelState::new();
+
+                // Create parent
+                let parent_pid = state.allocate_pid();
+                let parent = Process::new(parent_pid, None);
+                state.add_process(parent);
+
+                // Fork multiple children
+                for _ in 0..num_children {
+                    let result = dispatch_syscall(state, SystemCall::Fork, parent_pid);
+                    prop_assert!(result.is_ok());
+
+                    let (new_state, output) = result.unwrap();
+                    state = new_state;
+
+                    let child_pid = match output {
+                        SyscallOutput::Pid(pid) => pid,
+                        _ => return Err(proptest::test_runner::TestCaseError::fail("Expected Pid")),
+                    };
+
+                    // Verify parent-child relationship
+                    let child = state.get_process(child_pid).unwrap();
+                    prop_assert_eq!(child.parent_pid, Some(parent_pid));
+
+                    // Parent should still exist
+                    prop_assert!(state.get_process(parent_pid).is_some());
+                }
+            }
+
+            /// Property: Exit always terminates process
+            #[test]
+            fn proptest_exit_terminates(
+                exit_code in -128..128i32,
+            ) {
+                let mut state = KernelState::new();
+                let pid = state.allocate_pid();
+                let proc = Process::new(pid, None);
+                state.add_process(proc);
+
+                let result = dispatch_syscall(state, SystemCall::Exit(exit_code), pid);
+                prop_assert!(result.is_ok());
+
+                let (new_state, _) = result.unwrap();
+                let proc = new_state.get_process(pid).unwrap();
+
+                prop_assert!(proc.is_terminated());
+                prop_assert_eq!(&proc.state, &crate::state::ProcessState::Terminated(exit_code));
+            }
+
+            /// Property: WaitPid only succeeds for parent-child relationships
+            #[test]
+            fn proptest_waitpid_parent_child_only(
+                _seed in 0..100u64,
+            ) {
+                let mut state = KernelState::new();
+
+                // Create parent
+                let parent_pid = state.allocate_pid();
+                let parent = Process::new(parent_pid, None);
+                state.add_process(parent);
+
+                // Create unrelated process
+                let unrelated_pid = state.allocate_pid();
+                let unrelated = Process::new(unrelated_pid, None);
+                state.add_process(unrelated);
+
+                // Parent cannot wait on unrelated process
+                let result = dispatch_syscall(state.clone(), SystemCall::WaitPid(unrelated_pid), parent_pid);
+                prop_assert!(result.is_err());
+                prop_assert_eq!(result.unwrap_err(), KernelError::PermissionDenied);
+
+                // Fork a child
+                let (state, output) = dispatch_syscall(state, SystemCall::Fork, parent_pid).unwrap();
+                let child_pid = match output {
+                    SyscallOutput::Pid(pid) => pid,
+                    _ => return Err(proptest::test_runner::TestCaseError::fail("Expected Pid")),
+                };
+
+                // Exit child
+                let (state, _) = dispatch_syscall(state, SystemCall::Exit(0), child_pid).unwrap();
+
+                // Parent can wait on its own child
+                let result = dispatch_syscall(state, SystemCall::WaitPid(child_pid), parent_pid);
+                prop_assert!(result.is_ok());
+            }
+
+            /// Property: Fork-Exit-Wait pipeline always works
+            #[test]
+            fn proptest_fork_exit_wait_pipeline(
+                exit_code in -128..128i32,
+            ) {
+                let mut state = KernelState::new();
+
+                // Create parent
+                let parent_pid = state.allocate_pid();
+                let parent = Process::new(parent_pid, None);
+                state.add_process(parent);
+
+                // Fork
+                let (state, output) = dispatch_syscall(state, SystemCall::Fork, parent_pid).unwrap();
+                let child_pid = match output {
+                    SyscallOutput::Pid(pid) => pid,
+                    _ => return Err(proptest::test_runner::TestCaseError::fail("Expected Pid")),
+                };
+
+                // Child exits
+                let (state, _) = dispatch_syscall(state, SystemCall::Exit(exit_code), child_pid).unwrap();
+
+                // Parent waits
+                let result = dispatch_syscall(state, SystemCall::WaitPid(child_pid), parent_pid);
+                prop_assert!(result.is_ok());
+
+                let (_state, output) = result.unwrap();
+                prop_assert_eq!(output, SyscallOutput::Value(exit_code));
             }
         }
     }
