@@ -58,7 +58,12 @@ wasm:
 			echo "⚠️  Warning: WASM exceeds 500KB target"; \
 		fi; \
 	fi
+	@echo "🔗 Generating JavaScript bindings..."
+	@which wasm-bindgen > /dev/null 2>&1 || (echo "❌ wasm-bindgen not found. Install with: cargo install wasm-bindgen-cli" && exit 1)
+	@wasm-bindgen $(WASM_TARGET) --out-dir dist/wos --target web
 	@echo "✓ WASM build complete"
+	@echo "💡 Start local server: make serve"
+	@echo "💡 Open browser: http://localhost:8000/dist/wos/"
 
 dist: wasm
 

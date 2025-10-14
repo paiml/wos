@@ -1,6 +1,8 @@
 // WOS Terminal Application
 // Integrates WebAssembly kernel with HTML terminal interface
 
+import init, { WosWasm, wos_version } from './wos.js';
+
 class Terminal {
     constructor() {
         this.output = document.getElementById('terminal-output');
@@ -360,7 +362,7 @@ class Terminal {
 }
 
 // Initialize application
-async function init() {
+async function initApp() {
     const terminal = new Terminal();
     const statusElement = document.getElementById('status');
     const versionElement = document.getElementById('version');
@@ -368,87 +370,43 @@ async function init() {
     try {
         statusElement.innerHTML = '<span class="loading"></span> Loading WASM...';
 
-        // For now, we'll create a mock WOS object until the WASM is properly built
-        // In the full implementation, this would load the actual WASM module
-        const mockWOS = {
-            version: '0.1.0',
-            processCount: () => 0,
-            reset: () => {},
-            getState: () => JSON.stringify({ processes: {} }),
-            setState: (state) => {},
-            executeCommand: (cmd) => `Command executed: ${cmd}\n(WASM integration pending)`,
-            getQualityMetrics: () => JSON.stringify({
-                tdg_grade: "A+",
-                tdg_score: 95.5,
-                test_count: 262,
-                unit_test_count: 220,
-                property_test_count: 42,
-                coverage: 88.0,
-                max_complexity: 18,
-                avg_complexity: 7.8,
-                satd_count: 0,
-                lines_of_code: 7200,
-                unsafe_count: 0,
-                clippy_warnings: 0,
-                build_status: "Passing"
-            }),
-            exportQualityHtml: () => `<!DOCTYPE html>
-<html><head><title>WOS Quality Report</title></head>
-<body><h1>WOS Quality Report - Mock</h1>
-<p>TDG Grade: A+ (95.5%)</p>
-<p>Tests: 262 | Coverage: 88.0%</p>
-<p>This is a mock report. Build WASM for full report.</p>
-</body></html>`,
-            exportQualityMarkdown: () => `# WOS Quality Report - Mock
+        // Initialize WASM module
+        await init();
 
-## Summary
-- **TDG Grade**: A+
-- **TDG Score**: 95.5%
-- **Test Count**: 262
-- **Coverage**: 88.0%
+        // Create WOS instance
+        const wos = new WosWasm();
 
-*This is a mock report. Build WASM for full report.*`,
-            exportQualitySarif: () => JSON.stringify({
-                "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-                "version": "2.1.0",
-                "runs": [{
-                    "tool": {
-                        "driver": {
-                            "name": "WOS Quality Dashboard",
-                            "version": "0.1.0"
-                        }
-                    },
-                    "results": [],
-                    "properties": {
-                        "tdg_grade": "A+",
-                        "tdg_score": 95.5,
-                        "test_count": 262
-                    }
-                }]
-            }, null, 2)
-        };
-
-        terminal.setWOS(mockWOS);
+        terminal.setWOS(wos);
 
         statusElement.textContent = 'Ready';
         statusElement.className = '';
-        versionElement.textContent = mockWOS.version;
+
+        // Get and display version
+        const version = wos_version();
+        versionElement.textContent = version;
 
         terminal.printLine('WASM kernel loaded successfully', 'success');
-        terminal.printLine('Note: Full WASM integration pending - using mock interface', 'output');
+        terminal.printLine(version, 'output');
+        terminal.printLine('', 'output');
+        terminal.printLine('Type "help" for available commands', 'output');
         terminal.printLine('', 'output');
 
     } catch (error) {
         console.error('Initialization error:', error);
         statusElement.textContent = 'Error';
         statusElement.className = 'error';
-        terminal.printLine(`Failed to initialize: ${error}`, 'error');
+        terminal.printLine(`Failed to initialize WASM: ${error}`, 'error');
+        terminal.printLine('', 'output');
+        terminal.printLine('This may happen if:', 'output');
+        terminal.printLine('- WASM files are not present', 'output');
+        terminal.printLine('- WASM is not supported in your browser', 'output');
+        terminal.printLine('- Files are being served from file:// instead of http://', 'output');
     }
 }
 
 // Start application when DOM is ready
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', initApp);
 } else {
-    init();
+    initApp();
 }

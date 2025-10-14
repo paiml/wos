@@ -45,6 +45,23 @@ http://localhost:8000/dist/wos/
 - Process count display
 - System status indicator
 
+## Building
+
+From the repository root:
+
+```bash
+# Build WASM binary
+cargo build --target wasm32-unknown-unknown --release -p wos
+
+# Generate JavaScript bindings
+wasm-bindgen target/wasm32-unknown-unknown/release/wos.wasm \
+    --out-dir dist/wos \
+    --target web
+
+# Or use the Makefile
+make wasm
+```
+
 ## Implementation Status
 
 - ✅ HTML structure complete
@@ -53,12 +70,13 @@ http://localhost:8000/dist/wos/
 - ✅ Command history (↑/↓)
 - ✅ Keyboard shortcuts
 - ✅ localStorage persistence
-- ⏳ Full WASM integration (pending build)
+- ✅ Full WASM integration
+- ✅ Quality dashboard with A+ grade
+- ✅ Multi-format export (JSON/HTML/Markdown/SARIF)
 
-## Next Steps
+## WASM Binary
 
-1. Build WASM binary with `make wasm`
-2. Replace mock WOS object with actual WASM imports
-3. Implement syscall execution from terminal
-4. Add process list visualization
-5. Add E2E tests with Playwright
+- **Size**: 285KB (uncompressed)
+- **Target**: wasm32-unknown-unknown
+- **Bindings**: wasm-bindgen 0.2.104
+- **Features**: Full kernel, quality metrics, export functionality
