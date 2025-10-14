@@ -135,6 +135,76 @@ pub enum SyscallOutput {
     FileDescriptor(u32),
 }
 
+/// Generate /proc/PID/status content
+fn generate_proc_status(state: &KernelState, pid: ProcessId) -> Result<Vec<u8>, KernelError> {
+    let process = state
+        .get_process(pid)
+        .ok_or(KernelError::FileNotFound(format!("/proc/{}/status", pid)))?;
+
+    let state_str = match &process.state {
+        crate::state::ProcessState::Ready => "Ready",
+        crate::state::ProcessState::Running => "Running",
+        crate::state::ProcessState::Blocked => "Blocked",
+        crate::state::ProcessState::Terminated(_) => "Terminated",
+    };
+
+    let parent_pid = process.parent_pid.unwrap_or(0);
+    let memory_pages = process.memory_pages.len();
+
+    let content = format!(
+        "Pid:\t{}\nState:\t{}\nPPid:\t{}\nMemoryPages:\t{}\n",
+        pid, state_str, parent_pid, memory_pages
+    );
+
+    Ok(content.into_bytes())
+}
+
+/// Generate /proc/PID/cmdline content
+fn generate_proc_cmdline(state: &KernelState, pid: ProcessId) -> Result<Vec<u8>, KernelError> {
+    // Check if process exists
+    state
+        .get_process(pid)
+        .ok_or(KernelError::FileNotFound(format!("/proc/{}/cmdline", pid)))?;
+
+    // For now, return placeholder since we don't track command line args yet
+    // In a real implementation, this would be stored in the Process struct
+    let content = format!("process_{}\0", pid);
+    Ok(content.into_bytes())
+}
+
+/// Check if path is a ProcFS path and generate content
+fn try_read_procfs(
+    state: &KernelState,
+    path: &std::path::Path,
+    calling_pid: ProcessId,
+) -> Option<Result<Vec<u8>, KernelError>> {
+    let path_str = path.to_str()?;
+
+    // Handle /proc/self/* by resolving to calling process
+    if let Some(rest) = path_str.strip_prefix("/proc/self/") {
+        let resolved_path = PathBuf::from(format!("/proc/{}/{}", calling_pid, rest));
+        return try_read_procfs(state, &resolved_path, calling_pid);
+    }
+
+    // Parse /proc/PID/file paths
+    if path_str.starts_with("/proc/") {
+        let parts: Vec<&str> = path_str.split('/').collect();
+        if parts.len() >= 4 {
+            // parts: ["", "proc", "PID", "file"]
+            if let Ok(pid) = parts[2].parse::<ProcessId>() {
+                let file = parts[3];
+                return Some(match file {
+                    "status" => generate_proc_status(state, pid),
+                    "cmdline" => generate_proc_cmdline(state, pid),
+                    _ => Err(KernelError::FileNotFound(path_str.to_string())),
+                });
+            }
+        }
+    }
+
+    None
+}
+
 /// Dispatch a system call
 ///
 /// Pure functional dispatcher: takes kernel state and syscall, returns new state and output.
@@ -286,7 +356,15 @@ pub fn dispatch_syscall(
                 .get_file_path(fd)
                 .ok_or(KernelError::InvalidFileDescriptor(fd))?;
 
-            // Read from VFS
+            // Check if this is a ProcFS path and handle specially
+            if let Some(procfs_result) = try_read_procfs(&new_state, path, calling_pid) {
+                let content = procfs_result?;
+                let bytes_to_return = content.len().min(count);
+                let data = content[..bytes_to_return].to_vec();
+                return Ok((new_state, SyscallOutput::Data(data)));
+            }
+
+            // Read from VFS for regular files
             match new_state.vfs.read_file(path) {
                 Ok(content) => {
                     // Return up to 'count' bytes
@@ -1467,6 +1545,190 @@ mod tests {
         );
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), KernelError::PermissionDenied);
+    }
+
+    #[test]
+    fn test_read_proc_status() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let mut proc = Process::new(pid, Some(100)); // Parent PID is 100
+        proc.memory_pages = vec![1, 2, 3]; // Allocate some memory pages
+        state.add_process(proc);
+
+        // Manually open /proc/PID/status
+        let mut process = state.get_process(pid).unwrap().clone();
+        let fd = process.open_file(PathBuf::from(format!("/proc/{}/status", pid)));
+        state.processes.insert(pid, process);
+
+        // Read from /proc/PID/status
+        let result = dispatch_syscall(state, SystemCall::Read { fd, count: 1000 }, pid);
+        let (_, output) = result.unwrap();
+
+        match output {
+            SyscallOutput::Data(data) => {
+                let content = String::from_utf8(data).unwrap();
+                assert!(content.contains(&format!("Pid:\t{}", pid)));
+                assert!(content.contains("State:\tReady"));
+                assert!(content.contains("PPid:\t100"));
+                assert!(content.contains("MemoryPages:\t3"));
+            }
+            _ => panic!("Expected Data"),
+        }
+    }
+
+    #[test]
+    fn test_read_proc_cmdline() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Manually open /proc/PID/cmdline
+        let mut process = state.get_process(pid).unwrap().clone();
+        let fd = process.open_file(PathBuf::from(format!("/proc/{}/cmdline", pid)));
+        state.processes.insert(pid, process);
+
+        // Read from /proc/PID/cmdline
+        let result = dispatch_syscall(state, SystemCall::Read { fd, count: 1000 }, pid);
+        let (_, output) = result.unwrap();
+
+        match output {
+            SyscallOutput::Data(data) => {
+                let content = String::from_utf8_lossy(&data);
+                assert!(content.contains(&format!("process_{}", pid)));
+            }
+            _ => panic!("Expected Data"),
+        }
+    }
+
+    #[test]
+    fn test_proc_self_symlink() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Open /proc/self/status
+        let mut process = state.get_process(pid).unwrap().clone();
+        let fd = process.open_file(PathBuf::from("/proc/self/status"));
+        state.processes.insert(pid, process);
+
+        // Read from /proc/self/status (should resolve to calling process)
+        let result = dispatch_syscall(state, SystemCall::Read { fd, count: 1000 }, pid);
+        let (_, output) = result.unwrap();
+
+        match output {
+            SyscallOutput::Data(data) => {
+                let content = String::from_utf8(data).unwrap();
+                // Should contain the calling process's PID
+                assert!(content.contains(&format!("Pid:\t{}", pid)));
+                assert!(content.contains("State:\tReady"));
+            }
+            _ => panic!("Expected Data"),
+        }
+    }
+
+    #[test]
+    fn test_proc_nonexistent_process() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to open /proc/999/status where 999 doesn't exist
+        let mut process = state.get_process(pid).unwrap().clone();
+        let fd = process.open_file(PathBuf::from("/proc/999/status"));
+        state.processes.insert(pid, process);
+
+        // Read should fail with FileNotFound
+        let result = dispatch_syscall(state, SystemCall::Read { fd, count: 1000 }, pid);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            KernelError::FileNotFound(_) => {}
+            _ => panic!("Expected FileNotFound"),
+        }
+    }
+
+    #[test]
+    fn test_proc_invalid_file() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to open /proc/PID/invalid
+        let mut process = state.get_process(pid).unwrap().clone();
+        let fd = process.open_file(PathBuf::from(format!("/proc/{}/invalid", pid)));
+        state.processes.insert(pid, process);
+
+        // Read should fail with FileNotFound
+        let result = dispatch_syscall(state, SystemCall::Read { fd, count: 1000 }, pid);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            KernelError::FileNotFound(_) => {}
+            _ => panic!("Expected FileNotFound"),
+        }
+    }
+
+    #[test]
+    fn test_proc_status_different_states() {
+        let mut state = KernelState::new();
+
+        // Create process in Running state
+        let pid1 = state.allocate_pid();
+        let mut proc1 = Process::new(pid1, None);
+        proc1.state = crate::state::ProcessState::Running;
+        state.add_process(proc1);
+
+        // Create process in Terminated state
+        let pid2 = state.allocate_pid();
+        let mut proc2 = Process::new(pid2, None);
+        proc2.state = crate::state::ProcessState::Terminated(0);
+        state.add_process(proc2);
+
+        // Read running process status
+        let mut process1 = state.get_process(pid1).unwrap().clone();
+        let fd1 = process1.open_file(PathBuf::from(format!("/proc/{}/status", pid1)));
+        state.processes.insert(pid1, process1);
+
+        let result1 = dispatch_syscall(
+            state.clone(),
+            SystemCall::Read {
+                fd: fd1,
+                count: 1000,
+            },
+            pid1,
+        );
+        let (mut state, output1) = result1.unwrap();
+        match output1 {
+            SyscallOutput::Data(data) => {
+                let content = String::from_utf8(data).unwrap();
+                assert!(content.contains("State:\tRunning"));
+            }
+            _ => panic!("Expected Data"),
+        }
+
+        // Read terminated process status
+        let mut process2 = state.get_process(pid2).unwrap().clone();
+        let fd2 = process2.open_file(PathBuf::from(format!("/proc/{}/status", pid2)));
+        state.processes.insert(pid2, process2);
+
+        let result2 = dispatch_syscall(
+            state,
+            SystemCall::Read {
+                fd: fd2,
+                count: 1000,
+            },
+            pid2,
+        );
+        let (_, output2) = result2.unwrap();
+        match output2 {
+            SyscallOutput::Data(data) => {
+                let content = String::from_utf8(data).unwrap();
+                assert!(content.contains("State:\tTerminated"));
+            }
+            _ => panic!("Expected Data"),
+        }
     }
 
     #[test]
