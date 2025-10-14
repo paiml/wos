@@ -8,6 +8,10 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod init;
+
+pub use init::{init_main_loop, InitProcess};
+
 /// Placeholder for userspace implementation
 pub fn userspace_version() -> &'static str {
     "0.1.0"
