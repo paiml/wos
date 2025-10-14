@@ -403,6 +403,237 @@ mod tests {
         assert!(!vm.is_mapped(1));
     }
 
+    #[test]
+    fn test_mmap_basic() {
+        let mut vm = VirtualMemory::new();
+        let layout = vm.layout().clone();
+
+        // Allocate 1 page
+        let addr = vm.mmap(PAGE_SIZE).unwrap();
+        assert_eq!(addr, layout.heap_start);
+        assert_eq!(vm.mapped_page_count(), 1);
+
+        // Verify page is mapped
+        let vpage = VirtualMemory::vaddr_to_page(addr);
+        assert!(vm.is_mapped(vpage));
+    }
+
+    #[test]
+    fn test_mmap_multiple_pages() {
+        let mut vm = VirtualMemory::new();
+        let layout = vm.layout().clone();
+
+        // Allocate 3 pages
+        let addr = vm.mmap(3 * PAGE_SIZE).unwrap();
+        assert_eq!(addr, layout.heap_start);
+        assert_eq!(vm.mapped_page_count(), 3);
+
+        // Verify all pages are mapped
+        for i in 0..3 {
+            let vpage = VirtualMemory::vaddr_to_page(addr + (i * PAGE_SIZE) as u64);
+            assert!(vm.is_mapped(vpage));
+        }
+    }
+
+    #[test]
+    fn test_mmap_rounds_up_to_page() {
+        let mut vm = VirtualMemory::new();
+
+        // Allocate 1 byte (should round up to 1 page)
+        let addr = vm.mmap(1).unwrap();
+        assert_eq!(vm.mapped_page_count(), 1);
+
+        // Allocate PAGE_SIZE + 1 bytes (should round up to 2 pages)
+        let addr2 = vm.mmap(PAGE_SIZE + 1).unwrap();
+        assert_eq!(vm.mapped_page_count(), 3); // 1 + 2 pages
+        assert!(addr2 > addr);
+    }
+
+    #[test]
+    fn test_mmap_zero_size() {
+        let mut vm = VirtualMemory::new();
+
+        // Zero-size allocation should return None
+        let result = vm.mmap(0);
+        assert_eq!(result, None);
+        assert_eq!(vm.mapped_page_count(), 0);
+    }
+
+    #[test]
+    fn test_mmap_sequential_allocations() {
+        let mut vm = VirtualMemory::new();
+        let layout = vm.layout().clone();
+
+        // First allocation
+        let addr1 = vm.mmap(PAGE_SIZE).unwrap();
+        assert_eq!(addr1, layout.heap_start);
+
+        // Second allocation should be contiguous
+        let addr2 = vm.mmap(PAGE_SIZE).unwrap();
+        assert_eq!(addr2, layout.heap_start + PAGE_SIZE as u64);
+
+        // Third allocation
+        let addr3 = vm.mmap(2 * PAGE_SIZE).unwrap();
+        assert_eq!(addr3, layout.heap_start + (2 * PAGE_SIZE) as u64);
+
+        assert_eq!(vm.mapped_page_count(), 4); // 1 + 1 + 2 pages
+    }
+
+    #[test]
+    fn test_mmap_out_of_memory() {
+        let mut vm = VirtualMemory::new();
+        let layout = vm.layout().clone();
+
+        // Try to allocate more than heap size
+        let result = vm.mmap(layout.heap_size + PAGE_SIZE);
+        assert_eq!(result, None);
+
+        // Allocate maximum heap size
+        let addr = vm.mmap(layout.heap_size).unwrap();
+        assert_eq!(addr, layout.heap_start);
+
+        // Next allocation should fail
+        let result2 = vm.mmap(PAGE_SIZE);
+        assert_eq!(result2, None);
+    }
+
+    #[test]
+    fn test_munmap_basic() {
+        let mut vm = VirtualMemory::new();
+
+        // Allocate and then free
+        let addr = vm.mmap(PAGE_SIZE).unwrap();
+        assert_eq!(vm.mapped_page_count(), 1);
+
+        let result = vm.munmap(addr, PAGE_SIZE);
+        assert!(result);
+        assert_eq!(vm.mapped_page_count(), 0);
+
+        // Verify page is unmapped
+        let vpage = VirtualMemory::vaddr_to_page(addr);
+        assert!(!vm.is_mapped(vpage));
+    }
+
+    #[test]
+    fn test_munmap_multiple_pages() {
+        let mut vm = VirtualMemory::new();
+
+        // Allocate 5 pages
+        let addr = vm.mmap(5 * PAGE_SIZE).unwrap();
+        assert_eq!(vm.mapped_page_count(), 5);
+
+        // Free all 5 pages
+        let result = vm.munmap(addr, 5 * PAGE_SIZE);
+        assert!(result);
+        assert_eq!(vm.mapped_page_count(), 0);
+
+        // Verify all pages are unmapped
+        for i in 0..5 {
+            let vpage = VirtualMemory::vaddr_to_page(addr + (i * PAGE_SIZE) as u64);
+            assert!(!vm.is_mapped(vpage));
+        }
+    }
+
+    #[test]
+    fn test_munmap_partial_range() {
+        let mut vm = VirtualMemory::new();
+
+        // Allocate 5 pages
+        let addr = vm.mmap(5 * PAGE_SIZE).unwrap();
+        assert_eq!(vm.mapped_page_count(), 5);
+
+        // Free middle 3 pages
+        let middle_addr = addr + PAGE_SIZE as u64;
+        let result = vm.munmap(middle_addr, 3 * PAGE_SIZE);
+        assert!(result);
+        assert_eq!(vm.mapped_page_count(), 2);
+
+        // First and last pages should still be mapped
+        let vpage0 = VirtualMemory::vaddr_to_page(addr);
+        let vpage4 = VirtualMemory::vaddr_to_page(addr + (4 * PAGE_SIZE) as u64);
+        assert!(vm.is_mapped(vpage0));
+        assert!(vm.is_mapped(vpage4));
+
+        // Middle pages should be unmapped
+        for i in 1..4 {
+            let vpage = VirtualMemory::vaddr_to_page(addr + (i * PAGE_SIZE) as u64);
+            assert!(!vm.is_mapped(vpage));
+        }
+    }
+
+    #[test]
+    fn test_munmap_zero_size() {
+        let mut vm = VirtualMemory::new();
+
+        // Allocate a page
+        let addr = vm.mmap(PAGE_SIZE).unwrap();
+
+        // Zero-size munmap should succeed and do nothing
+        let result = vm.munmap(addr, 0);
+        assert!(result);
+        assert_eq!(vm.mapped_page_count(), 1);
+    }
+
+    #[test]
+    fn test_munmap_unmapped_fails() {
+        let mut vm = VirtualMemory::new();
+        let layout = vm.layout().clone();
+
+        // Try to unmap unmapped pages
+        let result = vm.munmap(layout.heap_start, PAGE_SIZE);
+        assert!(!result); // Should fail
+    }
+
+    #[test]
+    fn test_munmap_partially_mapped_fails() {
+        let mut vm = VirtualMemory::new();
+
+        // Allocate 2 pages
+        let addr = vm.mmap(2 * PAGE_SIZE).unwrap();
+
+        // Try to unmap 3 pages (one unmapped)
+        let result = vm.munmap(addr, 3 * PAGE_SIZE);
+        assert!(!result); // Should fail
+
+        // Original pages should still be mapped (all-or-nothing)
+        assert_eq!(vm.mapped_page_count(), 2);
+    }
+
+    #[test]
+    fn test_is_range_mapped() {
+        let mut vm = VirtualMemory::new();
+
+        // Allocate 3 pages
+        let addr = vm.mmap(3 * PAGE_SIZE).unwrap();
+
+        // Range should be fully mapped
+        assert!(vm.is_range_mapped(addr, 3 * PAGE_SIZE));
+        assert!(vm.is_range_mapped(addr, PAGE_SIZE));
+        assert!(vm.is_range_mapped(addr + PAGE_SIZE as u64, PAGE_SIZE));
+
+        // Beyond allocation should not be mapped
+        assert!(!vm.is_range_mapped(addr, 4 * PAGE_SIZE));
+        assert!(!vm.is_range_mapped(addr + (3 * PAGE_SIZE) as u64, PAGE_SIZE));
+
+        // Zero-size range is always "mapped"
+        assert!(vm.is_range_mapped(addr, 0));
+        assert!(vm.is_range_mapped(0, 0));
+    }
+
+    #[test]
+    fn test_mmap_munmap_cycle() {
+        let mut vm = VirtualMemory::new();
+
+        // Allocate, free, allocate again
+        let addr1 = vm.mmap(PAGE_SIZE).unwrap();
+        vm.munmap(addr1, PAGE_SIZE);
+        let addr2 = vm.mmap(PAGE_SIZE).unwrap();
+
+        // Note: Sequential allocator doesn't reuse freed pages
+        // Second allocation comes after first
+        assert!(addr2 > addr1);
+    }
+
     // Property-based tests
     #[cfg(test)]
     mod proptests {
@@ -514,6 +745,201 @@ mod tests {
                 prop_assert!(code_end <= layout.data_start);
                 prop_assert!(data_end <= layout.heap_start);
                 prop_assert!(heap_end <= stack_end);
+            }
+
+            /// Property: mmap always returns addresses in heap region
+            #[test]
+            fn proptest_mmap_returns_heap_addresses(
+                size in 1..1024usize,
+            ) {
+                let mut vm = VirtualMemory::new();
+                let layout = vm.layout().clone();
+
+                if let Some(addr) = vm.mmap(size) {
+                    prop_assert!(addr >= layout.heap_start);
+                    prop_assert!(addr < layout.heap_start + layout.heap_size as u64);
+                }
+            }
+
+            /// Property: mmap allocates correct number of pages
+            #[test]
+            fn proptest_mmap_allocates_correct_pages(
+                size in 1..10000usize,
+            ) {
+                let mut vm = VirtualMemory::new();
+                let initial_count = vm.mapped_page_count();
+
+                if let Some(_addr) = vm.mmap(size) {
+                    let expected_pages = size.div_ceil(PAGE_SIZE);
+                    let actual_pages = vm.mapped_page_count() - initial_count;
+                    prop_assert_eq!(actual_pages, expected_pages);
+                }
+            }
+
+            /// Property: mmap returns sequential addresses
+            #[test]
+            fn proptest_mmap_sequential(
+                sizes in prop::collection::vec(1..1000usize, 1..10),
+            ) {
+                let mut vm = VirtualMemory::new();
+                let mut prev_addr: Option<u64> = None;
+                let mut prev_size: usize = 0;
+
+                for size in sizes {
+                    if let Some(addr) = vm.mmap(size) {
+                        if let Some(prev) = prev_addr {
+                            let prev_pages = prev_size.div_ceil(PAGE_SIZE);
+                            let expected_addr = prev + (prev_pages * PAGE_SIZE) as u64;
+                            prop_assert_eq!(addr, expected_addr);
+                        }
+                        prev_addr = Some(addr);
+                        prev_size = size;
+                    } else {
+                        // Out of memory - stop
+                        break;
+                    }
+                }
+            }
+
+            /// Property: munmap all-or-nothing semantics
+            #[test]
+            fn proptest_munmap_all_or_nothing(
+                alloc_size in 1..10000usize,
+                unmap_size in 1..20000usize,
+            ) {
+                let mut vm = VirtualMemory::new();
+
+                // Allocate
+                if let Some(addr) = vm.mmap(alloc_size) {
+                    let count_before = vm.mapped_page_count();
+
+                    // Try to unmap
+                    let result = vm.munmap(addr, unmap_size);
+
+                    if result {
+                        // If successful, pages should be unmapped
+                        let unmap_pages = unmap_size.div_ceil(PAGE_SIZE);
+                        prop_assert!(vm.mapped_page_count() <= count_before);
+                        prop_assert!(vm.mapped_page_count() >= count_before - unmap_pages);
+                    } else {
+                        // If failed, count should be unchanged
+                        prop_assert_eq!(vm.mapped_page_count(), count_before);
+                    }
+                }
+            }
+
+            /// Property: munmap of mapped range always succeeds
+            #[test]
+            fn proptest_munmap_mapped_succeeds(
+                size in 1..10000usize,
+            ) {
+                let mut vm = VirtualMemory::new();
+
+                // Allocate
+                if let Some(addr) = vm.mmap(size) {
+                    // Unmapping the exact range should always succeed
+                    let result = vm.munmap(addr, size);
+                    prop_assert!(result);
+
+                    // Pages should be unmapped
+                    let num_pages = size.div_ceil(PAGE_SIZE);
+                    for i in 0..num_pages {
+                        let vpage = VirtualMemory::vaddr_to_page(addr + (i * PAGE_SIZE) as u64);
+                        prop_assert!(!vm.is_mapped(vpage));
+                    }
+                }
+            }
+
+            /// Property: is_range_mapped is consistent with individual page checks
+            #[test]
+            fn proptest_is_range_mapped_consistent(
+                size in 1..10000usize,
+            ) {
+                let mut vm = VirtualMemory::new();
+
+                if let Some(addr) = vm.mmap(size) {
+                    // Range should be mapped
+                    prop_assert!(vm.is_range_mapped(addr, size));
+
+                    // Each individual page should be mapped
+                    let num_pages = size.div_ceil(PAGE_SIZE);
+                    for i in 0..num_pages {
+                        let vpage = VirtualMemory::vaddr_to_page(addr + (i * PAGE_SIZE) as u64);
+                        prop_assert!(vm.is_mapped(vpage));
+                    }
+                }
+            }
+
+            /// Property: mmap/munmap roundtrip preserves page count
+            #[test]
+            fn proptest_mmap_munmap_roundtrip(
+                operations in prop::collection::vec((1..1000usize, 0..2usize), 1..20),
+            ) {
+                let mut vm = VirtualMemory::new();
+                let mut allocated = Vec::new();
+
+                for (size, op) in operations {
+                    match op {
+                        0 => {
+                            // mmap
+                            if let Some(addr) = vm.mmap(size) {
+                                allocated.push((addr, size));
+                            }
+                        }
+                        _ => {
+                            // munmap
+                            if let Some((addr, size)) = allocated.pop() {
+                                vm.munmap(addr, size);
+                            }
+                        }
+                    }
+                }
+
+                // Page count should match remaining allocations
+                let expected_pages: usize = allocated
+                    .iter()
+                    .map(|(_, size)| size.div_ceil(PAGE_SIZE))
+                    .sum();
+                prop_assert_eq!(vm.mapped_page_count(), expected_pages);
+            }
+
+            /// Property: mmap never returns same address twice (without munmap)
+            #[test]
+            fn proptest_mmap_unique_addresses(
+                sizes in prop::collection::vec(1..1000usize, 1..20),
+            ) {
+                let mut vm = VirtualMemory::new();
+                let mut addresses = std::collections::HashSet::new();
+
+                for size in sizes {
+                    if let Some(addr) = vm.mmap(size) {
+                        // Address should be unique
+                        prop_assert!(!addresses.contains(&addr));
+                        addresses.insert(addr);
+                    } else {
+                        // Out of memory - ok to stop
+                        break;
+                    }
+                }
+            }
+
+            /// Property: Zero-size operations are safe
+            #[test]
+            fn proptest_zero_size_safe(
+                _seed in 0..100u32,
+            ) {
+                let mut vm = VirtualMemory::new();
+
+                // Zero-size mmap returns None
+                prop_assert_eq!(vm.mmap(0), None);
+
+                // Zero-size munmap succeeds
+                prop_assert!(vm.munmap(0, 0));
+                prop_assert!(vm.munmap(vm.layout().heap_start, 0));
+
+                // Zero-size is_range_mapped returns true
+                prop_assert!(vm.is_range_mapped(0, 0));
+                prop_assert!(vm.is_range_mapped(vm.layout().heap_start, 0));
             }
         }
     }

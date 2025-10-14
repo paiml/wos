@@ -488,6 +488,265 @@ mod tests {
     }
 
     #[test]
+    fn test_sys_mmap_basic() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Allocate 4096 bytes (1 page)
+        let result = dispatch_syscall(state.clone(), SystemCall::Mmap { size: 4096 }, pid);
+        assert!(result.is_ok());
+
+        let (new_state, output) = result.unwrap();
+        let addr = match output {
+            SyscallOutput::Address(a) => a,
+            _ => panic!("Expected Address output"),
+        };
+
+        // Should return heap start address
+        let proc = new_state.get_process(pid).unwrap();
+        assert_eq!(addr, proc.memory.layout().heap_start);
+        assert_eq!(proc.memory.mapped_page_count(), 1);
+    }
+
+    #[test]
+    fn test_sys_mmap_multiple_allocations() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // First allocation
+        let result1 = dispatch_syscall(state.clone(), SystemCall::Mmap { size: 4096 }, pid);
+        assert!(result1.is_ok());
+        let (state, output1) = result1.unwrap();
+        let addr1 = match output1 {
+            SyscallOutput::Address(a) => a,
+            _ => panic!("Expected Address output"),
+        };
+
+        // Second allocation
+        let result2 = dispatch_syscall(state.clone(), SystemCall::Mmap { size: 8192 }, pid);
+        assert!(result2.is_ok());
+        let (state, output2) = result2.unwrap();
+        let addr2 = match output2 {
+            SyscallOutput::Address(a) => a,
+            _ => panic!("Expected Address output"),
+        };
+
+        // Second address should be after first
+        assert!(addr2 > addr1);
+
+        // Should have 3 pages total (1 + 2)
+        let proc = state.get_process(pid).unwrap();
+        assert_eq!(proc.memory.mapped_page_count(), 3);
+    }
+
+    #[test]
+    fn test_sys_mmap_zero_size() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Zero-size allocation should fail
+        let result = dispatch_syscall(state, SystemCall::Mmap { size: 0 }, pid);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            KernelError::ResourceExhausted(_)
+        ));
+    }
+
+    #[test]
+    fn test_sys_mmap_out_of_memory() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        let heap_size = proc.memory.layout().heap_size;
+        state.add_process(proc);
+
+        // Try to allocate more than heap size
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Mmap {
+                size: heap_size + 4096,
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            KernelError::ResourceExhausted(_)
+        ));
+    }
+
+    #[test]
+    fn test_sys_mmap_invalid_process() {
+        let state = KernelState::new();
+        let invalid_pid = 999;
+
+        let result = dispatch_syscall(state, SystemCall::Mmap { size: 4096 }, invalid_pid);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            KernelError::ProcessNotFound(invalid_pid)
+        );
+    }
+
+    #[test]
+    fn test_sys_munmap_basic() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Allocate memory
+        let result = dispatch_syscall(state.clone(), SystemCall::Mmap { size: 4096 }, pid);
+        assert!(result.is_ok());
+        let (state, output) = result.unwrap();
+        let addr = match output {
+            SyscallOutput::Address(a) => a,
+            _ => panic!("Expected Address output"),
+        };
+
+        // Verify allocation
+        let proc = state.get_process(pid).unwrap();
+        assert_eq!(proc.memory.mapped_page_count(), 1);
+
+        // Free memory
+        let result = dispatch_syscall(state.clone(), SystemCall::Munmap { addr, size: 4096 }, pid);
+        assert!(result.is_ok());
+        let (new_state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+
+        // Verify freed
+        let proc = new_state.get_process(pid).unwrap();
+        assert_eq!(proc.memory.mapped_page_count(), 0);
+    }
+
+    #[test]
+    fn test_sys_munmap_partial_range() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Allocate 3 pages
+        let result = dispatch_syscall(state.clone(), SystemCall::Mmap { size: 12288 }, pid);
+        assert!(result.is_ok());
+        let (state, output) = result.unwrap();
+        let addr = match output {
+            SyscallOutput::Address(a) => a,
+            _ => panic!("Expected Address output"),
+        };
+
+        // Free middle page
+        let middle_addr = addr + 4096;
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Munmap {
+                addr: middle_addr,
+                size: 4096,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (new_state, _) = result.unwrap();
+
+        // Should have 2 pages left
+        let proc = new_state.get_process(pid).unwrap();
+        assert_eq!(proc.memory.mapped_page_count(), 2);
+    }
+
+    #[test]
+    fn test_sys_munmap_unmapped_fails() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        let heap_start = proc.memory.layout().heap_start;
+        state.add_process(proc);
+
+        // Try to free unmapped memory
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Munmap {
+                addr: heap_start,
+                size: 4096,
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            KernelError::InvalidParameters(_)
+        ));
+    }
+
+    #[test]
+    fn test_sys_munmap_invalid_process() {
+        let state = KernelState::new();
+        let invalid_pid = 999;
+
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Munmap {
+                addr: 0x3000_0000,
+                size: 4096,
+            },
+            invalid_pid,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            KernelError::ProcessNotFound(invalid_pid)
+        );
+    }
+
+    #[test]
+    fn test_sys_mmap_munmap_integration() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Allocate, free, allocate cycle
+        let result1 = dispatch_syscall(state.clone(), SystemCall::Mmap { size: 4096 }, pid);
+        assert!(result1.is_ok());
+        let (state, output1) = result1.unwrap();
+        let addr1 = match output1 {
+            SyscallOutput::Address(a) => a,
+            _ => panic!("Expected Address output"),
+        };
+
+        let result2 = dispatch_syscall(
+            state.clone(),
+            SystemCall::Munmap {
+                addr: addr1,
+                size: 4096,
+            },
+            pid,
+        );
+        assert!(result2.is_ok());
+        let (state, _) = result2.unwrap();
+
+        let result3 = dispatch_syscall(state, SystemCall::Mmap { size: 4096 }, pid);
+        assert!(result3.is_ok());
+        let (new_state, output3) = result3.unwrap();
+        let addr3 = match output3 {
+            SyscallOutput::Address(a) => a,
+            _ => panic!("Expected Address output"),
+        };
+
+        // Note: Sequential allocator doesn't reuse freed pages
+        assert!(addr3 > addr1);
+
+        let proc = new_state.get_process(pid).unwrap();
+        assert_eq!(proc.memory.mapped_page_count(), 1);
+    }
+
+    #[test]
     fn test_syscall_serialization() {
         // Test SystemCall serialization
         let syscall = SystemCall::GetPid;
@@ -499,6 +758,21 @@ mod tests {
         let syscall = SystemCall::Write {
             fd: 1,
             data: vec![1, 2, 3],
+        };
+        let json = serde_json::to_string(&syscall).unwrap();
+        let syscall2: SystemCall = serde_json::from_str(&json).unwrap();
+        assert_eq!(syscall, syscall2);
+
+        // Test mmap
+        let syscall = SystemCall::Mmap { size: 4096 };
+        let json = serde_json::to_string(&syscall).unwrap();
+        let syscall2: SystemCall = serde_json::from_str(&json).unwrap();
+        assert_eq!(syscall, syscall2);
+
+        // Test munmap
+        let syscall = SystemCall::Munmap {
+            addr: 0x3000_0000,
+            size: 4096,
         };
         let json = serde_json::to_string(&syscall).unwrap();
         let syscall2: SystemCall = serde_json::from_str(&json).unwrap();
