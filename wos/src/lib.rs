@@ -94,6 +94,11 @@ impl WosWasm {
             return String::new(); // Assignment produces no output
         }
 
+        // Check for export command
+        if let Some(args) = command.strip_prefix("export ") {
+            return self.handle_export(args);
+        }
+
         // Parse command pipeline
         let pipeline = wos_shared::parse_pipeline(command);
 
@@ -147,6 +152,46 @@ impl WosWasm {
         };
 
         Some((name.to_string(), value.to_string()))
+    }
+
+    /// Handle export command
+    /// Supports: export VAR=value, export VAR, export VAR1=val1 VAR2=val2
+    fn handle_export(&mut self, args: &str) -> String {
+        let args = args.trim();
+        if args.is_empty() {
+            self.last_exit_code = 0;
+            return String::new();
+        }
+
+        // Split by whitespace to handle multiple exports
+        let parts: Vec<&str> = args.split_whitespace().collect();
+
+        for part in parts {
+            if let Some((name, value)) = self.parse_assignment(part) {
+                // export VAR=value
+                self.variables.insert(name, value);
+            } else {
+                // export VAR (without value) - just marks as exported
+                // For MVP, we treat this as a no-op since we don't track exported state
+                // The variable should already exist
+                let var_name = part.trim();
+                if !var_name.is_empty() {
+                    // Validate it's a valid variable name
+                    if var_name
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_alphabetic() || c == '_')
+                        && var_name.chars().all(|c| c.is_alphanumeric() || c == '_')
+                    {
+                        // Variable exists, just mark as exported (no-op for MVP)
+                        // In full implementation, would set exported flag
+                    }
+                }
+            }
+        }
+
+        self.last_exit_code = 0;
+        String::new() // export produces no output
     }
 
     /// Expand variables in a string ($VAR or ${VAR} -> value)
@@ -1167,5 +1212,42 @@ mod tests {
         wos.execute_command("invalidcmd");
         let output2 = wos.execute_command("echo $?");
         assert!(output2.contains("1"), "Failed command should return 1");
+    }
+
+    // Export command tests - Sprint 4E
+    #[test]
+    fn test_export_with_value() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("export PATH=/usr/bin");
+        let output = wos.execute_command("echo $PATH");
+
+        assert!(
+            output.contains("/usr/bin"),
+            "Should set and export variable"
+        );
+    }
+
+    #[test]
+    fn test_export_without_value() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("MYVAR=test");
+        wos.execute_command("export MYVAR");
+        let output = wos.execute_command("echo $MYVAR");
+
+        assert!(output.contains("test"), "Should export existing variable");
+    }
+
+    #[test]
+    fn test_export_multiple_variables() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("export VAR1=one VAR2=two");
+        let output = wos.execute_command("echo $VAR1 $VAR2");
+
+        assert!(output.contains("one"), "Should contain first variable");
+        assert!(output.contains("two"), "Should contain second variable");
+        assert!(output.contains("one two"), "Should have both variables");
     }
 }
