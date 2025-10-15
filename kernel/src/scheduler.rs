@@ -378,4 +378,12 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_scheduler_default() {
+        let scheduler1 = Scheduler::default();
+        let scheduler2 = Scheduler::new();
+        assert_eq!(scheduler1.ready_count(), scheduler2.ready_count());
+        assert_eq!(scheduler1, scheduler2);
+    }
 }

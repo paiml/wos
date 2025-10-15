@@ -1,0 +1,50 @@
+{
+  "tasks": {
+    "lint": "deno lint",
+    "lint:fix": "deno lint --fix",
+    "fmt": "deno fmt",
+    "fmt:check": "deno fmt --check",
+    "check": "deno check app.js",
+    "validate": "deno task fmt:check && deno task lint && deno task check"
+  },
+  "lint": {
+    "include": ["app.js"],
+    "exclude": ["wos.js", "wos_bg.wasm"],
+    "rules": {
+      "tags": ["recommended"],
+      "include": [
+        "ban-untagged-todo",
+        "camelcase",
+        "eqeqeq",
+        "explicit-function-return-type",
+        "no-await-in-loop",
+        "no-const-assign",
+        "no-debugger",
+        "no-eval",
+        "no-explicit-any",
+        "no-sparse-arrays",
+        "no-throw-literal",
+        "no-unused-vars",
+        "prefer-const"
+      ]
+    }
+  },
+  "fmt": {
+    "include": ["app.js", "index.html", "style.css"],
+    "exclude": ["wos.js"],
+    "options": {
+      "useTabs": false,
+      "lineWidth": 100,
+      "indentWidth": 2,
+      "singleQuote": true,
+      "proseWrap": "preserve"
+    }
+  },
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true
+  }
+}

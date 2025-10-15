@@ -75,9 +75,88 @@ impl WosWasm {
     /// Parses a command and executes it, returning the output
     #[wasm_bindgen(js_name = executeCommand)]
     pub fn execute_command(&mut self, command: &str) -> String {
-        // For now, return a simple response
-        // In a full implementation, this would parse the command and execute it
-        format!("Command executed: {}", command)
+        let command = command.trim();
+        if command.is_empty() {
+            return String::new();
+        }
+
+        // Parse command and arguments
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        let cmd_name = parts[0];
+        let args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
+
+        // Built-in commands
+        match cmd_name {
+            "help" => self.cmd_help(),
+            "ps" => self.cmd_ps(args),
+            "echo" => self.cmd_echo(args),
+            "version" => wos_version(),
+            "state" => self.cmd_state(),
+            "reset" => {
+                self.reset();
+                "System reset complete".to_string()
+            }
+            _ => format!(
+                "Unknown command: {}\nType 'help' for available commands",
+                cmd_name
+            ),
+        }
+    }
+
+    // Helper methods for command execution
+    fn cmd_help(&self) -> String {
+        let mut output = String::from("Available commands:\n");
+        output.push_str("  help      - Show this help message\n");
+        output.push_str("  ps        - List processes\n");
+        output.push_str("  echo      - Echo arguments\n");
+        output.push_str("  version   - Show system version\n");
+        output.push_str("  state     - Show kernel state\n");
+        output.push_str("  reset     - Reset system to initial state\n");
+        output
+    }
+
+    fn cmd_ps(&self, _args: Vec<String>) -> String {
+        let mut output = String::from("PID\tSTATE\t\t\tPARENT\n");
+        output.push_str("---\t-----\t\t\t------\n");
+
+        for (pid, process) in &self.state.processes {
+            let parent = process
+                .parent_pid
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "-".to_string());
+
+            let state_str = format!("{:?}", process.state);
+
+            output.push_str(&format!("{}\t{:16}\t{}\n", pid, state_str, parent));
+        }
+
+        if self.state.processes.is_empty() {
+            output.push_str("No processes running\n");
+        }
+
+        output
+    }
+
+    fn cmd_echo(&self, args: Vec<String>) -> String {
+        args.join(" ")
+    }
+
+    fn cmd_state(&self) -> String {
+        let proc_count = self.state.processes.len();
+
+        // Count total memory pages across all processes
+        let mut total_mem_pages = 0;
+        for process in self.state.processes.values() {
+            total_mem_pages += process.memory_pages.len();
+        }
+
+        let mut output = String::from("Kernel State:\n");
+        output.push_str(&format!("  Processes: {}\n", proc_count));
+        output.push_str(&format!("  Total Memory Pages: {}\n", total_mem_pages));
+        output.push_str(&format!("  Next PID: {}\n", self.state.next_pid));
+        output.push_str(&format!("  Current PID: {:?}\n", self.state.current_pid));
+
+        output
     }
 
     /// Get current kernel state as JSON
@@ -296,11 +375,110 @@ mod tests {
     }
 
     #[test]
-    fn test_wos_wasm_execute_command() {
+    fn test_wos_wasm_execute_command_echo() {
         let mut wos = WosWasm::new();
-        let result = wos.execute_command("echo hello");
+        let result = wos.execute_command("echo hello world");
 
-        assert!(result.contains("echo hello"));
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_help() {
+        let mut wos = WosWasm::new();
+        let result = wos.execute_command("help");
+
+        assert!(result.contains("Available commands"));
+        assert!(result.contains("help"));
+        assert!(result.contains("ps"));
+        assert!(result.contains("echo"));
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_version() {
+        let mut wos = WosWasm::new();
+        let result = wos.execute_command("version");
+
+        assert!(result.starts_with("WOS v"));
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_ps_empty() {
+        let mut wos = WosWasm::new();
+        let result = wos.execute_command("ps");
+
+        assert!(result.contains("PID"));
+        assert!(result.contains("No processes running"));
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_ps_with_processes() {
+        let mut wos = WosWasm::new();
+
+        // Add a process
+        let proc = Process::new(1, None);
+        wos.state.add_process(proc);
+
+        let result = wos.execute_command("ps");
+
+        assert!(result.contains("PID"));
+        assert!(result.contains("1"));
+        assert!(!result.contains("No processes running"));
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_state() {
+        let mut wos = WosWasm::new();
+
+        // Add a process
+        let proc = Process::new(1, None);
+        wos.state.add_process(proc);
+
+        let result = wos.execute_command("state");
+
+        assert!(result.contains("Kernel State"));
+        assert!(result.contains("Processes: 1"));
+        assert!(result.contains("Next PID"));
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_reset() {
+        let mut wos = WosWasm::new();
+
+        // Add a process
+        let proc = Process::new(1, None);
+        wos.state.add_process(proc);
+
+        assert_eq!(wos.process_count(), 1);
+
+        let result = wos.execute_command("reset");
+
+        assert!(result.contains("reset complete"));
+        assert_eq!(wos.process_count(), 0);
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_unknown() {
+        let mut wos = WosWasm::new();
+        let result = wos.execute_command("unknown_command");
+
+        assert!(result.contains("Unknown command"));
+        assert!(result.contains("unknown_command"));
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_empty() {
+        let mut wos = WosWasm::new();
+        let result = wos.execute_command("");
+
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_whitespace() {
+        let mut wos = WosWasm::new();
+        let result = wos.execute_command("   ");
+
+        assert_eq!(result, "");
     }
 
     #[test]

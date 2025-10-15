@@ -1461,4 +1461,57 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_page_permissions_default() {
+        let perms = PagePermissions::default();
+        assert!(perms.allows_read());
+        assert!(perms.allows_write());
+        assert!(!perms.allows_execute());
+    }
+
+    #[test]
+    fn test_virtual_memory_default() {
+        let vm1 = VirtualMemory::default();
+        let vm2 = VirtualMemory::new();
+        assert_eq!(vm1.layout().heap_start, vm2.layout().heap_start);
+        assert_eq!(vm1.mapped_page_count(), vm2.mapped_page_count());
+    }
+
+    #[test]
+    fn test_virtual_memory_with_layout() {
+        let custom_layout = MemoryLayout {
+            code_start: 0x0040_0000,
+            code_size: 0x0010_0000,
+            data_start: 0x0050_0000,
+            data_size: 0x0010_0000,
+            heap_start: 0x1000_0000,
+            heap_size: 0x1000_0000,
+            stack_start: 0x7000_0000,
+            stack_size: 0x1000_0000,
+        };
+        let vm = VirtualMemory::with_layout(custom_layout.clone());
+        assert_eq!(vm.layout().heap_start, custom_layout.heap_start);
+        assert_eq!(vm.layout().heap_size, custom_layout.heap_size);
+        assert_eq!(vm.layout().stack_start, custom_layout.stack_start);
+        assert_eq!(vm.layout().stack_size, custom_layout.stack_size);
+    }
+
+    #[test]
+    fn test_get_page_entry() {
+        let mut vm = VirtualMemory::new();
+        let vpage = 5;
+
+        // Page not mapped initially
+        assert_eq!(vm.get_page_entry(vpage), None);
+
+        // Map the page
+        vm.map_page(vpage, 100, PagePermissions::read_only());
+
+        // Now entry should exist
+        let entry = vm.get_page_entry(vpage);
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap().physical_page, 100);
+        assert!(entry.unwrap().permissions.allows_read());
+    }
 }

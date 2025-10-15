@@ -1,0 +1,22 @@
+# Mutation Testing Configuration for WOS
+# Documentation: https://mutants.rs/
+
+# Exclude generated code and test files
+exclude_globs = [
+    "*/tests/*",
+    "*/benches/*",
+    "**/target/**",
+    "dist/**",
+]
+
+# Timeout multiplier (tests must complete within 5x normal time)
+timeout_multiplier = 5.0
+
+# Minimum test timeout in seconds
+minimum_test_timeout = 20.0
+
+# Test with all features
+test_workspace = true
+
+# Use default skip_calls to avoid trivial mutations
+skip_calls_defaults = true

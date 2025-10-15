@@ -449,4 +449,12 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_kernel_state_default() {
+        let state1 = KernelState::default();
+        let state2 = KernelState::new();
+        assert_eq!(state1.process_count(), state2.process_count());
+        assert_eq!(state1.process_count(), 0);
+    }
 }

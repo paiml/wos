@@ -1,113 +1,111 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WOS - WebAssembly Operating System</title>
     <link rel="stylesheet" href="style.css">
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <header>
-            <h1>WOS - WebAssembly Operating System</h1>
-            <p class="subtitle">Educational microkernel running in your browser</p>
-        </header>
+      <header>
+        <h1>WOS - WebAssembly Operating System</h1>
+        <p class="subtitle">Educational microkernel running in your browser</p>
+      </header>
 
-        <main>
-            <div class="terminal-container">
-                <div class="terminal-header">
-                    <span class="terminal-title">Terminal</span>
-                    <div class="terminal-controls">
-                        <button id="btn-clear" title="Clear terminal (Ctrl+L)">Clear</button>
-                        <button id="btn-reset" title="Reset OS state">Reset</button>
-                        <button id="btn-save" title="Save state to localStorage">Save</button>
-                        <button id="btn-load" title="Load state from localStorage">Load</button>
-                    </div>
-                </div>
-                <div class="terminal" id="terminal">
-                    <div id="terminal-output"></div>
-                    <div class="terminal-input-line">
-                        <span class="terminal-prompt">wos$ </span>
-                        <input
-                            type="text"
-                            id="terminal-input"
-                            class="terminal-input"
-                            autocomplete="off"
-                            spellcheck="false"
-                            autofocus
-                        />
-                    </div>
-                </div>
+      <main>
+        <div class="terminal-container">
+          <div class="terminal-header">
+            <span class="terminal-title">Terminal</span>
+            <div class="terminal-controls">
+              <button id="btn-clear" title="Clear terminal (Ctrl+L)">Clear</button>
+              <button id="btn-reset" title="Reset OS state">Reset</button>
+              <button id="btn-save" title="Save state to localStorage">Save</button>
+              <button id="btn-load" title="Load state from localStorage">Load</button>
             </div>
-
-            <div class="info-panels">
-                <div class="info-panel">
-                    <h3>Process List</h3>
-                    <div id="process-list" class="info-content">
-                        <p class="info-placeholder">No processes running</p>
-                    </div>
-                </div>
-
-                <div class="info-panel">
-                    <h3>System Info</h3>
-                    <div id="system-info" class="info-content">
-                        <p><strong>Status:</strong> <span id="status">Initializing...</span></p>
-                        <p><strong>Processes:</strong> <span id="process-count">0</span></p>
-                        <p><strong>Version:</strong> <span id="version">Loading...</span></p>
-                    </div>
-                </div>
-
-                <div class="info-panel quality-panel">
-                    <h3>Quality Dashboard</h3>
-                    <div id="quality-info" class="info-content">
-                        <div class="quality-grade">
-                            <div class="grade-label">TDG Grade</div>
-                            <div class="grade-value" id="tdg-grade">-</div>
-                            <div class="grade-score" id="tdg-score">-</div>
-                        </div>
-                        <div class="quality-metrics">
-                            <div class="quality-metric">
-                                <span class="metric-label">Tests:</span>
-                                <span class="metric-value" id="test-count">-</span>
-                            </div>
-                            <div class="quality-metric">
-                                <span class="metric-label">Coverage:</span>
-                                <span class="metric-value" id="coverage">-</span>
-                            </div>
-                            <div class="quality-metric">
-                                <span class="metric-label">Complexity:</span>
-                                <span class="metric-value" id="complexity">-</span>
-                            </div>
-                            <div class="quality-metric">
-                                <span class="metric-label">SATD:</span>
-                                <span class="metric-value" id="satd-count">-</span>
-                            </div>
-                        </div>
-                        <div class="quality-exports">
-                            <button id="btn-export-json" class="export-btn">Export JSON</button>
-                            <button id="btn-export-html" class="export-btn">Export HTML</button>
-                            <button id="btn-export-md" class="export-btn">Export MD</button>
-                            <button id="btn-export-sarif" class="export-btn">Export SARIF</button>
-                        </div>
-                    </div>
-                </div>
+          </div>
+          <div class="terminal" id="terminal">
+            <div id="terminal-output"></div>
+            <div class="terminal-input-line">
+              <span class="terminal-prompt">wos$ </span>
+              <input
+                type="text"
+                id="terminal-input"
+                class="terminal-input"
+                autocomplete="off"
+                spellcheck="false"
+                autofocus
+              />
             </div>
-        </main>
+          </div>
+        </div>
 
-        <footer>
-            <p>
-                <strong>Keyboard Shortcuts:</strong>
-                ↑/↓ Command history |
-                Ctrl+L Clear terminal |
-                Ctrl+C Interrupt (not implemented)
-            </p>
-            <p class="credits">
-                Built with Rust + WebAssembly |
-                <a href="https://github.com/anthropics/wos" target="_blank">View Source</a>
-            </p>
-        </footer>
+        <div class="info-panels">
+          <div class="info-panel">
+            <h3>Process List</h3>
+            <div id="process-list" class="info-content">
+              <p class="info-placeholder">No processes running</p>
+            </div>
+          </div>
+
+          <div class="info-panel">
+            <h3>System Info</h3>
+            <div id="system-info" class="info-content">
+              <p><strong>Status:</strong> <span id="status">Initializing...</span></p>
+              <p><strong>Processes:</strong> <span id="process-count">0</span></p>
+              <p><strong>Version:</strong> <span id="version">Loading...</span></p>
+            </div>
+          </div>
+
+          <div class="info-panel quality-panel">
+            <h3>Quality Dashboard</h3>
+            <div id="quality-info" class="info-content">
+              <div class="quality-grade">
+                <div class="grade-label">TDG Grade</div>
+                <div class="grade-value" id="tdg-grade">-</div>
+                <div class="grade-score" id="tdg-score">-</div>
+              </div>
+              <div class="quality-metrics">
+                <div class="quality-metric">
+                  <span class="metric-label">Tests:</span>
+                  <span class="metric-value" id="test-count">-</span>
+                </div>
+                <div class="quality-metric">
+                  <span class="metric-label">Coverage:</span>
+                  <span class="metric-value" id="coverage">-</span>
+                </div>
+                <div class="quality-metric">
+                  <span class="metric-label">Complexity:</span>
+                  <span class="metric-value" id="complexity">-</span>
+                </div>
+                <div class="quality-metric">
+                  <span class="metric-label">SATD:</span>
+                  <span class="metric-value" id="satd-count">-</span>
+                </div>
+              </div>
+              <div class="quality-exports">
+                <button id="btn-export-json" class="export-btn">Export JSON</button>
+                <button id="btn-export-html" class="export-btn">Export HTML</button>
+                <button id="btn-export-md" class="export-btn">Export MD</button>
+                <button id="btn-export-sarif" class="export-btn">Export SARIF</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <p>
+          <strong>Keyboard Shortcuts:</strong>
+          ↑/↓ Command history | Ctrl+L Clear terminal | Ctrl+C Interrupt (not implemented)
+        </p>
+        <p class="credits">
+          Built with Rust + WebAssembly |
+          <a href="https://github.com/anthropics/wos" target="_blank">View Source</a>
+        </p>
+      </footer>
     </div>
 
     <script type="module" src="app.js"></script>
-</body>
+  </body>
 </html>

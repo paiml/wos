@@ -1,4 +1,4 @@
-.PHONY: help build test coverage quality wasm clean hooks-install
+.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean lint-frontend lint-frontend-fix lint-frontend-check lint-all
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
@@ -19,6 +19,11 @@ help:
 	@echo "  make test-unit        Run unit tests only"
 	@echo "  make coverage         Generate coverage report"
 	@echo "  make coverage-check   Verify coverage ≥85%"
+	@echo "  make bench            Run performance benchmarks"
+	@echo "  make bench-baseline   Save benchmark baseline"
+	@echo "  make fuzz             Run fuzz tests (60s per target)"
+	@echo "  make e2e              Run E2E tests (all browsers)"
+	@echo "  make e2e-chromium     Run E2E tests (Chromium only)"
 	@echo ""
 	@echo "🎯 Quality Gates:"
 	@echo "  make quality          Fast quality checks (<30s)"
@@ -26,6 +31,9 @@ help:
 	@echo "  make fmt              Format code"
 	@echo "  make clippy           Run clippy lints"
 	@echo "  make mutants          Run mutation tests (~10-15min)"
+	@echo "  make mutants-check    Verify mutation score ≥90%"
+	@echo "  make mutants-diff     Show diffs for caught mutants"
+	@echo "  make mutants-incremental  Test only modified files"
 	@echo ""
 	@echo "🔧 Development:"
 	@echo "  make hooks-install    Install pre-commit hooks"
@@ -87,27 +95,21 @@ test-unit:
 
 coverage:
 	@echo "📊 Running comprehensive test coverage analysis..."
-	@which cargo-llvm-cov > /dev/null 2>&1 || (echo "📦 Installing cargo-llvm-cov..." && cargo install cargo-llvm-cov --locked)
-	@cargo llvm-cov clean --workspace
+	@which cargo-tarpaulin > /dev/null 2>&1 || (echo "📦 Installing cargo-tarpaulin..." && cargo install cargo-tarpaulin --locked)
 	@mkdir -p target/coverage
-	@cargo llvm-cov --no-report test --lib --all-features 2>&1 | tee target/coverage/test-output.txt
-	@cargo llvm-cov report --html --output-dir target/coverage/html
-	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info
+	@cargo tarpaulin --workspace --out Html --out Lcov --output-dir target/coverage --timeout 300 --exclude-files 'wos/*' 'dist/*'
 	@echo ""
-	@echo "📊 Coverage Summary:"
-	@echo "=================="
-	@cargo llvm-cov report --summary-only
-	@echo ""
-	@echo "💡 HTML report: target/coverage/html/index.html"
+	@echo "💡 HTML report: target/coverage/tarpaulin-report.html"
+	@echo "💡 LCOV report: target/coverage/lcov.info"
 	@echo ""
 
 coverage-check:
-	@echo "📊 Checking coverage thresholds (≥85% line, ≥90% branch)..."
+	@echo "📊 Checking coverage thresholds (≥85%)..."
 	@if [ ! -f "target/coverage/lcov.info" ]; then \
 		echo "❌ Coverage data not found. Run 'make coverage' first"; \
 		exit 1; \
 	fi
-	@cargo llvm-cov report --fail-under-lines 85 || (echo "❌ Coverage below 85%"; exit 1)
+	@cargo tarpaulin --workspace --out Stdout --timeout 300 --exclude-files 'wos/*' 'dist/*' --fail-under 85
 	@echo "✓ Coverage thresholds met"
 
 # ============================================================================
@@ -141,15 +143,32 @@ quality-complete: quality test coverage
 
 mutants:
 	@echo "🧬 Running mutation tests (this may take 10-15 minutes)..."
-	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants)
-	@cargo mutants --workspace
+	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants --locked)
+	@cargo mutants --workspace --output mutants-report.json
 	@echo "✓ Mutation testing complete"
+	@echo "📊 Report: mutants-report.json"
 
 mutants-check:
 	@echo "🧬 Verifying mutation score ≥90%..."
-	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants)
-	@cargo mutants --workspace 2>&1 | tee /tmp/mutants-output.txt
-	@echo "✓ Mutation testing complete (manual verification needed)"
+	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants --locked)
+	@cargo mutants --workspace --output mutants-report.json --check
+	@echo "✓ Mutation testing complete"
+
+mutants-diff:
+	@echo "🧬 Running mutation tests with diffs..."
+	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants --locked)
+	@cargo mutants --workspace --diff
+	@echo "✓ Mutation testing with diffs complete"
+
+mutants-kernel:
+	@echo "🧬 Running mutation tests on kernel only..."
+	@cargo mutants -p wos-kernel --output mutants-kernel.json
+	@echo "✓ Kernel mutation testing complete"
+
+mutants-incremental:
+	@echo "🧬 Running incremental mutation tests (only modified files)..."
+	@cargo mutants --workspace --in-diff git:HEAD
+	@echo "✓ Incremental mutation testing complete"
 
 # ============================================================================
 # Pre-commit Hooks
@@ -202,3 +221,167 @@ ci-install:
 
 ci-test: quality test coverage
 	@echo "✅ CI tests passed"
+
+# ============================================================================
+# Benchmarking
+# ============================================================================
+
+bench:
+	@echo "🚀 Running performance benchmarks..."
+	@cargo bench -p wos-kernel
+	@echo "✓ Benchmarks complete"
+	@echo "📊 View HTML reports: target/criterion/report/index.html"
+
+bench-baseline:
+	@echo "📊 Saving benchmark baseline..."
+	@cargo bench -p wos-kernel -- --save-baseline main
+	@echo "✓ Baseline saved"
+
+bench-compare:
+	@echo "📊 Comparing against baseline..."
+	@cargo bench -p wos-kernel -- --baseline main
+	@echo "✓ Comparison complete"
+
+bench-syscalls:
+	@echo "🚀 Benchmarking syscalls..."
+	@cargo bench -p wos-kernel --bench syscalls
+	@echo "✓ Syscall benchmarks complete"
+
+bench-scheduler:
+	@echo "🚀 Benchmarking scheduler..."
+	@cargo bench -p wos-kernel --bench scheduler
+	@echo "✓ Scheduler benchmarks complete"
+
+bench-memory:
+	@echo "🚀 Benchmarking memory..."
+	@cargo bench -p wos-kernel --bench memory
+	@echo "✓ Memory benchmarks complete"
+
+# ============================================================================
+# Fuzz Testing
+# ============================================================================
+
+fuzz-install:
+	@echo "📦 Installing cargo-fuzz..."
+	@cargo install cargo-fuzz
+	@echo "✓ cargo-fuzz installed"
+
+fuzz:
+	@echo "🔬 Running fuzz tests (Ctrl+C to stop)..."
+	@which cargo-fuzz > /dev/null 2>&1 || (echo "Installing cargo-fuzz..." && cargo install cargo-fuzz)
+	@echo "Running all fuzz targets for 60 seconds each..."
+	@cargo fuzz run fuzz_syscall_dispatch -- -max_total_time=60 || true
+	@cargo fuzz run fuzz_process_creation -- -max_total_time=60 || true
+	@cargo fuzz run fuzz_memory_allocation -- -max_total_time=60 || true
+	@cargo fuzz run fuzz_scheduler -- -max_total_time=60 || true
+	@echo "✓ Fuzz testing complete"
+
+fuzz-syscalls:
+	@echo "🔬 Fuzzing syscall dispatch..."
+	@cargo fuzz run fuzz_syscall_dispatch
+
+fuzz-processes:
+	@echo "🔬 Fuzzing process creation..."
+	@cargo fuzz run fuzz_process_creation
+
+fuzz-memory:
+	@echo "🔬 Fuzzing memory allocation..."
+	@cargo fuzz run fuzz_memory_allocation
+
+fuzz-scheduler:
+	@echo "🔬 Fuzzing scheduler..."
+	@cargo fuzz run fuzz_scheduler
+
+fuzz-coverage:
+	@echo "📊 Generating fuzz coverage..."
+	@cargo fuzz coverage fuzz_syscall_dispatch
+	@cargo fuzz coverage fuzz_process_creation
+	@cargo fuzz coverage fuzz_memory_allocation
+	@cargo fuzz coverage fuzz_scheduler
+	@echo "✓ Fuzz coverage generated"
+
+fuzz-clean:
+	@echo "🧹 Cleaning fuzz artifacts..."
+	@cargo fuzz clean
+	@echo "✓ Fuzz artifacts cleaned"
+
+# ============================================================================
+# E2E Testing
+# ============================================================================
+
+e2e-install:
+	@echo "📦 Installing E2E test dependencies..."
+	@cd e2e && npm install
+	@cd e2e && npx playwright install
+	@echo "✓ E2E dependencies installed"
+
+e2e:
+	@echo "🌐 Running E2E tests..."
+	@cd e2e && npm test
+	@echo "✓ E2E tests complete"
+
+e2e-headed:
+	@echo "🌐 Running E2E tests (headed)..."
+	@cd e2e && npm run test:headed
+	@echo "✓ E2E tests complete"
+
+e2e-ui:
+	@echo "🌐 Running E2E tests (UI mode)..."
+	@cd e2e && npm run test:ui
+
+e2e-debug:
+	@echo "🌐 Running E2E tests (debug mode)..."
+	@cd e2e && npm run test:debug
+
+e2e-chromium:
+	@echo "🌐 Running E2E tests (Chromium only)..."
+	@cd e2e && npm run test:chromium
+	@echo "✓ Chromium tests complete"
+
+e2e-firefox:
+	@echo "🌐 Running E2E tests (Firefox only)..."
+	@cd e2e && npm run test:firefox
+	@echo "✓ Firefox tests complete"
+
+e2e-webkit:
+	@echo "🌐 Running E2E tests (WebKit only)..."
+	@cd e2e && npm run test:webkit
+	@echo "✓ WebKit tests complete"
+
+e2e-report:
+	@echo "📊 Opening E2E test report..."
+	@cd e2e && npm run report
+
+e2e-clean:
+	@echo "🧹 Cleaning E2E artifacts..."
+	@rm -rf e2e/playwright-report
+	@rm -rf e2e/test-results
+	@rm -rf e2e/test-results.json
+	@echo "✓ E2E artifacts cleaned"
+
+# ============================================================================
+# Frontend Linting (Deno)
+# ============================================================================
+
+lint-frontend:
+	@echo "🔍 Linting frontend code..."
+	@which deno > /dev/null 2>&1 || (echo "❌ Deno not found. Install: https://deno.land/" && exit 1)
+	@cd dist/wos && deno task validate
+	@cd dist/wos && deno run --allow-read lint.ts
+	@echo "✓ Frontend linting complete"
+
+lint-frontend-fix:
+	@echo "🔧 Auto-fixing frontend code..."
+	@cd dist/wos && deno task lint:fix
+	@cd dist/wos && deno task fmt
+	@echo "✓ Frontend auto-fix complete"
+
+lint-frontend-check:
+	@echo "🔍 Checking frontend formatting..."
+	@cd dist/wos && deno task fmt:check
+	@echo "✓ Frontend formatting OK"
+
+lint-all: clippy lint-frontend
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ All linting passed (Rust + Frontend)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

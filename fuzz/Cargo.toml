@@ -1,0 +1,43 @@
+[package]
+name = "wos-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+wos-kernel = { path = "../kernel" }
+wos-shared = { path = "../shared" }
+serde_json = "1.0"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_syscall_dispatch"
+path = "fuzz_targets/fuzz_syscall_dispatch.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_process_creation"
+path = "fuzz_targets/fuzz_process_creation.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_memory_allocation"
+path = "fuzz_targets/fuzz_memory_allocation.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_scheduler"
+path = "fuzz_targets/fuzz_scheduler.rs"
+test = false
+doc = false
