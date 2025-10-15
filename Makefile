@@ -1,4 +1,4 @@
-.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-all
+.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-all
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
@@ -30,9 +30,10 @@ help:
 	@echo "  make fuzz             Run fuzz tests (60s per target)"
 	@echo "  make e2e              Run E2E tests (all browsers)"
 	@echo "  make e2e-chromium     Run E2E tests (Chromium only)"
-	@echo "  make canary           Run canary tests (SQLite-inspired)"
-	@echo "  make canary-fast      Run fast canary tests (<5 min)"
-	@echo "  make canary-terminal  Run terminal canary tests (C01-C09)"
+	@echo "  make canary           Run canary tests (59 tests, Chromium, ~2-3 min)"
+	@echo "  make canary-all       Run canary tests (all browsers, ~15-20 min)"
+	@echo "  make canary-fast      Run fast canary tests (terminal only, ~1 min)"
+	@echo "  make canary-terminal  Run terminal canary tests"
 	@echo ""
 	@echo "🎯 Quality Gates:"
 	@echo "  make quality          Fast quality checks (<30s)"
@@ -428,13 +429,18 @@ e2e-clean:
 # ============================================================================
 
 canary:
-	@echo "🐤 Running canary tests (50 critical user workflows)..."
-	@cd e2e && npx playwright test tests/canary/ --reporter=list
+	@echo "🐤 Running canary tests (59 tests, Chromium only, ~2-3 min)..."
+	@cd e2e && npx playwright test tests/canary/ --project=chromium --reporter=list
 	@echo "✓ Canary tests complete"
 
+canary-all:
+	@echo "🐤 Running canary tests (all browsers, ~15-20 min)..."
+	@cd e2e && npx playwright test tests/canary/ --reporter=list
+	@echo "✓ Canary tests complete (all browsers)"
+
 canary-fast:
-	@echo "🐤 Running fast canary tests (<5 min)..."
-	@cd e2e && npx playwright test tests/canary/01-terminal-interaction.spec.ts --reporter=list
+	@echo "🐤 Running fast canary tests (terminal only, ~1 min)..."
+	@cd e2e && npx playwright test tests/canary/01-terminal-interaction.spec.ts --project=chromium --reporter=list
 	@echo "✓ Fast canary tests complete"
 
 canary-terminal:
