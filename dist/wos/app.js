@@ -47,7 +47,7 @@ class Terminal {
           }
         }
       } // Ctrl+L - clear terminal
-      else if (e.ctrlKey && e.key === 'l') {
+      else if (e.ctrlKey && (e.key === 'l' || e.key === 'L')) {
         e.preventDefault();
         this.clear();
       }
@@ -232,8 +232,8 @@ class Terminal {
 
   printVersion() {
     if (this.wos) {
-      const version = this.wos.version || 'Unknown';
-      this.printLine(`WOS Version: ${version}`, 'output');
+      const version = wos_version();
+      this.printLine(version, 'output');
     } else {
       this.printLine('WOS Version: Not loaded', 'error');
     }
