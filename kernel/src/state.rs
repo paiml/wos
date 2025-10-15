@@ -168,6 +168,26 @@ impl KernelState {
         }
     }
 
+    /// Create kernel state with init and shell processes
+    pub fn with_init() -> Self {
+        let mut state = Self::new();
+
+        // Create init process (PID 1)
+        let init = Process::new(1, None);
+        state.add_process(init);
+        state.next_pid = 2;
+
+        // Create shell process (PID 2, child of init)
+        let shell = Process::new(2, Some(1));
+        state.add_process(shell);
+        state.next_pid = 3;
+
+        // Set current process to shell
+        state.current_pid = Some(2);
+
+        state
+    }
+
     /// Allocate a new process ID
     pub fn allocate_pid(&mut self) -> ProcessId {
         let pid = self.next_pid;
@@ -217,6 +237,28 @@ mod tests {
         assert_eq!(state.next_pid, 1);
         assert_eq!(state.process_count(), 0);
         assert_eq!(state.current_pid, None);
+    }
+
+    #[test]
+    fn test_kernel_state_with_init() {
+        let state = KernelState::with_init();
+
+        // Should have 2 processes: init (PID 1) and shell (PID 2)
+        assert_eq!(state.process_count(), 2);
+        assert_eq!(state.next_pid, 3);
+        assert_eq!(state.current_pid, Some(2));
+
+        // Verify init process (PID 1)
+        let init = state.get_process(1).expect("init process should exist");
+        assert_eq!(init.pid, 1);
+        assert_eq!(init.parent_pid, None);
+        assert!(init.is_runnable());
+
+        // Verify shell process (PID 2)
+        let shell = state.get_process(2).expect("shell process should exist");
+        assert_eq!(shell.pid, 2);
+        assert_eq!(shell.parent_pid, Some(1));
+        assert!(shell.is_runnable());
     }
 
     #[test]

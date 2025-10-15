@@ -87,8 +87,9 @@ test.describe('Canary: Process Management', () => {
 
     const outputText = await getLastOutput(page);
 
-    // Shell process should exist
-    expect(outputText.toLowerCase()).toContain('shell');
+    // Shell process should exist (PID 2, child of init)
+    expect(outputText).toMatch(/\b2\b/); // PID 2
+    expect(outputText).toMatch(/2.*1/); // PID 2 with parent PID 1
 
     // Shell should be able to execute commands (proves it's responsive)
     await executeCommand(page, 'echo shell is alive');

@@ -40,7 +40,7 @@ impl WosWasm {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
-            state: KernelState::new(),
+            state: KernelState::with_init(),
         }
     }
 
@@ -146,10 +146,12 @@ impl WosWasm {
         if files.is_empty() {
             String::new()
         } else {
-            files.iter()
+            files
+                .iter()
                 .map(|p| p.display().to_string())
                 .collect::<Vec<_>>()
-                .join("\n") + "\n"
+                .join("\n")
+                + "\n"
         }
     }
 
@@ -199,7 +201,7 @@ impl WosWasm {
     /// Reset to initial state
     #[wasm_bindgen]
     pub fn reset(&mut self) {
-        self.state = KernelState::new();
+        self.state = KernelState::with_init();
     }
 
     /// Get quality metrics as JSON
@@ -245,38 +247,40 @@ mod tests {
     #[test]
     fn test_wos_wasm_new() {
         let wos = WosWasm::new();
-        assert_eq!(wos.state.processes.len(), 0);
+        // Should start with init and shell processes
+        assert_eq!(wos.state.processes.len(), 2);
     }
 
     #[test]
     fn test_wos_wasm_process_count() {
         let mut wos = WosWasm::new();
-        assert_eq!(wos.process_count(), 0);
+        // Should start with init and shell processes
+        assert_eq!(wos.process_count(), 2);
 
-        // Add a process to state
+        // Add another process to state
         let mut state = wos.state.clone();
-        let proc = Process::new(1, None);
+        let proc = Process::new(3, Some(2));
         state.add_process(proc);
         wos.state = state;
 
-        assert_eq!(wos.process_count(), 1);
+        assert_eq!(wos.process_count(), 3);
     }
 
     #[test]
     fn test_wos_wasm_reset() {
         let mut wos = WosWasm::new();
 
-        // Add a process
+        // Add another process
         let mut state = wos.state.clone();
-        let proc = Process::new(1, None);
+        let proc = Process::new(3, Some(2));
         state.add_process(proc);
         wos.state = state;
 
-        assert_eq!(wos.process_count(), 1);
+        assert_eq!(wos.process_count(), 3);
 
-        // Reset
+        // Reset - should return to init and shell
         wos.reset();
-        assert_eq!(wos.process_count(), 0);
+        assert_eq!(wos.process_count(), 2);
     }
 
     #[test]
@@ -310,9 +314,9 @@ mod tests {
     fn test_wos_wasm_state_roundtrip() {
         let mut wos = WosWasm::new();
 
-        // Add a process
+        // Add another process (starts with 2: init and shell)
         let mut state = wos.state.clone();
-        let proc = Process::new(1, None);
+        let proc = Process::new(3, Some(2));
         state.add_process(proc);
         wos.state = state;
 
@@ -323,7 +327,7 @@ mod tests {
         let mut wos2 = WosWasm::new();
         wos2.set_state(&state_json).unwrap();
 
-        assert_eq!(wos2.process_count(), 1);
+        assert_eq!(wos2.process_count(), 3);
     }
 
     #[test]
@@ -419,12 +423,15 @@ mod tests {
     }
 
     #[test]
-    fn test_wos_wasm_execute_command_ps_empty() {
+    fn test_wos_wasm_execute_command_ps_with_init() {
         let mut wos = WosWasm::new();
         let result = wos.execute_command("ps");
 
         assert!(result.contains("PID"));
-        assert!(result.contains("No processes running"));
+        // Should show init and shell processes
+        assert!(result.contains("1"));
+        assert!(result.contains("2"));
+        assert!(!result.contains("No processes running"));
     }
 
     #[test]
@@ -456,8 +463,14 @@ mod tests {
         let mut wos = WosWasm::new();
 
         // Add files to VFS
-        wos.state.vfs.create_file(PathBuf::from("/test.txt"), vec![]).unwrap();
-        wos.state.vfs.create_file(PathBuf::from("/another.txt"), vec![]).unwrap();
+        wos.state
+            .vfs
+            .create_file(PathBuf::from("/test.txt"), vec![])
+            .unwrap();
+        wos.state
+            .vfs
+            .create_file(PathBuf::from("/another.txt"), vec![])
+            .unwrap();
 
         let result = wos.execute_command("ls");
 
@@ -469,14 +482,14 @@ mod tests {
     fn test_wos_wasm_execute_command_state() {
         let mut wos = WosWasm::new();
 
-        // Add a process
-        let proc = Process::new(1, None);
+        // Add another process (starts with 2: init and shell)
+        let proc = Process::new(3, Some(2));
         wos.state.add_process(proc);
 
         let result = wos.execute_command("state");
 
         assert!(result.contains("Kernel State"));
-        assert!(result.contains("Processes: 1"));
+        assert!(result.contains("Processes: 3"));
         assert!(result.contains("Next PID"));
     }
 
@@ -484,16 +497,16 @@ mod tests {
     fn test_wos_wasm_execute_command_reset() {
         let mut wos = WosWasm::new();
 
-        // Add a process
-        let proc = Process::new(1, None);
+        // Add another process (starts with 2: init and shell)
+        let proc = Process::new(3, Some(2));
         wos.state.add_process(proc);
 
-        assert_eq!(wos.process_count(), 1);
+        assert_eq!(wos.process_count(), 3);
 
         let result = wos.execute_command("reset");
 
         assert!(result.contains("reset complete"));
-        assert_eq!(wos.process_count(), 0);
+        assert_eq!(wos.process_count(), 2);
     }
 
     #[test]
