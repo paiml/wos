@@ -319,6 +319,25 @@ MIT License - see LICENSE file for details
 - **Development History**: [PROGRESS.md](PROGRESS.md) - Complete development timeline and metrics
 - **Architecture Decisions**: [CLAUDE.md](CLAUDE.md) - Design rationale and technical choices
 
+### Architecture & Design Specifications (132KB)
+- **WOS Specification v1.0** (44KB): [Project Specification](docs/specifications/wos-spec-v1.md)
+  - Complete project vision and goals
+  - Implementation phases and development workflow
+  - Quality standards and performance targets
+  - Extreme TDD methodology (85%+ coverage, 90%+ mutation score)
+
+- **Architecture Components** (32KB): [Architectural Specification](docs/specifications/wos-arch-spec.md)
+  - Pure functional microkernel design patterns
+  - L4-inspired IPC with message-passing semantics
+  - Process scheduler and memory management architecture
+  - VFS and ProcFS implementation strategies
+
+- **Technical Review** (56KB): [Toyota Way Quality Framework](docs/specifications/wos-tech-review.md)
+  - Technical architecture assessment (4.5/5 rating)
+  - Toyota Production System principles for OS development
+  - Technical Debt Grading (TDG) integration
+  - Pre-implementation enhancement recommendations
+
 ### Testing Strategy Documentation (186KB)
 - **Main Guide** (88KB): [Testing Strategy & Architecture](docs/specifications/testing-implementation-strategy-architecture.md)
   - Complete testing guide covering all 10 testing types
