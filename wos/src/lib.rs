@@ -1339,17 +1339,17 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Known limitation: parser strips backslash before expander sees it
     fn test_escaped_dollar_sign() {
         let mut wos = WosWasm::new();
 
         wos.execute_command("VAR=test");
         let output = wos.execute_command("echo \\$VAR");
 
-        // Should see literal $VAR or \$VAR, not "test"
+        // Should see literal $VAR, not "test"
         assert!(
-            output.contains("$VAR") || output.contains("\\$VAR"),
-            "Should not expand escaped variable"
+            output.contains("$VAR"),
+            "Should not expand escaped variable, got: {}",
+            output
         );
         assert!(
             !output.contains("test"),

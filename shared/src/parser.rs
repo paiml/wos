@@ -55,8 +55,12 @@ fn tokenize(input: &str) -> Vec<String> {
             '\\' if !in_single_quote => {
                 // Backslash escapes next character (except in single quotes)
                 if let Some(next_ch) = chars.next() {
-                    // Handle common escape sequences in double quotes
-                    if in_double_quote {
+                    // Special case: \$ should be preserved for variable expander
+                    if next_ch == '$' {
+                        current_token.push('\\');
+                        current_token.push('$');
+                    } else if in_double_quote {
+                        // Handle common escape sequences in double quotes
                         match next_ch {
                             'n' => current_token.push('\n'),
                             't' => current_token.push('\t'),
@@ -69,7 +73,7 @@ fn tokenize(input: &str) -> Vec<String> {
                             }
                         }
                     } else {
-                        // Outside quotes, just push the next character
+                        // Outside quotes, just push the next character (for \space, \", etc)
                         current_token.push(next_ch);
                     }
                 } else {
@@ -281,5 +285,30 @@ mod tests {
                 }
             }
         }
+    }
+
+    // Escaped dollar sign tests (for variable expansion)
+    #[test]
+    fn test_parse_escaped_dollar_outside_quotes() {
+        let (cmd, args) = parse_command("echo \\$VAR");
+        assert_eq!(cmd, "echo");
+        // Parser should preserve \$ so expander can handle it
+        assert_eq!(args, vec!["\\$VAR"]);
+    }
+
+    #[test]
+    fn test_parse_escaped_dollar_in_double_quotes() {
+        let (cmd, args) = parse_command("echo \"\\$VAR\"");
+        assert_eq!(cmd, "echo");
+        // In double quotes, \$ should be preserved for variable expander
+        assert_eq!(args, vec!["\\$VAR"]);
+    }
+
+    #[test]
+    fn test_parse_escaped_dollar_in_single_quotes() {
+        let (cmd, args) = parse_command("echo '\\$VAR'");
+        assert_eq!(cmd, "echo");
+        // In single quotes, everything is literal including backslash
+        assert_eq!(args, vec!["\\$VAR"]);
     }
 }
