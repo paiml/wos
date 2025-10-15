@@ -57,6 +57,10 @@ make test-frontend-property
 # Run E2E tests across all browsers
 make e2e
 
+# Run canary tests (SQLite-inspired critical workflow validation)
+make canary          # Fast: Chromium only (~2-3 min)
+make canary-all      # Comprehensive: All browsers (~15-20 min)
+
 # Generate coverage report
 make coverage
 
