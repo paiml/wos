@@ -72,7 +72,8 @@ impl WosWasm {
 
     /// Execute a command string (shell-like interface)
     ///
-    /// Parses a command and executes it, returning the output
+    /// Parses a command and executes it, returning the output.
+    /// Supports pipelines and command chaining with |, &&, ||, ;
     #[wasm_bindgen(js_name = executeCommand)]
     pub fn execute_command(&mut self, command: &str) -> String {
         let command = command.trim();
@@ -80,27 +81,90 @@ impl WosWasm {
             return String::new();
         }
 
-        // Parse command and arguments using quote-aware parser
-        let (cmd_name, args) = wos_shared::parse_command(command);
+        // Parse command pipeline
+        let pipeline = wos_shared::parse_pipeline(command);
 
-        // Handle empty command after parsing
-        if cmd_name.is_empty() {
+        if pipeline.stages.is_empty() {
             return String::new();
         }
 
-        // Built-in commands
-        match cmd_name.as_str() {
+        // Execute pipeline
+        self.execute_pipeline(&pipeline)
+    }
+
+    /// Execute a pipeline of commands
+    fn execute_pipeline(&mut self, pipeline: &wos_shared::Pipeline) -> String {
+        let mut output = String::new();
+        let mut _last_exit_code = 0; // Exit code tracking (unused for now)
+
+        for stage in &pipeline.stages {
+            let cmd_name = &stage.command.name;
+            let args = &stage.command.args;
+
+            // Execute this command
+            let cmd_output = self.execute_single_command(cmd_name, args, &output);
+
+            // Determine if we should continue
+            let should_continue = match stage.operator {
+                None => {
+                    // Last command in pipeline
+                    output = cmd_output.0;
+                    _last_exit_code = cmd_output.1;
+                    false
+                }
+                Some(wos_shared::Operator::Pipe) => {
+                    // Pipe: pass output to next command as input
+                    output = cmd_output.0;
+                    _last_exit_code = cmd_output.1;
+                    true
+                }
+                Some(wos_shared::Operator::And) => {
+                    // AND: continue only if this command succeeded
+                    output = cmd_output.0;
+                    _last_exit_code = cmd_output.1;
+                    _last_exit_code == 0
+                }
+                Some(wos_shared::Operator::Or) => {
+                    // OR: continue only if this command failed
+                    output = cmd_output.0;
+                    _last_exit_code = cmd_output.1;
+                    _last_exit_code != 0
+                }
+                Some(wos_shared::Operator::Semicolon) => {
+                    // Semicolon: always continue, append output
+                    output.push_str(&cmd_output.0);
+                    _last_exit_code = cmd_output.1;
+                    true
+                }
+            };
+
+            if !should_continue {
+                break;
+            }
+        }
+
+        output
+    }
+
+    /// Execute a single command and return (output, exit_code)
+    fn execute_single_command(
+        &mut self,
+        cmd_name: &str,
+        args: &[String],
+        _stdin: &str, // For future pipe input support
+    ) -> (String, i32) {
+        let output = match cmd_name {
             "help" => self.cmd_help(),
-            "ps" => self.cmd_ps(args),
-            "ls" => self.cmd_ls(args),
-            "cat" => self.cmd_cat(args),
+            "ps" => self.cmd_ps(args.to_vec()),
+            "ls" => self.cmd_ls(args.to_vec()),
+            "cat" => self.cmd_cat(args.to_vec()),
             "pwd" => self.cmd_pwd(),
-            "touch" => self.cmd_touch(args),
-            "mkdir" => self.cmd_mkdir(args),
-            "rm" => self.cmd_rm(args),
-            "echo" => self.cmd_echo(args),
-            "grep" => self.cmd_grep(args),
-            "wc" => self.cmd_wc(args),
+            "touch" => self.cmd_touch(args.to_vec()),
+            "mkdir" => self.cmd_mkdir(args.to_vec()),
+            "rm" => self.cmd_rm(args.to_vec()),
+            "echo" => self.cmd_echo(args.to_vec()),
+            "grep" => self.cmd_grep(args.to_vec()),
+            "wc" => self.cmd_wc(args.to_vec()),
             "version" => wos_version(),
             "state" => self.cmd_state(),
             "reset" => {
@@ -111,7 +175,18 @@ impl WosWasm {
                 "Unknown command: {}\nType 'help' for available commands",
                 cmd_name
             ),
-        }
+        };
+
+        // Determine exit code (0 = success, 1 = error)
+        let exit_code = if output.contains("Error") || output.contains("error")
+            || output.contains("Unknown command")
+        {
+            1
+        } else {
+            0
+        };
+
+        (output, exit_code)
     }
 
     // Helper methods for command execution

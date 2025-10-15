@@ -172,7 +172,8 @@ export class WosWasm {
     /**
      * Execute a command string (shell-like interface)
      *
-     * Parses a command and executes it, returning the output
+     * Parses a command and executes it, returning the output.
+     * Supports pipelines and command chaining with |, &&, ||, ;
      * @param {string} command
      * @returns {string}
      */
