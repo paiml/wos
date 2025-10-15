@@ -8,6 +8,7 @@
 mod quality;
 
 pub use quality::{BuildStatus, QualityMetrics};
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wos_kernel::{dispatch_syscall, KernelState, SystemCall};
 
@@ -26,6 +27,8 @@ pub fn wos_version() -> String {
 #[wasm_bindgen]
 pub struct WosWasm {
     state: KernelState,
+    variables: HashMap<String, String>,
+    last_exit_code: i32,
 }
 
 impl Default for WosWasm {
@@ -41,6 +44,8 @@ impl WosWasm {
     pub fn new() -> Self {
         Self {
             state: KernelState::with_init(),
+            variables: HashMap::new(),
+            last_exit_code: 0,
         }
     }
 
@@ -74,11 +79,19 @@ impl WosWasm {
     ///
     /// Parses a command and executes it, returning the output.
     /// Supports pipelines and command chaining with |, &&, ||, ;
+    /// Supports variable assignment (VAR=value) and expansion ($VAR)
     #[wasm_bindgen(js_name = executeCommand)]
     pub fn execute_command(&mut self, command: &str) -> String {
         let command = command.trim();
         if command.is_empty() {
             return String::new();
+        }
+
+        // Check for variable assignment (VAR=value)
+        if let Some((name, value)) = self.parse_assignment(command) {
+            self.variables.insert(name, value);
+            self.last_exit_code = 0;
+            return String::new(); // Assignment produces no output
         }
 
         // Parse command pipeline
@@ -92,6 +105,88 @@ impl WosWasm {
         self.execute_pipeline(&pipeline)
     }
 
+    /// Parse variable assignment (VAR=value)
+    /// Returns Some((name, value)) if it's an assignment, None otherwise
+    fn parse_assignment(&self, input: &str) -> Option<(String, String)> {
+        // Look for VAR=value pattern
+        // Must start with letter or underscore
+        // Can contain letters, digits, underscores
+        // No spaces around =
+
+        let parts: Vec<&str> = input.splitn(2, '=').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+
+        let name = parts[0].trim();
+        let value = parts[1];
+
+        // Validate variable name
+        if name.is_empty() {
+            return None;
+        }
+
+        // Must start with letter or underscore
+        if !name.chars().next().unwrap().is_alphabetic() && !name.starts_with('_') {
+            return None;
+        }
+
+        // Must only contain alphanumeric and underscore
+        if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return None;
+        }
+
+        // Remove quotes from value if present
+        let value = value.trim();
+        let value = if (value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\''))
+        {
+            &value[1..value.len() - 1]
+        } else {
+            value
+        };
+
+        Some((name.to_string(), value.to_string()))
+    }
+
+    /// Expand variables in a string ($VAR -> value)
+    fn expand_variables(&self, text: &str) -> String {
+        let mut result = String::new();
+        let mut chars = text.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '$' {
+                // Check if it's a variable reference
+                let mut var_name = String::new();
+
+                // Collect variable name (alphanumeric + underscore)
+                while let Some(&next_ch) = chars.peek() {
+                    if next_ch.is_alphanumeric() || next_ch == '_' {
+                        var_name.push(next_ch);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+
+                if !var_name.is_empty() {
+                    // Look up variable value
+                    if let Some(value) = self.variables.get(&var_name) {
+                        result.push_str(value);
+                    }
+                    // If undefined, expand to empty string (don't add anything)
+                } else {
+                    // $ not followed by variable name, keep it literal
+                    result.push('$');
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+
+        result
+    }
+
     /// Execute a pipeline of commands
     fn execute_pipeline(&mut self, pipeline: &wos_shared::Pipeline) -> String {
         let mut output = String::new();
@@ -103,9 +198,14 @@ impl WosWasm {
             let cmd_name = &stage.command.name;
             let args = &stage.command.args;
 
+            // Expand variables in command name and args
+            let expanded_cmd = self.expand_variables(cmd_name);
+            let expanded_args: Vec<String> =
+                args.iter().map(|arg| self.expand_variables(arg)).collect();
+
             // Execute this command only if we should
             let (cmd_output, executed) = if should_execute_next {
-                let result = self.execute_single_command(cmd_name, args, &output);
+                let result = self.execute_single_command(&expanded_cmd, &expanded_args, &output);
                 (result, true)
             } else {
                 // Skip execution, use empty output and preserve last exit code
@@ -886,5 +986,58 @@ mod tests {
         assert!(output.contains("second"), "Should contain 'second'");
         assert!(!output.contains("backup"), "Should NOT contain 'backup'");
         assert!(output.contains("final"), "Should contain 'final'");
+    }
+
+    // ============================================================================
+    // VARIABLE TESTS (Sprint 4B)
+    // ============================================================================
+
+    #[test]
+    fn test_variable_assignment_simple() {
+        let mut wos = WosWasm::new();
+
+        // Assign variable (should be silent - no output)
+        let output = wos.execute_command("NAME=World");
+        assert_eq!(output.trim(), "", "Assignment should produce no output");
+
+        // Use variable
+        let output = wos.execute_command("echo $NAME");
+        assert!(output.contains("World"), "Should expand $NAME to 'World'");
+    }
+
+    #[test]
+    fn test_variable_assignment_with_quotes() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("GREETING=\"Hello World\"");
+        let output = wos.execute_command("echo $GREETING");
+
+        assert!(output.contains("Hello World"), "Should expand quoted value");
+    }
+
+    #[test]
+    fn test_variable_expansion_basic() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("USER=alice");
+        let output = wos.execute_command("echo $USER");
+
+        assert!(output.contains("alice"), "Should expand $USER");
+    }
+
+    #[test]
+    fn test_variable_undefined() {
+        let mut wos = WosWasm::new();
+
+        // Undefined variable should expand to empty string
+        let output = wos.execute_command("echo before $UNDEFINED after");
+
+        assert!(output.contains("before"), "Should have 'before'");
+        assert!(output.contains("after"), "Should have 'after'");
+        // Should NOT contain literal "$UNDEFINED"
+        assert!(
+            !output.contains("$UNDEFINED"),
+            "Should not show literal $UNDEFINED"
+        );
     }
 }

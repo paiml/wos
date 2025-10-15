@@ -174,6 +174,7 @@ export class WosWasm {
      *
      * Parses a command and executes it, returning the output.
      * Supports pipelines and command chaining with |, &&, ||, ;
+     * Supports variable assignment (VAR=value) and expansion ($VAR)
      * @param {string} command
      * @returns {string}
      */
