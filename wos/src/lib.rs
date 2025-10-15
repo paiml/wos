@@ -80,13 +80,16 @@ impl WosWasm {
             return String::new();
         }
 
-        // Parse command and arguments
-        let parts: Vec<&str> = command.split_whitespace().collect();
-        let cmd_name = parts[0];
-        let args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
+        // Parse command and arguments using quote-aware parser
+        let (cmd_name, args) = wos_shared::parse_command(command);
+
+        // Handle empty command after parsing
+        if cmd_name.is_empty() {
+            return String::new();
+        }
 
         // Built-in commands
-        match cmd_name {
+        match cmd_name.as_str() {
             "help" => self.cmd_help(),
             "ps" => self.cmd_ps(args),
             "ls" => self.cmd_ls(args),
