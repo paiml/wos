@@ -319,12 +319,18 @@ MIT License - see LICENSE file for details
 - **Development History**: [PROGRESS.md](PROGRESS.md) - Complete development timeline and metrics
 - **Architecture Decisions**: [CLAUDE.md](CLAUDE.md) - Design rationale and technical choices
 
-### Testing Strategy Documentation (146KB)
+### Testing Strategy Documentation (186KB)
 - **Main Guide** (88KB): [Testing Strategy & Architecture](docs/specifications/testing-implementation-strategy-architecture.md)
   - Complete testing guide covering all 10 testing types
   - 80+ code examples, 5 visual diagrams
   - Tool versions, troubleshooting FAQ, bug case studies
   - Grade: A+ (99/100)
+
+- **Canary Testing Spec** (40KB): [WASM Canary & Functional UX Testing](docs/specifications/wasm-canary-testing-spec.md)
+  - SQLite-inspired testing methodology (608:1 test-to-code ratio)
+  - Four-harness framework: BCT, CVS, DTS, CES
+  - 80%+ user action coverage + 100% critical path coverage
+  - Complete Playwright test examples and implementation roadmap
 
 - **Quality Review** (22KB): [Document Quality Assessment](docs/specifications/testing-strategy-document-quality-review.md)
   - Comprehensive quality analysis

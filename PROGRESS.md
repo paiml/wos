@@ -4,12 +4,12 @@
 
 WOS (WebAssembly Operating System) is an educational microkernel designed to demonstrate OS concepts in a pure Rust, safe environment that compiles to WebAssembly.
 
-**Current Status**: 22 tickets completed across 6 development phases + Documentation phase
+**Current Status**: 23 tickets completed across 6 development phases + Documentation phase
 **Total Tests**: 22,320 passing (277 Rust: 159 kernel + 17 shared + 45 userspace + 56 wos + 22,043 Frontend: 43 unit + 22,000 property + 39 benchmarks + 29 E2E)
 **Test Coverage**: Exceeding 85% target (94.11% Rust backend) with extensive property-based testing
 **Code Quality**: Zero unsafe code, all clippy lints passing, comprehensive mutation testing (98.5% mutation score)
 **TDG Grade**: A+ (96-97%) - Elite-tier quality across entire codebase
-**Documentation**: 146KB comprehensive testing strategy documentation (v1.1)
+**Documentation**: 186KB comprehensive testing documentation (v1.1) including SQLite-inspired canary testing spec
 
 ## Completed Tickets
 
@@ -55,6 +55,13 @@ WOS (WebAssembly Operating System) is an educational microkernel designed to dem
   - Document quality review (A+ grade, 99/100)
   - Research-based improvements review (10 advanced techniques)
   - Navigation guide for documentation package
+- ✅ **WOS-024**: SQLite-inspired WASM canary testing specification (40KB)
+  - Four-harness canary framework (BCT, CVS, DTS, CES)
+  - 80%+ user action coverage + 100% critical path coverage
+  - Anomaly testing (OOM, I/O errors, browser failures)
+  - Complete Playwright test examples with TypeScript
+  - Chaos engineering and long-running stability tests
+  - 10-week implementation roadmap
 
 ## Architecture Highlights
 
@@ -210,16 +217,17 @@ All commits pass:
 ## Metrics
 
 - **Lines of Code**: ~9,000+ (Rust: ~7,200 + Frontend Tests: ~1,800)
-- **Documentation**: 146KB (4 comprehensive documents)
+- **Documentation**: 186KB (5 comprehensive documents)
 - **Test-to-Code Ratio**: >3:1 (22,320 tests for ~9,000 lines)
-- **Commits**: 29 feature commits
-- **Development Time**: ~22 hours equivalent
+- **Commits**: 30 feature commits
+- **Development Time**: ~23 hours equivalent
 - **Bugs Found in Production**: 0 (caught by tests)
 - **Bugs Documented**: 173 (8 detailed case studies)
 - **Mutation Score**: 98.5% (411 mutants caught)
 - **Test Coverage**: 94.11% (Rust backend)
 - **Final TDG Grade**: A+ (96-97%)
 - **Documentation Grade**: A+ (99/100)
+- **Testing Spec**: SQLite-inspired canary testing (608:1 ratio adaptation)
 
 ## Design Patterns
 
@@ -257,7 +265,9 @@ pub enum ProcessState {
 - Property tests document invariants
 - Commit messages follow conventional format
 
-### Testing Strategy Documentation (v1.1)
+### Testing Documentation (186KB total)
+
+**Testing Strategy Documentation (v1.1, 146KB)**:
 - **Main Document** (88KB): `docs/specifications/testing-implementation-strategy-architecture.md`
   - 10 testing types documented in depth
   - 80+ code examples
@@ -279,6 +289,13 @@ pub enum ProcessState {
 - **Navigation Guide** (4.5KB): `docs/specifications/README-testing-reviews.md`
   - Helps choose which document to read
   - Audience-specific recommendations
+
+**Canary Testing Specification (40KB)**:
+- **WASM Canary Testing** (40KB): `docs/specifications/wasm-canary-testing-spec.md`
+  - SQLite-inspired methodology (608:1 test-to-code ratio)
+  - Four-harness framework: BCT, CVS, DTS, CES
+  - 80%+ user action coverage + 100% critical path coverage
+  - Complete Playwright examples and 10-week roadmap
 
 ---
 
