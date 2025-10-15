@@ -436,7 +436,7 @@ impl WosWasm {
             "help" => self.cmd_help(),
             "ps" => self.cmd_ps(args.to_vec()),
             "ls" => self.cmd_ls(args.to_vec()),
-            "cat" => self.cmd_cat(args.to_vec()),
+            "cat" => self.cmd_cat(args.to_vec(), stdin),
             "pwd" => self.cmd_pwd(),
             "touch" => self.cmd_touch(args.to_vec()),
             "mkdir" => self.cmd_mkdir(args.to_vec()),
@@ -549,11 +549,13 @@ impl WosWasm {
         output
     }
 
-    fn cmd_cat(&self, args: Vec<String>) -> String {
+    fn cmd_cat(&self, args: Vec<String>, stdin: &str) -> String {
+        // If no file is provided, read from stdin (Unix cat behavior)
         if args.is_empty() {
-            return "cat: missing file operand\n".to_string();
+            return stdin.to_string();
         }
 
+        // Original file-based cat
         let path = std::path::PathBuf::from(&args[0]);
         match self.state.vfs.read_file(&path) {
             Ok(contents) => String::from_utf8_lossy(&contents).to_string(),
@@ -1416,5 +1418,45 @@ mod tests {
 
         // Should count 4 words
         assert!(output.contains("4"), "Should count 4 words from stdin");
+    }
+
+    // Sprint 7: cat stdin support
+    #[test]
+    fn test_cat_from_stdin() {
+        let mut wos = WosWasm::new();
+
+        // Test: echo "hello world" | cat
+        let output = wos.execute_command("echo \"hello world\" | cat");
+
+        assert!(
+            output.contains("hello world"),
+            "Should output stdin content"
+        );
+    }
+
+    #[test]
+    fn test_cat_stdin_multiline() {
+        let mut wos = WosWasm::new();
+
+        // Test: cat should preserve all lines from stdin
+        let output = wos.execute_command("echo \"line1\nline2\nline3\" | cat");
+
+        assert!(output.contains("line1"), "Should contain line1");
+        assert!(output.contains("line2"), "Should contain line2");
+        assert!(output.contains("line3"), "Should contain line3");
+    }
+
+    #[test]
+    fn test_cat_stdin_passthrough() {
+        let mut wos = WosWasm::new();
+
+        // Test: cat should pass through stdin unchanged
+        let output = wos.execute_command("echo \"test data\" | cat");
+
+        assert_eq!(
+            output.trim(),
+            "test data",
+            "Should pass through stdin unchanged"
+        );
     }
 }
