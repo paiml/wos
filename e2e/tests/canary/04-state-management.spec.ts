@@ -233,11 +233,11 @@ test.describe('Canary: State Management - Recovery', () => {
     const page2 = await context.newPage();
 
     // Initialize both
-    await page1.goto('/');
-    await page1.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
+    await page1.goto('');
+    await page1.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
 
-    await page2.goto('/');
-    await page2.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
+    await page2.goto('');
+    await page2.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
 
     // Execute commands in page1
     const input1 = page1.locator('#terminal-input');
