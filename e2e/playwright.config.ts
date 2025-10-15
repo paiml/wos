@@ -6,6 +6,9 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests',
 
+  /* Test timeout - increased for WASM initialization */
+  timeout: 60000, // 60 seconds per test
+
   /* Run tests in files in parallel */
   fullyParallel: true,
 
