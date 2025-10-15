@@ -21,11 +21,23 @@ async function executeCommand(page: any, command: string) {
   await page.waitForTimeout(50);
 }
 
-// Helper to get terminal output
+// Helper to get terminal output (excluding command lines)
 async function getOutput(page: any): Promise<string> {
-  const output = page.locator('#terminal-output');
-  const text = await output.textContent();
-  return text || '';
+  // Get only output lines, not command lines
+  // Command lines have class "terminal-line command"
+  // Output lines have class "terminal-line output"
+  const outputLines = page.locator('#terminal-output .terminal-line.output');
+  const count = await outputLines.count();
+
+  const lines: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const text = await outputLines.nth(i).textContent();
+    if (text) {
+      lines.push(text);
+    }
+  }
+
+  return lines.join('\n');
 }
 
 test.describe('Canary: Command Chaining', () => {

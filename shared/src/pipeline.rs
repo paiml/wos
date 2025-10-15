@@ -393,4 +393,15 @@ mod tests {
         assert_eq!(pipeline.stages[0].command.args, vec!["my dir"]);
         assert_eq!(pipeline.stages[1].command.args, vec!["my dir"]);
     }
+
+    #[test]
+    fn test_complex_operator_chain_parsing() {
+        // Test: echo first && echo second || echo backup ; echo final
+        let pipeline = parse_pipeline("echo first && echo second || echo backup ; echo final");
+        assert_eq!(pipeline.stages.len(), 4);
+        assert_eq!(pipeline.stages[0].operator, Some(Operator::And));
+        assert_eq!(pipeline.stages[1].operator, Some(Operator::Or));
+        assert_eq!(pipeline.stages[2].operator, Some(Operator::Semicolon));
+        assert_eq!(pipeline.stages[3].operator, None);
+    }
 }

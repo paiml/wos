@@ -95,73 +95,95 @@ impl WosWasm {
     /// Execute a pipeline of commands
     fn execute_pipeline(&mut self, pipeline: &wos_shared::Pipeline) -> String {
         let mut output = String::new();
-        let mut _last_exit_code = 0; // Exit code tracking (unused for now)
-        let mut should_accumulate = false; // Track if we should accumulate output
+        let mut _last_exit_code = 0;
+        let mut should_accumulate = false;
+        let mut should_execute_next = true; // Track if next command should execute
 
         for stage in &pipeline.stages {
             let cmd_name = &stage.command.name;
             let args = &stage.command.args;
 
-            // Execute this command
-            let cmd_output = self.execute_single_command(cmd_name, args, &output);
+            // Execute this command only if we should
+            let (cmd_output, executed) = if should_execute_next {
+                let result = self.execute_single_command(cmd_name, args, &output);
+                (result, true)
+            } else {
+                // Skip execution, use empty output and preserve last exit code
+                ((String::new(), _last_exit_code), false)
+            };
 
-            // Determine if we should continue
-            let should_continue = match stage.operator {
-                None => {
-                    // Last command in pipeline
-                    if should_accumulate {
-                        // Continue appending for AND/OR/semicolon chains
+            // Process the result if command was executed
+            if executed {
+                match stage.operator {
+                    None => {
+                        // Last command in pipeline
+                        if should_accumulate {
+                            if !output.is_empty() {
+                                output.push('\n');
+                            }
+                            output.push_str(&cmd_output.0);
+                        } else {
+                            output = cmd_output.0;
+                        }
+                        _last_exit_code = cmd_output.1;
+                    }
+                    Some(wos_shared::Operator::Pipe) => {
+                        output = cmd_output.0;
+                        _last_exit_code = cmd_output.1;
+                        should_accumulate = false;
+                    }
+                    Some(wos_shared::Operator::And) => {
                         if !output.is_empty() {
                             output.push('\n');
                         }
                         output.push_str(&cmd_output.0);
-                    } else {
-                        output = cmd_output.0;
+                        _last_exit_code = cmd_output.1;
+                        should_accumulate = true;
+                        // AND: execute next only if this succeeded
+                        should_execute_next = _last_exit_code == 0;
                     }
-                    _last_exit_code = cmd_output.1;
-                    false
-                }
-                Some(wos_shared::Operator::Pipe) => {
-                    // Pipe: pass output to next command as input (replace, don't accumulate)
-                    output = cmd_output.0;
-                    _last_exit_code = cmd_output.1;
-                    should_accumulate = false;
-                    true
-                }
-                Some(wos_shared::Operator::And) => {
-                    // AND: continue only if this command succeeded, accumulate output
-                    if !output.is_empty() {
-                        output.push('\n');
+                    Some(wos_shared::Operator::Or) => {
+                        if !output.is_empty() {
+                            output.push('\n');
+                        }
+                        output.push_str(&cmd_output.0);
+                        _last_exit_code = cmd_output.1;
+                        should_accumulate = true;
+                        // OR: execute next only if this failed
+                        should_execute_next = _last_exit_code != 0;
                     }
-                    output.push_str(&cmd_output.0);
-                    _last_exit_code = cmd_output.1;
-                    should_accumulate = true; // Tell next command to accumulate
-                    _last_exit_code == 0
-                }
-                Some(wos_shared::Operator::Or) => {
-                    // OR: continue only if this command failed, accumulate output
-                    if !output.is_empty() {
-                        output.push('\n');
+                    Some(wos_shared::Operator::Semicolon) => {
+                        if !output.is_empty() {
+                            output.push('\n');
+                        }
+                        output.push_str(&cmd_output.0);
+                        _last_exit_code = cmd_output.1;
+                        should_accumulate = true;
+                        // Semicolon: always execute next
+                        should_execute_next = true;
                     }
-                    output.push_str(&cmd_output.0);
-                    _last_exit_code = cmd_output.1;
-                    should_accumulate = true; // Tell next command to accumulate
-                    _last_exit_code != 0
                 }
-                Some(wos_shared::Operator::Semicolon) => {
-                    // Semicolon: always continue, append output
-                    if !output.is_empty() {
-                        output.push('\n');
+            } else {
+                // Command was skipped
+                match stage.operator {
+                    None => {
+                        // Last command skipped, nothing to do
                     }
-                    output.push_str(&cmd_output.0);
-                    _last_exit_code = cmd_output.1;
-                    should_accumulate = true; // Tell next command to accumulate
-                    true
+                    Some(wos_shared::Operator::Semicolon) => {
+                        // Semicolon resets: always execute next
+                        should_execute_next = true;
+                        should_accumulate = true;
+                    }
+                    Some(wos_shared::Operator::And) | Some(wos_shared::Operator::Or) => {
+                        // Keep the current should_execute_next state
+                        // This handles chains like: cmd1 && cmd2 && cmd3
+                        // If cmd2 is skipped (cmd1 failed), cmd3 should also be skipped
+                    }
+                    Some(wos_shared::Operator::Pipe) => {
+                        // Pipe after skipped command - this is complex
+                        // For now, keep skipping
+                    }
                 }
-            };
-
-            if !should_continue {
-                break;
             }
         }
 
@@ -850,5 +872,19 @@ mod tests {
             output.contains("always_runs"),
             "Should execute second command"
         );
+    }
+
+    #[test]
+    fn test_complex_operator_chain() {
+        // Test: echo "first" && echo "second" || echo "backup" ; echo "final"
+        // Expected: first, second, final (no backup - because AND succeeded, OR is skipped)
+        // But semicolon resets execution, so final always runs
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("echo first && echo second || echo backup ; echo final");
+
+        assert!(output.contains("first"), "Should contain 'first'");
+        assert!(output.contains("second"), "Should contain 'second'");
+        assert!(!output.contains("backup"), "Should NOT contain 'backup'");
+        assert!(output.contains("final"), "Should contain 'final'");
     }
 }
