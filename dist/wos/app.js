@@ -208,10 +208,19 @@ class Terminal {
 
   printHelp() {
     this.printLine('Available commands:', 'output');
+    this.printLine('', 'output');
+    this.printLine('Terminal commands:', 'output');
     this.printLine('  help      - Show this help message', 'output');
     this.printLine('  clear     - Clear terminal', 'output');
     this.printLine('  history   - Show command history', 'output');
     this.printLine('  version   - Show OS version', 'output');
+    this.printLine('', 'output');
+    this.printLine('OS commands (via WASM):', 'output');
+    this.printLine('  ps        - List processes', 'output');
+    this.printLine('  ls        - List files', 'output');
+    this.printLine('  echo      - Echo arguments', 'output');
+    this.printLine('  state     - Show kernel state', 'output');
+    this.printLine('  reset     - Reset system to initial state', 'output');
     this.printLine('', 'output');
     this.printLine('Keyboard shortcuts:', 'output');
     this.printLine('  ↑/↓       - Navigate command history', 'output');
