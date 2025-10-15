@@ -89,6 +89,7 @@ impl WosWasm {
         match cmd_name {
             "help" => self.cmd_help(),
             "ps" => self.cmd_ps(args),
+            "ls" => self.cmd_ls(args),
             "echo" => self.cmd_echo(args),
             "version" => wos_version(),
             "state" => self.cmd_state(),
@@ -108,6 +109,7 @@ impl WosWasm {
         let mut output = String::from("Available commands:\n");
         output.push_str("  help      - Show this help message\n");
         output.push_str("  ps        - List processes\n");
+        output.push_str("  ls        - List files\n");
         output.push_str("  echo      - Echo arguments\n");
         output.push_str("  version   - Show system version\n");
         output.push_str("  state     - Show kernel state\n");
@@ -135,6 +137,20 @@ impl WosWasm {
         }
 
         output
+    }
+
+    fn cmd_ls(&self, _args: Vec<String>) -> String {
+        // List all files from VFS
+        let files = self.state.vfs.list_files();
+
+        if files.is_empty() {
+            String::new()
+        } else {
+            files.iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join("\n") + "\n"
+        }
     }
 
     fn cmd_echo(&self, args: Vec<String>) -> String {
@@ -390,6 +406,7 @@ mod tests {
         assert!(result.contains("Available commands"));
         assert!(result.contains("help"));
         assert!(result.contains("ps"));
+        assert!(result.contains("ls"));
         assert!(result.contains("echo"));
     }
 
@@ -423,6 +440,29 @@ mod tests {
         assert!(result.contains("PID"));
         assert!(result.contains("1"));
         assert!(!result.contains("No processes running"));
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_ls_empty() {
+        let mut wos = WosWasm::new();
+        let result = wos.execute_command("ls");
+
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_wos_wasm_execute_command_ls_with_files() {
+        use std::path::PathBuf;
+        let mut wos = WosWasm::new();
+
+        // Add files to VFS
+        wos.state.vfs.create_file(PathBuf::from("/test.txt"), vec![]).unwrap();
+        wos.state.vfs.create_file(PathBuf::from("/another.txt"), vec![]).unwrap();
+
+        let result = wos.execute_command("ls");
+
+        assert!(result.contains("/test.txt"));
+        assert!(result.contains("/another.txt"));
     }
 
     #[test]
