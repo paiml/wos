@@ -430,7 +430,7 @@ impl WosWasm {
         &mut self,
         cmd_name: &str,
         args: &[String],
-        _stdin: &str, // For future pipe input support
+        stdin: &str, // Pipe input from previous command
     ) -> (String, i32) {
         let output = match cmd_name {
             "help" => self.cmd_help(),
@@ -442,7 +442,7 @@ impl WosWasm {
             "mkdir" => self.cmd_mkdir(args.to_vec()),
             "rm" => self.cmd_rm(args.to_vec()),
             "echo" => self.cmd_echo(args.to_vec()),
-            "grep" => self.cmd_grep(args.to_vec()),
+            "grep" => self.cmd_grep(args.to_vec(), stdin),
             "wc" => self.cmd_wc(args.to_vec()),
             "version" => wos_version(),
             "state" => self.cmd_state(),
@@ -608,7 +608,21 @@ impl WosWasm {
         }
     }
 
-    fn cmd_grep(&self, args: Vec<String>) -> String {
+    fn cmd_grep(&self, args: Vec<String>, stdin: &str) -> String {
+        // If only pattern is provided (no file), read from stdin
+        if args.len() == 1 {
+            let pattern = &args[0];
+            let mut output = String::new();
+            for line in stdin.lines() {
+                if line.contains(pattern) {
+                    output.push_str(line);
+                    output.push('\n');
+                }
+            }
+            return output;
+        }
+
+        // Original file-based grep
         if args.len() < 2 {
             return "grep: missing pattern or file\n".to_string();
         }
@@ -1333,6 +1347,34 @@ mod tests {
         assert!(
             !output.contains("test"),
             "Should not expand to variable value"
+        );
+    }
+
+    // Sprint 5: Grep stdin support (C102 fix)
+    #[test]
+    fn test_grep_from_stdin() {
+        let mut wos = WosWasm::new();
+
+        // Test: echo "hello world" | grep hello
+        let output = wos.execute_command("echo \"hello world\" | grep hello");
+
+        assert!(
+            output.contains("hello world"),
+            "Should grep from stdin in pipeline"
+        );
+    }
+
+    #[test]
+    fn test_grep_stdin_with_variable() {
+        let mut wos = WosWasm::new();
+
+        // This is the exact test case from C102
+        wos.execute_command("TEXT=\"hello world\"");
+        let output = wos.execute_command("echo $TEXT | grep hello");
+
+        assert!(
+            output.contains("hello world"),
+            "Should grep variable expansion in pipeline"
         );
     }
 }
