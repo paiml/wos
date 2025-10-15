@@ -42,7 +42,7 @@ async function getProcessCount(page: Page): Promise<number> {
 
 test.describe('Canary: Process Management', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
@@ -235,7 +235,7 @@ test.describe('Canary: Process Management', () => {
 
 test.describe('Canary: Process Management - Edge Cases', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });

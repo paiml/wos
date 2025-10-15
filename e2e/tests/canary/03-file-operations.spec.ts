@@ -33,7 +33,7 @@ async function clearTerminal(page: Page): Promise<void> {
 
 test.describe('Canary: File Operations - VFS', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
@@ -121,7 +121,7 @@ test.describe('Canary: File Operations - VFS', () => {
 
 test.describe('Canary: File Operations - ProcFS', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
@@ -208,7 +208,7 @@ test.describe('Canary: File Operations - ProcFS', () => {
 
 test.describe('Canary: File Operations - Error Handling', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
@@ -304,7 +304,7 @@ test.describe('Canary: File Operations - Error Handling', () => {
 
 test.describe('Canary: File Operations - Integration', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });

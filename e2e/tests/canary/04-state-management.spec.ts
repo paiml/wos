@@ -44,7 +44,7 @@ async function clearLocalStorage(page: Page): Promise<void> {
 
 test.describe('Canary: State Management - Persistence', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
@@ -200,7 +200,7 @@ test.describe('Canary: State Management - Persistence', () => {
 
 test.describe('Canary: State Management - Recovery', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
@@ -326,7 +326,7 @@ test.describe('Canary: State Management - Recovery', () => {
 
 test.describe('Canary: State Management - Integration', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });

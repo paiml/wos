@@ -43,7 +43,7 @@ async function getCommandResponseTime(page: Page, command: string): Promise<numb
 
 test.describe('Canary: Terminal Interaction', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
@@ -277,7 +277,7 @@ test.describe('Canary: Terminal Interaction', () => {
 
 test.describe('Canary: Terminal Interaction - Edge Cases', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('');
     // Increased timeout for WASM initialization
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
