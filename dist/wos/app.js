@@ -59,24 +59,6 @@ class Terminal {
     document.getElementById('btn-save').addEventListener('click', () => this.saveState());
     document.getElementById('btn-load').addEventListener('click', () => this.loadState());
 
-    // Quality export buttons
-    document.getElementById('btn-export-json').addEventListener(
-      'click',
-      () => this.exportQualityJson(),
-    );
-    document.getElementById('btn-export-html').addEventListener(
-      'click',
-      () => this.exportQualityHtml(),
-    );
-    document.getElementById('btn-export-md').addEventListener(
-      'click',
-      () => this.exportQualityMarkdown(),
-    );
-    document.getElementById('btn-export-sarif').addEventListener(
-      'click',
-      () => this.exportQualitySarif(),
-    );
-
     // Keep input focused
     this.terminalElement.addEventListener('click', () => {
       this.input.focus();
@@ -259,128 +241,9 @@ class Terminal {
     }
   }
 
-  updateQualityMetrics() {
-    if (!this.wos || !this.wos.getQualityMetrics) return;
-
-    try {
-      const metricsJson = this.wos.getQualityMetrics();
-      const metrics = JSON.parse(metricsJson);
-
-      // Update TDG grade with color coding
-      const gradeElement = document.getElementById('tdg-grade');
-      gradeElement.textContent = metrics.tdg_grade;
-      gradeElement.className = 'grade-value grade-' +
-        metrics.tdg_grade.toLowerCase().replace('+', '-plus');
-
-      // Update TDG score
-      document.getElementById('tdg-score').textContent = `${metrics.tdg_score.toFixed(1)}%`;
-
-      // Update test count
-      const testCountElement = document.getElementById('test-count');
-      testCountElement.textContent = metrics.test_count;
-      testCountElement.className = 'metric-value good';
-
-      // Update coverage
-      const coverageElement = document.getElementById('coverage');
-      coverageElement.textContent = `${metrics.coverage.toFixed(1)}%`;
-      coverageElement.className = metrics.coverage >= 85.0
-        ? 'metric-value good'
-        : 'metric-value warning';
-
-      // Update complexity
-      const complexityElement = document.getElementById('complexity');
-      complexityElement.textContent = `${metrics.max_complexity} / ${
-        metrics.avg_complexity.toFixed(1)
-      }`;
-      complexityElement.className = metrics.max_complexity <= 20
-        ? 'metric-value good'
-        : 'metric-value warning';
-
-      // Update SATD count
-      const satdElement = document.getElementById('satd-count');
-      satdElement.textContent = metrics.satd_count;
-      satdElement.className = metrics.satd_count === 0 ? 'metric-value good' : 'metric-value error';
-    } catch (error) {
-      console.error('Error updating quality metrics:', error);
-    }
-  }
-
-  exportQualityJson() {
-    if (!this.wos || !this.wos.getQualityMetrics) {
-      this.printLine('WASM not initialized', 'error');
-      return;
-    }
-
-    try {
-      const metricsJson = this.wos.getQualityMetrics();
-      this.downloadFile('wos-quality-metrics.json', metricsJson, 'application/json');
-      this.printLine('Quality metrics exported to JSON', 'success');
-    } catch (error) {
-      this.printLine(`Export error: ${error}`, 'error');
-    }
-  }
-
-  exportQualityHtml() {
-    if (!this.wos || !this.wos.exportQualityHtml) {
-      this.printLine('WASM not initialized', 'error');
-      return;
-    }
-
-    try {
-      const html = this.wos.exportQualityHtml();
-      this.downloadFile('wos-quality-report.html', html, 'text/html');
-      this.printLine('Quality report exported to HTML', 'success');
-    } catch (error) {
-      this.printLine(`Export error: ${error}`, 'error');
-    }
-  }
-
-  exportQualityMarkdown() {
-    if (!this.wos || !this.wos.exportQualityMarkdown) {
-      this.printLine('WASM not initialized', 'error');
-      return;
-    }
-
-    try {
-      const markdown = this.wos.exportQualityMarkdown();
-      this.downloadFile('wos-quality-report.md', markdown, 'text/markdown');
-      this.printLine('Quality report exported to Markdown', 'success');
-    } catch (error) {
-      this.printLine(`Export error: ${error}`, 'error');
-    }
-  }
-
-  exportQualitySarif() {
-    if (!this.wos || !this.wos.exportQualitySarif) {
-      this.printLine('WASM not initialized', 'error');
-      return;
-    }
-
-    try {
-      const sarif = this.wos.exportQualitySarif();
-      this.downloadFile('wos-quality-report.sarif', sarif, 'application/json');
-      this.printLine('Quality report exported to SARIF format', 'success');
-    } catch (error) {
-      this.printLine(`Export error: ${error}`, 'error');
-    }
-  }
-
-  downloadFile(filename, content, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
   setWOS(wos) {
     this.wos = wos;
     this.updateSystemInfo();
-    this.updateQualityMetrics();
   }
 }
 
