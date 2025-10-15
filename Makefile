@@ -1,4 +1,4 @@
-.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean lint-frontend lint-frontend-fix lint-frontend-check lint-all
+.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-all
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
@@ -30,6 +30,9 @@ help:
 	@echo "  make fuzz             Run fuzz tests (60s per target)"
 	@echo "  make e2e              Run E2E tests (all browsers)"
 	@echo "  make e2e-chromium     Run E2E tests (Chromium only)"
+	@echo "  make canary           Run canary tests (SQLite-inspired)"
+	@echo "  make canary-fast      Run fast canary tests (<5 min)"
+	@echo "  make canary-terminal  Run terminal canary tests (C01-C09)"
 	@echo ""
 	@echo "🎯 Quality Gates:"
 	@echo "  make quality          Fast quality checks (<30s)"
@@ -419,6 +422,77 @@ e2e-clean:
 	@rm -rf e2e/test-results
 	@rm -rf e2e/test-results.json
 	@echo "✓ E2E artifacts cleaned"
+
+# ============================================================================
+# Canary Testing (SQLite-Inspired)
+# ============================================================================
+
+canary:
+	@echo "🐤 Running canary tests (50 critical user workflows)..."
+	@cd e2e && npx playwright test tests/canary/ --reporter=list
+	@echo "✓ Canary tests complete"
+
+canary-fast:
+	@echo "🐤 Running fast canary tests (<5 min)..."
+	@cd e2e && npx playwright test tests/canary/01-terminal-interaction.spec.ts --reporter=list
+	@echo "✓ Fast canary tests complete"
+
+canary-terminal:
+	@echo "🐤 Running terminal interaction canary tests (C01-C09)..."
+	@cd e2e && npx playwright test tests/canary/01-terminal-interaction.spec.ts --reporter=list
+	@echo "✓ Terminal canary tests complete"
+
+canary-process:
+	@echo "🐤 Running process management canary tests (C10-C19)..."
+	@cd e2e && npx playwright test tests/canary/02-process-management.spec.ts --reporter=list
+	@echo "✓ Process canary tests complete"
+
+canary-file:
+	@echo "🐤 Running file operations canary tests (C20-C29)..."
+	@cd e2e && npx playwright test tests/canary/03-file-operations.spec.ts --reporter=list
+	@echo "✓ File canary tests complete"
+
+canary-state:
+	@echo "🐤 Running state management canary tests (C30-C39)..."
+	@cd e2e && npx playwright test tests/canary/04-state-management.spec.ts --reporter=list
+	@echo "✓ State canary tests complete"
+
+canary-error:
+	@echo "🐤 Running error handling canary tests (C40-C49)..."
+	@cd e2e && npx playwright test tests/canary/05-error-handling.spec.ts --reporter=list
+	@echo "✓ Error canary tests complete"
+
+canary-headed:
+	@echo "🐤 Running canary tests (headed mode)..."
+	@cd e2e && npx playwright test tests/canary/ --headed
+	@echo "✓ Canary tests complete"
+
+canary-ui:
+	@echo "🐤 Running canary tests (UI mode)..."
+	@cd e2e && npx playwright test tests/canary/ --ui
+
+canary-debug:
+	@echo "🐤 Running canary tests (debug mode)..."
+	@cd e2e && npx playwright test tests/canary/ --debug
+
+canary-report:
+	@echo "📊 Opening canary test report..."
+	@cd e2e && npx playwright show-report
+
+canary-chromium:
+	@echo "🐤 Running canary tests (Chromium only)..."
+	@cd e2e && npx playwright test tests/canary/ --project=chromium --reporter=list
+	@echo "✓ Chromium canary tests complete"
+
+canary-firefox:
+	@echo "🐤 Running canary tests (Firefox only)..."
+	@cd e2e && npx playwright test tests/canary/ --project=firefox --reporter=list
+	@echo "✓ Firefox canary tests complete"
+
+canary-webkit:
+	@echo "🐤 Running canary tests (WebKit only)..."
+	@cd e2e && npx playwright test tests/canary/ --project=webkit --reporter=list
+	@echo "✓ WebKit canary tests complete"
 
 # ============================================================================
 # Frontend Linting (Deno)
