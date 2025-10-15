@@ -81,7 +81,7 @@ wasm:
 	@wasm-bindgen $(WASM_TARGET) --out-dir dist/wos --target web
 	@echo "✓ WASM build complete"
 	@echo "💡 Start local server: make serve"
-	@echo "💡 Open browser: http://localhost:8000/dist/wos/"
+	@echo "💡 Open browser: http://localhost:8000/"
 
 dist: wasm
 
@@ -254,7 +254,7 @@ hooks-install:
 
 serve:
 	@echo "🌐 Starting HTTP server on http://localhost:8000"
-	@python3 -m http.server 8000
+	@cd dist/wos && python3 -m http.server 8000
 
 clean:
 	@echo "🧹 Cleaning build artifacts..."
