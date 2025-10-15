@@ -149,35 +149,67 @@ impl WosWasm {
         Some((name.to_string(), value.to_string()))
     }
 
-    /// Expand variables in a string ($VAR -> value)
+    /// Expand variables in a string ($VAR or ${VAR} -> value)
     fn expand_variables(&self, text: &str) -> String {
         let mut result = String::new();
         let mut chars = text.chars().peekable();
 
         while let Some(ch) = chars.next() {
             if ch == '$' {
-                // Check if it's a variable reference
-                let mut var_name = String::new();
+                // Check for ${VAR} syntax
+                if chars.peek() == Some(&'{') {
+                    chars.next(); // consume '{'
+                    let mut var_name = String::new();
 
-                // Collect variable name (alphanumeric + underscore)
-                while let Some(&next_ch) = chars.peek() {
-                    if next_ch.is_alphanumeric() || next_ch == '_' {
-                        var_name.push(next_ch);
-                        chars.next();
-                    } else {
-                        break;
+                    // Collect variable name until '}'
+                    while let Some(&next_ch) = chars.peek() {
+                        if next_ch == '}' {
+                            chars.next(); // consume '}'
+                            break;
+                        } else if next_ch.is_alphanumeric() || next_ch == '_' {
+                            var_name.push(next_ch);
+                            chars.next();
+                        } else {
+                            // Invalid character in braces, treat as literal
+                            result.push_str("${");
+                            result.push_str(&var_name);
+                            result.push(next_ch);
+                            chars.next();
+                            break;
+                        }
                     }
-                }
 
-                if !var_name.is_empty() {
-                    // Look up variable value
-                    if let Some(value) = self.variables.get(&var_name) {
-                        result.push_str(value);
+                    if !var_name.is_empty() {
+                        // Look up variable value
+                        if let Some(value) = self.variables.get(&var_name) {
+                            result.push_str(value);
+                        }
+                        // If undefined, expand to empty string
                     }
-                    // If undefined, expand to empty string (don't add anything)
                 } else {
-                    // $ not followed by variable name, keep it literal
-                    result.push('$');
+                    // Regular $VAR syntax
+                    let mut var_name = String::new();
+
+                    // Collect variable name (alphanumeric + underscore)
+                    while let Some(&next_ch) = chars.peek() {
+                        if next_ch.is_alphanumeric() || next_ch == '_' {
+                            var_name.push(next_ch);
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if !var_name.is_empty() {
+                        // Look up variable value
+                        if let Some(value) = self.variables.get(&var_name) {
+                            result.push_str(value);
+                        }
+                        // If undefined, expand to empty string (don't add anything)
+                    } else {
+                        // $ not followed by variable name, keep it literal
+                        result.push('$');
+                    }
                 }
             } else {
                 result.push(ch);
@@ -1039,5 +1071,58 @@ mod tests {
             !output.contains("$UNDEFINED"),
             "Should not show literal $UNDEFINED"
         );
+    }
+
+    // ============================================================================
+    // VARIABLE TESTS (Sprint 4C)
+    // ============================================================================
+
+    #[test]
+    fn test_variable_empty_value() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("EMPTY=");
+        let output = wos.execute_command("echo Value: $EMPTY end");
+
+        assert!(output.contains("Value:"), "Should have 'Value:'");
+        assert!(output.contains("end"), "Should have 'end'");
+        // Empty variable should result in two spaces between "Value:" and "end"
+        assert!(output.contains("Value:  end"), "Should have double space");
+    }
+
+    #[test]
+    fn test_variable_braces_syntax() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("FILE=test");
+        let output = wos.execute_command("echo ${FILE}.txt");
+
+        assert!(
+            output.contains("test.txt"),
+            "Should expand ${{FILE}} to 'test.txt'"
+        );
+    }
+
+    #[test]
+    fn test_variable_multiple_expansion() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("FIRST=John");
+        wos.execute_command("LAST=Doe");
+        let output = wos.execute_command("echo $FIRST $LAST");
+
+        assert!(output.contains("John"), "Should contain 'John'");
+        assert!(output.contains("Doe"), "Should contain 'Doe'");
+        assert!(output.contains("John Doe"), "Should have both names");
+    }
+
+    #[test]
+    fn test_variable_in_quotes() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("NAME=Alice");
+        let output = wos.execute_command("echo Hello $NAME!");
+
+        assert!(output.contains("Hello Alice!"), "Should expand in quotes");
     }
 }
