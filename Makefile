@@ -15,11 +15,17 @@ help:
 	@echo "  make dist             Build distribution (alias for wasm)"
 	@echo ""
 	@echo "🧪 Testing:"
-	@echo "  make test             Run all tests"
-	@echo "  make test-unit        Run unit tests only"
-	@echo "  make coverage         Generate coverage report"
+	@echo "  make test             Run all Rust tests"
+	@echo "  make test-unit        Run Rust unit tests only"
+	@echo "  make test-frontend    Run frontend unit tests (Deno)"
+	@echo "  make test-all         Run all tests (Rust + Frontend + E2E)"
+	@echo "  make coverage         Generate Rust coverage report"
+	@echo "  make coverage-frontend Generate frontend coverage report"
+	@echo "  make coverage-all     Generate all coverage reports"
 	@echo "  make coverage-check   Verify coverage ≥85%"
-	@echo "  make bench            Run performance benchmarks"
+	@echo "  make bench            Run Rust performance benchmarks"
+	@echo "  make bench-frontend   Run frontend benchmarks"
+	@echo "  make bench-all        Run all benchmarks"
 	@echo "  make bench-baseline   Save benchmark baseline"
 	@echo "  make fuzz             Run fuzz tests (60s per target)"
 	@echo "  make e2e              Run E2E tests (all browsers)"
@@ -89,6 +95,29 @@ test-unit:
 	@cargo test --workspace --lib
 	@echo "✓ Unit tests passed"
 
+test-frontend:
+	@echo "🧪 Running frontend unit tests..."
+	@which deno > /dev/null 2>&1 || (echo "❌ Deno not found. Install: https://deno.land/" && exit 1)
+	@cd dist/wos && deno task test
+	@echo "✓ Frontend tests passed"
+
+test-frontend-property:
+	@echo "🧪 Running frontend property tests..."
+	@which deno > /dev/null 2>&1 || (echo "❌ Deno not found. Install: https://deno.land/" && exit 1)
+	@cd dist/wos && deno task test:property
+	@echo "✓ Frontend property tests passed"
+
+test-frontend-all:
+	@echo "🧪 Running all frontend tests..."
+	@which deno > /dev/null 2>&1 || (echo "❌ Deno not found. Install: https://deno.land/" && exit 1)
+	@cd dist/wos && deno task test:all
+	@echo "✓ All frontend tests passed"
+
+test-all: test test-frontend-all e2e
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ All tests passed (Rust + Frontend + E2E)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 # ============================================================================
 # Coverage
 # ============================================================================
@@ -111,6 +140,27 @@ coverage-check:
 	fi
 	@cargo tarpaulin --workspace --out Stdout --timeout 300 --exclude-files 'wos/*' 'dist/*' --fail-under 85
 	@echo "✓ Coverage thresholds met"
+
+coverage-frontend:
+	@echo "📊 Running frontend test coverage..."
+	@which deno > /dev/null 2>&1 || (echo "❌ Deno not found. Install: https://deno.land/" && exit 1)
+	@cd dist/wos && deno task test:coverage
+	@echo ""
+	@echo "💡 Coverage profile: dist/wos/cov_profile"
+	@echo ""
+
+coverage-frontend-all:
+	@echo "📊 Running comprehensive frontend coverage (unit + property tests)..."
+	@which deno > /dev/null 2>&1 || (echo "❌ Deno not found. Install: https://deno.land/" && exit 1)
+	@cd dist/wos && deno task test:coverage:all
+	@echo ""
+	@echo "💡 Coverage profile: dist/wos/cov_profile"
+	@echo ""
+
+coverage-all: coverage coverage-frontend-all
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ All coverage reports generated (Rust + Frontend)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ============================================================================
 # Quality Gates
@@ -256,6 +306,17 @@ bench-memory:
 	@echo "🚀 Benchmarking memory..."
 	@cargo bench -p wos-kernel --bench memory
 	@echo "✓ Memory benchmarks complete"
+
+bench-frontend:
+	@echo "🚀 Running frontend benchmarks..."
+	@which deno > /dev/null 2>&1 || (echo "❌ Deno not found. Install: https://deno.land/" && exit 1)
+	@cd dist/wos && deno task bench
+	@echo "✓ Frontend benchmarks complete"
+
+bench-all: bench bench-frontend
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ All benchmarks complete (Rust + Frontend)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ============================================================================
 # Fuzz Testing

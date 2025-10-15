@@ -5,7 +5,14 @@
     "fmt": "deno fmt",
     "fmt:check": "deno fmt --check",
     "check": "deno check app.js",
-    "validate": "deno task fmt:check && deno task lint && deno task check"
+    "validate": "deno task fmt:check && deno task lint && deno task check",
+    "test": "deno test --allow-all app.test.ts",
+    "test:property": "deno test --allow-all app.property.test.ts",
+    "test:all": "deno test --allow-all app.test.ts app.property.test.ts",
+    "test:coverage": "deno test --coverage=cov_profile --allow-all app.test.ts && deno coverage cov_profile --include=app.test.ts",
+    "test:coverage:all": "deno test --coverage=cov_profile --allow-all app.test.ts app.property.test.ts && deno coverage cov_profile --include=app.test.ts,app.property.test.ts",
+    "test:watch": "deno test --watch --allow-all app.test.ts",
+    "bench": "deno bench --allow-net --no-check app.bench.ts"
   },
   "lint": {
     "include": ["app.js"],
@@ -39,6 +46,9 @@
       "singleQuote": true,
       "proseWrap": "preserve"
     }
+  },
+  "test": {
+    "include": ["app.test.ts", "app.property.test.ts"]
   },
   "compilerOptions": {
     "strict": true,
