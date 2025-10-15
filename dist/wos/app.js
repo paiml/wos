@@ -200,7 +200,14 @@ class Terminal {
     this.printLine('OS commands (via WASM):', 'output');
     this.printLine('  ps        - List processes', 'output');
     this.printLine('  ls        - List files', 'output');
+    this.printLine('  cat       - Display file contents', 'output');
+    this.printLine('  pwd       - Print working directory', 'output');
+    this.printLine('  touch     - Create file', 'output');
+    this.printLine('  mkdir     - Create directory', 'output');
+    this.printLine('  rm        - Remove file', 'output');
     this.printLine('  echo      - Echo arguments', 'output');
+    this.printLine('  grep      - Search file contents', 'output');
+    this.printLine('  wc        - Count words/lines/bytes', 'output');
     this.printLine('  state     - Show kernel state', 'output');
     this.printLine('  reset     - Reset system to initial state', 'output');
     this.printLine('', 'output');

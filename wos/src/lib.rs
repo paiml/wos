@@ -90,7 +90,14 @@ impl WosWasm {
             "help" => self.cmd_help(),
             "ps" => self.cmd_ps(args),
             "ls" => self.cmd_ls(args),
+            "cat" => self.cmd_cat(args),
+            "pwd" => self.cmd_pwd(),
+            "touch" => self.cmd_touch(args),
+            "mkdir" => self.cmd_mkdir(args),
+            "rm" => self.cmd_rm(args),
             "echo" => self.cmd_echo(args),
+            "grep" => self.cmd_grep(args),
+            "wc" => self.cmd_wc(args),
             "version" => wos_version(),
             "state" => self.cmd_state(),
             "reset" => {
@@ -110,7 +117,14 @@ impl WosWasm {
         output.push_str("  help      - Show this help message\n");
         output.push_str("  ps        - List processes\n");
         output.push_str("  ls        - List files\n");
+        output.push_str("  cat       - Display file contents\n");
+        output.push_str("  pwd       - Print working directory\n");
+        output.push_str("  touch     - Create file\n");
+        output.push_str("  mkdir     - Create directory\n");
+        output.push_str("  rm        - Remove file\n");
         output.push_str("  echo      - Echo arguments\n");
+        output.push_str("  grep      - Search file contents\n");
+        output.push_str("  wc        - Count words/lines/bytes\n");
         output.push_str("  version   - Show system version\n");
         output.push_str("  state     - Show kernel state\n");
         output.push_str("  reset     - Reset system to initial state\n");
@@ -175,6 +189,107 @@ impl WosWasm {
         output.push_str(&format!("  Current PID: {:?}\n", self.state.current_pid));
 
         output
+    }
+
+    fn cmd_cat(&self, args: Vec<String>) -> String {
+        if args.is_empty() {
+            return "cat: missing file operand\n".to_string();
+        }
+
+        let path = std::path::PathBuf::from(&args[0]);
+        match self.state.vfs.read_file(&path) {
+            Ok(contents) => String::from_utf8_lossy(&contents).to_string(),
+            Err(_) => format!("cat: {}: No such file or directory\n", args[0]),
+        }
+    }
+
+    fn cmd_pwd(&self) -> String {
+        // For now, always return /
+        // Future: track current working directory per process
+        "/\n".to_string()
+    }
+
+    fn cmd_touch(&mut self, args: Vec<String>) -> String {
+        if args.is_empty() {
+            return "touch: missing file operand\n".to_string();
+        }
+
+        let path = std::path::PathBuf::from(&args[0]);
+        match self.state.vfs.create_file(path, vec![]) {
+            Ok(()) => String::new(),
+            Err(_) => format!("touch: cannot create file '{}'\n", args[0]),
+        }
+    }
+
+    fn cmd_mkdir(&mut self, args: Vec<String>) -> String {
+        if args.is_empty() {
+            return "mkdir: missing operand\n".to_string();
+        }
+
+        // VFS doesn't have explicit directory support yet
+        // For now, just create a marker file
+        let path = std::path::PathBuf::from(&format!("{}/.directory", args[0]));
+        match self.state.vfs.create_file(path, vec![]) {
+            Ok(()) => String::new(),
+            Err(_) => format!("mkdir: cannot create directory '{}'\n", args[0]),
+        }
+    }
+
+    fn cmd_rm(&mut self, args: Vec<String>) -> String {
+        if args.is_empty() {
+            return "rm: missing operand\n".to_string();
+        }
+
+        let path = std::path::PathBuf::from(&args[0]);
+        match self.state.vfs.delete_file(&path) {
+            Ok(()) => String::new(),
+            Err(_) => format!(
+                "rm: cannot remove '{}': No such file or directory\n",
+                args[0]
+            ),
+        }
+    }
+
+    fn cmd_grep(&self, args: Vec<String>) -> String {
+        if args.len() < 2 {
+            return "grep: missing pattern or file\n".to_string();
+        }
+
+        let pattern = &args[0];
+        let path = std::path::PathBuf::from(&args[1]);
+
+        match self.state.vfs.read_file(&path) {
+            Ok(contents) => {
+                let text = String::from_utf8_lossy(&contents);
+                let mut output = String::new();
+                for line in text.lines() {
+                    if line.contains(pattern) {
+                        output.push_str(line);
+                        output.push('\n');
+                    }
+                }
+                output
+            }
+            Err(_) => format!("grep: {}: No such file or directory\n", args[1]),
+        }
+    }
+
+    fn cmd_wc(&self, args: Vec<String>) -> String {
+        if args.is_empty() {
+            return "wc: missing file operand\n".to_string();
+        }
+
+        let path = std::path::PathBuf::from(&args[0]);
+        match self.state.vfs.read_file(&path) {
+            Ok(contents) => {
+                let text = String::from_utf8_lossy(&contents);
+                let lines = text.lines().count();
+                let words = text.split_whitespace().count();
+                let bytes = contents.len();
+                format!("  {}  {}  {} {}\n", lines, words, bytes, args[0])
+            }
+            Err(_) => format!("wc: {}: No such file or directory\n", args[0]),
+        }
     }
 
     /// Get current kernel state as JSON
