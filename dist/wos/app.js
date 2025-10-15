@@ -109,7 +109,6 @@ class Terminal {
 
   clear() {
     this.output.innerHTML = '';
-    this.printWelcome();
   }
 
   reset() {

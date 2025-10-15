@@ -110,6 +110,9 @@ test.describe('Canary: Terminal Interaction', () => {
     // Clear terminal
     await input.press('Control+L');
 
+    // Wait for clear to complete
+    await page.waitForTimeout(100);
+
     // Verify terminal cleared (output should be empty or minimal)
     const outputText = await output.textContent();
     expect(outputText).not.toContain('line1');

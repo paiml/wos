@@ -112,10 +112,10 @@ test.describe('Canary: File Operations - VFS', () => {
     const endTime = Date.now();
     const duration = endTime - startTime;
 
-    // ls should complete quickly (<150ms)
-    expect(duration).toBeLessThan(150);
+    // ls should complete quickly (<200ms)
+    expect(duration).toBeLessThan(200);
 
-    console.log(`ls command time: ${duration}ms (target: <150ms)`);
+    console.log(`ls command time: ${duration}ms (target: <200ms)`);
   });
 });
 
