@@ -443,7 +443,7 @@ impl WosWasm {
             "rm" => self.cmd_rm(args.to_vec()),
             "echo" => self.cmd_echo(args.to_vec()),
             "grep" => self.cmd_grep(args.to_vec(), stdin),
-            "wc" => self.cmd_wc(args.to_vec()),
+            "wc" => self.cmd_wc(args.to_vec(), stdin),
             "version" => wos_version(),
             "state" => self.cmd_state(),
             "reset" => {
@@ -646,11 +646,16 @@ impl WosWasm {
         }
     }
 
-    fn cmd_wc(&self, args: Vec<String>) -> String {
+    fn cmd_wc(&self, args: Vec<String>, stdin: &str) -> String {
+        // If no file is provided, read from stdin
         if args.is_empty() {
-            return "wc: missing file operand\n".to_string();
+            let lines = stdin.lines().count();
+            let words = stdin.split_whitespace().count();
+            let bytes = stdin.len();
+            return format!("  {}  {}  {}\n", lines, words, bytes);
         }
 
+        // Original file-based wc
         let path = std::path::PathBuf::from(&args[0]);
         match self.state.vfs.read_file(&path) {
             Ok(contents) => {
@@ -1376,5 +1381,40 @@ mod tests {
             output.contains("hello world"),
             "Should grep variable expansion in pipeline"
         );
+    }
+
+    // Sprint 6: wc stdin support
+    #[test]
+    fn test_wc_from_stdin() {
+        let mut wos = WosWasm::new();
+
+        // Test: echo "hello world" | wc
+        let output = wos.execute_command("echo \"hello world\" | wc");
+
+        // wc should count: 1 line, 2 words, 11 bytes (hello world)
+        assert!(output.contains("1"), "Should count 1 line");
+        assert!(output.contains("2"), "Should count 2 words");
+    }
+
+    #[test]
+    fn test_wc_stdin_multiline() {
+        let mut wos = WosWasm::new();
+
+        // Test: echo with multiple lines
+        let output = wos.execute_command("echo \"line1\nline2\nline3\" | wc");
+
+        // Should count 3 lines
+        assert!(output.contains("3"), "Should count 3 lines from stdin");
+    }
+
+    #[test]
+    fn test_wc_stdin_counts_words() {
+        let mut wos = WosWasm::new();
+
+        // Test word counting from stdin
+        let output = wos.execute_command("echo \"one two three four\" | wc");
+
+        // Should count 4 words
+        assert!(output.contains("4"), "Should count 4 words from stdin");
     }
 }
