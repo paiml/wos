@@ -25,7 +25,7 @@ Canary tests are **critical workflow validation tests** inspired by SQLite's leg
 
 **Philosophy**: Like canaries in coal mines, these tests detect problems early.
 
-**Coverage**: 80%+ of critical user workflows with 59 comprehensive tests.
+**Coverage**: 100% of critical user workflows with 60 comprehensive tests.
 
 **Speed**: Optimized for fast feedback (~2-3 minutes for full suite).
 
@@ -301,15 +301,15 @@ Format: `C` + number + `: ` + description
 ## Performance
 
 **Default workflow** (make canary):
-- **Runtime**: ~2-3 minutes
+- **Runtime**: ~8 seconds
 - **Browser**: Chromium only
-- **Tests**: All 59 tests
+- **Tests**: All 60 tests
 - **Parallelization**: Fully parallel
 
 **Comprehensive workflow** (make canary-all):
 - **Runtime**: ~15-20 minutes
 - **Browsers**: Chromium, Firefox, WebKit, Mobile Chrome, Mobile Safari
-- **Tests**: All 59 tests × 5 browsers = 295 test runs
+- **Tests**: All 60 tests × 5 browsers = 300 test runs
 - **Parallelization**: Fully parallel
 
 ---
