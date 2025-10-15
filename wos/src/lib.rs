@@ -96,7 +96,7 @@ impl WosWasm {
     fn execute_pipeline(&mut self, pipeline: &wos_shared::Pipeline) -> String {
         let mut output = String::new();
         let mut _last_exit_code = 0; // Exit code tracking (unused for now)
-        let mut in_semicolon_chain = false; // Track if we're in a semicolon chain
+        let mut should_accumulate = false; // Track if we should accumulate output
 
         for stage in &pipeline.stages {
             let cmd_name = &stage.command.name;
@@ -109,8 +109,8 @@ impl WosWasm {
             let should_continue = match stage.operator {
                 None => {
                     // Last command in pipeline
-                    if in_semicolon_chain {
-                        // Continue appending for semicolon chains
+                    if should_accumulate {
+                        // Continue appending for AND/OR/semicolon chains
                         if !output.is_empty() {
                             output.push('\n');
                         }
@@ -122,24 +122,30 @@ impl WosWasm {
                     false
                 }
                 Some(wos_shared::Operator::Pipe) => {
-                    // Pipe: pass output to next command as input
+                    // Pipe: pass output to next command as input (replace, don't accumulate)
                     output = cmd_output.0;
                     _last_exit_code = cmd_output.1;
-                    in_semicolon_chain = false;
+                    should_accumulate = false;
                     true
                 }
                 Some(wos_shared::Operator::And) => {
-                    // AND: continue only if this command succeeded
-                    output = cmd_output.0;
+                    // AND: continue only if this command succeeded, accumulate output
+                    if !output.is_empty() {
+                        output.push('\n');
+                    }
+                    output.push_str(&cmd_output.0);
                     _last_exit_code = cmd_output.1;
-                    in_semicolon_chain = false;
+                    should_accumulate = true; // Tell next command to accumulate
                     _last_exit_code == 0
                 }
                 Some(wos_shared::Operator::Or) => {
-                    // OR: continue only if this command failed
-                    output = cmd_output.0;
+                    // OR: continue only if this command failed, accumulate output
+                    if !output.is_empty() {
+                        output.push('\n');
+                    }
+                    output.push_str(&cmd_output.0);
                     _last_exit_code = cmd_output.1;
-                    in_semicolon_chain = false;
+                    should_accumulate = true; // Tell next command to accumulate
                     _last_exit_code != 0
                 }
                 Some(wos_shared::Operator::Semicolon) => {
@@ -149,7 +155,7 @@ impl WosWasm {
                     }
                     output.push_str(&cmd_output.0);
                     _last_exit_code = cmd_output.1;
-                    in_semicolon_chain = true;
+                    should_accumulate = true; // Tell next command to accumulate
                     true
                 }
             };
@@ -788,5 +794,61 @@ mod tests {
         // Check SARIF structure
         assert_eq!(parsed["version"], "2.1.0");
         assert!(parsed["runs"].is_array());
+    }
+
+    // Pipeline operator tests
+    #[test]
+    fn test_and_operator_both_succeed() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("echo first && echo second");
+
+        eprintln!("DEBUG: output = {:?}", output);
+        assert!(output.contains("first"), "Should contain 'first'");
+        assert!(output.contains("second"), "Should contain 'second'");
+    }
+
+    #[test]
+    fn test_and_operator_first_fails() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("invalidcmd && echo should_not_see");
+
+        assert!(output.contains("Unknown command"), "Should show error");
+        assert!(
+            !output.contains("should_not_see"),
+            "Should NOT execute second command"
+        );
+    }
+
+    #[test]
+    fn test_or_operator_first_succeeds() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("echo success || echo fallback");
+
+        assert!(output.contains("success"), "Should contain 'success'");
+        assert!(!output.contains("fallback"), "Should NOT execute fallback");
+    }
+
+    #[test]
+    fn test_or_operator_first_fails() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("invalidcmd || echo fallback");
+
+        assert!(
+            output.contains("Unknown command") || output.contains("fallback"),
+            "Should show error or fallback"
+        );
+        assert!(output.contains("fallback"), "Should execute fallback");
+    }
+
+    #[test]
+    fn test_semicolon_both_execute() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("invalidcmd ; echo always_runs");
+
+        assert!(output.contains("Unknown command"), "Should show error");
+        assert!(
+            output.contains("always_runs"),
+            "Should execute second command"
+        );
     }
 }
