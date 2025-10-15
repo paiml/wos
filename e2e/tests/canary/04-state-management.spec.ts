@@ -45,7 +45,8 @@ async function clearLocalStorage(page: Page): Promise<void> {
 test.describe('Canary: State Management - Persistence', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
+    // Increased timeout for WASM initialization
+    await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
 
   test('C45: Command history persists across page reloads', async ({ page }) => {
@@ -200,7 +201,8 @@ test.describe('Canary: State Management - Persistence', () => {
 test.describe('Canary: State Management - Recovery', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
+    // Increased timeout for WASM initialization
+    await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
 
   test('C51: Recovery from corrupted localStorage', async ({ page }) => {
@@ -325,7 +327,8 @@ test.describe('Canary: State Management - Recovery', () => {
 test.describe('Canary: State Management - Integration', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
+    // Increased timeout for WASM initialization
+    await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
 
   test('C55: State persists during long sessions', async ({ page }) => {

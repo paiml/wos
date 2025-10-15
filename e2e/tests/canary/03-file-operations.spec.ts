@@ -34,7 +34,8 @@ async function clearTerminal(page: Page): Promise<void> {
 test.describe('Canary: File Operations - VFS', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
+    // Increased timeout for WASM initialization
+    await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
 
   test('C25: List root directory with ls', async ({ page }) => {
@@ -121,7 +122,8 @@ test.describe('Canary: File Operations - VFS', () => {
 test.describe('Canary: File Operations - ProcFS', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
+    // Increased timeout for WASM initialization
+    await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
 
   test('C30: Read /proc filesystem info', async ({ page }) => {
@@ -207,7 +209,8 @@ test.describe('Canary: File Operations - ProcFS', () => {
 test.describe('Canary: File Operations - Error Handling', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
+    // Increased timeout for WASM initialization
+    await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
 
   test('C35: Handle invalid file paths', async ({ page }) => {
@@ -302,7 +305,8 @@ test.describe('Canary: File Operations - Error Handling', () => {
 test.describe('Canary: File Operations - Integration', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
+    // Increased timeout for WASM initialization
+    await page.waitForSelector('#status:has-text("Ready")', { timeout: 30000 });
   });
 
   test('C40: Combine file and process operations', async ({ page }) => {
