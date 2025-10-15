@@ -186,6 +186,10 @@ impl WosWasm {
                         }
                         // If undefined, expand to empty string
                     }
+                } else if chars.peek() == Some(&'?') {
+                    // Special variable $? - exit status
+                    chars.next(); // consume '?'
+                    result.push_str(&self.last_exit_code.to_string());
                 } else {
                     // Regular $VAR syntax
                     let mut var_name = String::new();
@@ -318,6 +322,9 @@ impl WosWasm {
                 }
             }
         }
+
+        // Save exit code for $? expansion
+        self.last_exit_code = _last_exit_code;
 
         output
     }
@@ -1124,5 +1131,41 @@ mod tests {
         let output = wos.execute_command("echo Hello $NAME!");
 
         assert!(output.contains("Hello Alice!"), "Should expand in quotes");
+    }
+
+    // Exit status ($?) tests - Sprint 4D
+    #[test]
+    fn test_exit_status_success() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("echo hello");
+        let output = wos.execute_command("echo $?");
+
+        assert!(output.contains("0"), "Should show exit code 0 for success");
+    }
+
+    #[test]
+    fn test_exit_status_failure() {
+        let mut wos = WosWasm::new();
+
+        wos.execute_command("invalidcommand");
+        let output = wos.execute_command("echo $?");
+
+        assert!(output.contains("1"), "Should show exit code 1 for failure");
+    }
+
+    #[test]
+    fn test_exit_status_chain() {
+        let mut wos = WosWasm::new();
+
+        // First command succeeds
+        wos.execute_command("echo first");
+        let output1 = wos.execute_command("echo $?");
+        assert!(output1.contains("0"), "First command should return 0");
+
+        // Second command fails
+        wos.execute_command("invalidcmd");
+        let output2 = wos.execute_command("echo $?");
+        assert!(output2.contains("1"), "Failed command should return 1");
     }
 }
