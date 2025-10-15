@@ -340,10 +340,7 @@ mod tests {
     fn test_operators_in_double_quotes_ignored() {
         let pipeline = parse_pipeline("echo \"cmd1 || cmd2 ; cmd3\"");
         assert_eq!(pipeline.stages.len(), 1);
-        assert_eq!(
-            pipeline.stages[0].command.args,
-            vec!["cmd1 || cmd2 ; cmd3"]
-        );
+        assert_eq!(pipeline.stages[0].command.args, vec!["cmd1 || cmd2 ; cmd3"]);
         assert!(pipeline.is_simple());
     }
 

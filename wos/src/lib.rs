@@ -96,6 +96,7 @@ impl WosWasm {
     fn execute_pipeline(&mut self, pipeline: &wos_shared::Pipeline) -> String {
         let mut output = String::new();
         let mut _last_exit_code = 0; // Exit code tracking (unused for now)
+        let mut in_semicolon_chain = false; // Track if we're in a semicolon chain
 
         for stage in &pipeline.stages {
             let cmd_name = &stage.command.name;
@@ -108,7 +109,15 @@ impl WosWasm {
             let should_continue = match stage.operator {
                 None => {
                     // Last command in pipeline
-                    output = cmd_output.0;
+                    if in_semicolon_chain {
+                        // Continue appending for semicolon chains
+                        if !output.is_empty() {
+                            output.push('\n');
+                        }
+                        output.push_str(&cmd_output.0);
+                    } else {
+                        output = cmd_output.0;
+                    }
                     _last_exit_code = cmd_output.1;
                     false
                 }
@@ -116,24 +125,31 @@ impl WosWasm {
                     // Pipe: pass output to next command as input
                     output = cmd_output.0;
                     _last_exit_code = cmd_output.1;
+                    in_semicolon_chain = false;
                     true
                 }
                 Some(wos_shared::Operator::And) => {
                     // AND: continue only if this command succeeded
                     output = cmd_output.0;
                     _last_exit_code = cmd_output.1;
+                    in_semicolon_chain = false;
                     _last_exit_code == 0
                 }
                 Some(wos_shared::Operator::Or) => {
                     // OR: continue only if this command failed
                     output = cmd_output.0;
                     _last_exit_code = cmd_output.1;
+                    in_semicolon_chain = false;
                     _last_exit_code != 0
                 }
                 Some(wos_shared::Operator::Semicolon) => {
                     // Semicolon: always continue, append output
+                    if !output.is_empty() {
+                        output.push('\n');
+                    }
                     output.push_str(&cmd_output.0);
                     _last_exit_code = cmd_output.1;
+                    in_semicolon_chain = true;
                     true
                 }
             };
@@ -178,7 +194,8 @@ impl WosWasm {
         };
 
         // Determine exit code (0 = success, 1 = error)
-        let exit_code = if output.contains("Error") || output.contains("error")
+        let exit_code = if output.contains("Error")
+            || output.contains("error")
             || output.contains("Unknown command")
         {
             1
