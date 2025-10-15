@@ -315,9 +315,34 @@ MIT License - see LICENSE file for details
 
 ## Links
 
-- **Documentation**: See [PROGRESS.md](PROGRESS.md) for detailed development history
-- **Architecture**: See [CLAUDE.md](CLAUDE.md) for design decisions
-- **GitHub**: https://github.com/paiml/wos
+### Project Documentation
+- **Development History**: [PROGRESS.md](PROGRESS.md) - Complete development timeline and metrics
+- **Architecture Decisions**: [CLAUDE.md](CLAUDE.md) - Design rationale and technical choices
+
+### Testing Strategy Documentation (146KB)
+- **Main Guide** (88KB): [Testing Strategy & Architecture](docs/specifications/testing-implementation-strategy-architecture.md)
+  - Complete testing guide covering all 10 testing types
+  - 80+ code examples, 5 visual diagrams
+  - Tool versions, troubleshooting FAQ, bug case studies
+  - Grade: A+ (99/100)
+
+- **Quality Review** (22KB): [Document Quality Assessment](docs/specifications/testing-strategy-document-quality-review.md)
+  - Comprehensive quality analysis
+  - Industry standards comparison
+  - Ready for publication
+
+- **Research Review** (32KB): [Research-Based Improvements](docs/specifications/testing-strategy-review.md)
+  - 10 advanced testing techniques
+  - Academic literature review
+  - Performance optimization recommendations
+
+- **Navigation Guide** (4.5KB): [How to Read the Documentation](docs/specifications/README-testing-reviews.md)
+  - Helps choose which document to read first
+  - Audience-specific recommendations
+
+### External Links
+- **GitHub Repository**: https://github.com/paiml/wos
+- **Issue Tracker**: https://github.com/paiml/wos/issues
 
 ## Acknowledgments
 
