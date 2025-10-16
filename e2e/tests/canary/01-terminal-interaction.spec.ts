@@ -121,7 +121,7 @@ test.describe('Canary: Terminal Interaction', () => {
 
   test('C04: Multiple commands in rapid succession', async ({ page }) => {
     const input = page.locator('#terminal-input');
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     // Execute 10 commands rapidly
     const commands = [
@@ -153,7 +153,7 @@ test.describe('Canary: Terminal Interaction', () => {
   });
 
   test('C05: Long output scrolling performance', async ({ page }) => {
-    const input = page.locator('#terminal-input');
+    const _input = page.locator('#terminal-input');
     const output = page.locator('#terminal-output');
 
     // Generate long output with help command repeated
@@ -170,8 +170,8 @@ test.describe('Canary: Terminal Interaction', () => {
   });
 
   test('C06: Special characters in commands', async ({ page }) => {
-    const input = page.locator('#terminal-input');
-    const output = page.locator('#terminal-output');
+    const _input = page.locator('#terminal-input');
+    const _output = page.locator('#terminal-output');
 
     // Test various special characters
     const specialCases = [
@@ -216,7 +216,7 @@ test.describe('Canary: Terminal Interaction', () => {
   });
 
   test('C08: Error message display', async ({ page }) => {
-    const input = page.locator('#terminal-input');
+    const _input = page.locator('#terminal-input');
     const output = page.locator('#terminal-output');
 
     // Execute invalid command
@@ -287,7 +287,7 @@ test.describe('Canary: Terminal Interaction - Edge Cases', () => {
 
   test('C10: Very long command input', async ({ page }) => {
     const input = page.locator('#terminal-input');
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     // Generate very long command (500 characters)
     const longText = 'a'.repeat(500);

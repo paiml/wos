@@ -10,10 +10,10 @@
  * Following SQLite's canary test philosophy: critical user workflows
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 
 // Helper to type a command and press Enter
-async function executeCommand(page: any, command: string) {
+async function executeCommand(page: Page, command: string) {
   const input = page.locator('#terminal-input');
   await input.fill(command);
   await input.press('Enter');
@@ -21,7 +21,7 @@ async function executeCommand(page: any, command: string) {
 }
 
 // Helper to get terminal output (excluding command lines)
-async function getOutput(page: any): Promise<string> {
+async function getOutput(page: Page): Promise<string> {
   const outputLines = page.locator('#terminal-output .terminal-line.output');
   const count = await outputLines.count();
 

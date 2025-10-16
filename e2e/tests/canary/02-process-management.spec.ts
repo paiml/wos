@@ -66,7 +66,7 @@ test.describe('Canary: Process Management', () => {
   });
 
   test('C11: Init process is always PID 1', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     await executeCommand(page, 'ps');
 
@@ -115,7 +115,7 @@ test.describe('Canary: Process Management', () => {
   });
 
   test('C14: Process state transitions are valid', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     await executeCommand(page, 'ps');
 
@@ -169,7 +169,7 @@ test.describe('Canary: Process Management', () => {
   });
 
   test('C17: Multiple sequential process operations', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     // Execute multiple process-related commands in sequence
     const commands = [

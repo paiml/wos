@@ -59,7 +59,7 @@ test.describe('State Persistence', () => {
   });
 
   test('should preserve state after save and load', async ({ page }) => {
-    const input = page.locator('#terminal-input');
+    const _input = page.locator('#terminal-input');
     const saveBtn = page.locator('#btn-save');
     const resetBtn = page.locator('#btn-reset');
     const loadBtn = page.locator('#btn-load');
@@ -75,7 +75,7 @@ test.describe('State Persistence', () => {
     await resetBtn.click();
 
     // Process count might change
-    const resetCount = await processCount.textContent();
+    const _resetCount = await processCount.textContent();
 
     // Load state
     await loadBtn.click();

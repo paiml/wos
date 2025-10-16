@@ -39,7 +39,7 @@ test.describe('Canary: File Operations - VFS', () => {
   });
 
   test('C25: List root directory with ls', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     await executeCommand(page, 'ls /');
 
@@ -69,7 +69,7 @@ test.describe('Canary: File Operations - VFS', () => {
   });
 
   test('C27: List non-existent directory shows error', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     await executeCommand(page, 'ls /nonexistent');
 
@@ -99,7 +99,7 @@ test.describe('Canary: File Operations - VFS', () => {
 
   test('C29: ls command performance', async ({ page }) => {
     const input = page.locator('#terminal-input');
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     const startTime = Date.now();
 
@@ -127,7 +127,7 @@ test.describe('Canary: File Operations - ProcFS', () => {
   });
 
   test('C30: Read /proc filesystem info', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     // List /proc directory
     await executeCommand(page, 'ls /proc');
@@ -140,7 +140,7 @@ test.describe('Canary: File Operations - ProcFS', () => {
   });
 
   test('C31: Read process status from /proc/1/status', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     // Try to read init process status (PID 1)
     await executeCommand(page, 'cat /proc/1/status');
@@ -157,7 +157,7 @@ test.describe('Canary: File Operations - ProcFS', () => {
   });
 
   test('C32: Read /proc/self symlink', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     // /proc/self should point to current process
     await executeCommand(page, 'cat /proc/self/status');
@@ -234,7 +234,7 @@ test.describe('Canary: File Operations - Error Handling', () => {
   });
 
   test('C36: File operations after terminal clear', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     // Perform file operations
     await executeCommand(page, 'ls /');
@@ -333,7 +333,7 @@ test.describe('Canary: File Operations - Integration', () => {
 
   test('C41: File operations in command history', async ({ page }) => {
     const input = page.locator('#terminal-input');
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     // Execute file operations
     await executeCommand(page, 'ls /');
@@ -387,7 +387,7 @@ test.describe('Canary: File Operations - Integration', () => {
   });
 
   test('C43: File system state after terminal reset', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     // Perform file operations
     await executeCommand(page, 'ls /');
@@ -404,7 +404,7 @@ test.describe('Canary: File Operations - Integration', () => {
   });
 
   test('C44: Verify ls output format consistency', async ({ page }) => {
-    const output = page.locator('#terminal-output');
+    const _output = page.locator('#terminal-output');
 
     // Execute ls multiple times
     await executeCommand(page, 'ls /');

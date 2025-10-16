@@ -25,7 +25,7 @@ async function getLastOutput(page: Page): Promise<string> {
   return text || '';
 }
 
-async function getLocalStorageState(page: Page): Promise<any> {
+async function getLocalStorageState(page: Page): Promise<Record<string, string>> {
   return await page.evaluate(() => {
     const state: Record<string, string> = {};
     for (let i = 0; i < localStorage.length; i++) {
@@ -171,7 +171,7 @@ test.describe('Canary: State Management - Persistence', () => {
   });
 
   test('C50: State operations performance', async ({ page }) => {
-    const input = page.locator('#terminal-input');
+    const _input = page.locator('#terminal-input');
     const output = page.locator('#terminal-output');
 
     // Measure state save/load time via reload
