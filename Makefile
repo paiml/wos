@@ -212,6 +212,11 @@ pmat-tdg:
 	@pmat tdg . || (echo "❌ TDG threshold exceeded" && exit 1)
 	@echo "✓ TDG check passed"
 
+pmat-dead-code:
+	@echo "🔍 Detecting dead code..."
+	@pmat analyze dead-code --path . || (echo "❌ Dead code detected" && exit 1)
+	@echo "✓ No dead code detected"
+
 pmat-gates:
 	@echo "🔍 Running PMAT quality gates..."
 	@pmat quality-gates --project-dir . --config .pmat-gates.toml || (echo "❌ PMAT quality gates failed" && exit 1)
@@ -227,12 +232,15 @@ pmat-roadmap-validate:
 	@pmat roadmap validate --roadmap roadmap.yaml || (echo "❌ Roadmap validation failed" && exit 1)
 	@echo "✓ Roadmap validated"
 
-quality: fmt clippy test-unit pmat-complexity pmat-satd
+quality: fmt clippy test-unit pmat-complexity pmat-satd pmat-entropy pmat-tdg pmat-dead-code
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "✅ Quality gates passed (<30s)"
 	@echo "   • Format, Clippy, Unit Tests: PASSING"
 	@echo "   • PMAT Complexity: PASSING"
 	@echo "   • PMAT SATD (Zero TODO): PASSING"
+	@echo "   • PMAT Entropy Analysis: PASSING"
+	@echo "   • PMAT TDG (Technical Debt): PASSING"
+	@echo "   • PMAT Dead Code Detection: PASSING"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 quality-complete: quality test coverage

@@ -643,11 +643,15 @@ class Terminal {
   }
 
   scrollToBottom() {
-    this.terminalElement.scrollTop = this.terminalElement.scrollHeight;
+    // Use requestAnimationFrame to ensure DOM has updated
+    requestAnimationFrame(() => {
+      this.terminalElement.scrollTop = this.terminalElement.scrollHeight;
+    });
   }
 
   clear() {
     this.output.innerHTML = '';
+    this.printWelcome();
   }
 
   reset() {
