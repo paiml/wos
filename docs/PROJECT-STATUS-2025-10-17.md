@@ -23,6 +23,38 @@ WOS is a production-ready educational microkernel operating system written in 10
 
 ## Recent Developments (October 15-17, 2025)
 
+### Vim Editor Bug Fixes (October 17, 2025)
+
+Fixed three critical bugs preventing vim editor functionality:
+
+**Bug #1: Keyboard Event Capture** (dist/wos/app.js:286-297)
+- Issue: Playwright keyboard simulation wasn't reaching the focused vim-editor element
+- Root Cause: Element-level addEventListener wasn't capturing Playwright's keyboard events
+- Solution: Changed to document-level event capture when modal is open
+- Files: dist/wos/index.html (added tabindex="0"), dist/wos/app.js (document.addEventListener)
+
+**Bug #2: Arrow Key Support** (dist/wos/app.js:314-333)
+- Issue: Only vim keys (hjkl) worked, arrow keys did nothing
+- Root Cause: handleNormalMode only had cases for hjkl keys
+- Solution: Added ArrowUp/Down/Left/Right as fallthrough cases alongside vim keys
+
+**Bug #3: Error Message in Buffer** (dist/wos/app.js:883)
+- Issue: Opening non-existent files showed "cat: filename: No such file or directory" as content
+- Root Cause: Error detection string "not found" didn't match actual error message format
+- Solution: Updated to check for exact error message: "No such file or directory"
+
+**Commits:**
+- `57c08ec` - fix(vim): Keyboard event capture and arrow key support
+- `ac423c2` - fix(vim): Error message detection for non-existent files
+
+**Impact:**
+- All 14 vim E2E tests now passing (was 3/14 before fixes)
+- Vim editor fully functional with modal display, keyboard focus, mode switching
+- Text editing works with both hjkl and arrow keys
+- File operations (:w, :q, :q!, :wq) all working correctly
+
+---
+
 ### Quality Metrics UI Feature (October 17, 2025)
 **Session:** [2025-10-17-quality-metrics-ui.md](sessions/2025-10-17-quality-metrics-ui.md)
 
@@ -217,11 +249,15 @@ Total           37     9,799    7,844     1,050        905
 - ✅ Delete files
 - ✅ File info display
 
-#### Vim Editor (MVP)
+#### Vim Editor
 - ✅ Modal editor interface
-- ✅ File opening
-- ✅ Static display (non-interactive in MVP)
-- ⚠️ Full interactive editing (future work)
+- ✅ File opening (existing and new files)
+- ✅ Interactive editing (INSERT, NORMAL, COMMAND modes)
+- ✅ Keyboard navigation (hjkl and arrow keys)
+- ✅ Text insertion and backspace
+- ✅ File operations (:w, :q, :q!, :wq)
+- ✅ Modified indicator display
+- ✅ All 14 E2E tests passing
 
 #### Quality Dashboard
 - ✅ Real-time TDG grade display
@@ -573,23 +609,19 @@ git push origin v0.1.0
 
 ### Current Limitations
 
-1. **Vim Editor (MVP Only)**
-   - Static display, non-interactive
-   - Future: Full modal editing, Ex commands, buffer management
-
-2. **Single-threaded Execution**
+1. **Single-threaded Execution**
    - JavaScript single-threaded constraint
    - Future: Web Workers for parallelism
 
-3. **Limited Process Concurrency**
+2. **Limited Process Concurrency**
    - Round-robin scheduling only
    - Future: Priority scheduling, time slicing
 
-4. **No Networking**
+3. **No Networking**
    - No socket support
    - Future: Fetch API integration for HTTP
 
-5. **No Persistence Beyond localStorage**
+4. **No Persistence Beyond localStorage**
    - Browser-only storage
    - Future: IndexedDB integration, cloud sync
 
@@ -628,11 +660,12 @@ git push origin v0.1.0
 
 ### Medium Priority
 
-4. **Interactive Vim Editor**
-   - Modal editing (normal, insert, visual)
-   - Ex commands (:w, :q, :wq)
-   - Buffer management
+4. **Enhanced Vim Editor Features**
+   - Visual mode selection
+   - Advanced Ex commands (:substitute, :global)
    - Syntax highlighting
+   - Multiple buffer management
+   - Split windows
 
 5. **Quality Metrics Visualization**
    - Charts and graphs
@@ -783,7 +816,7 @@ WOS has achieved a high level of quality and completeness for its MVP scope (loc
 **Next Priorities:**
 1. Coverage analysis and mutation testing
 2. Performance profiling and optimization
-3. Interactive Vim editor enhancement
+3. Enhanced Vim features (visual mode, syntax highlighting)
 
 **Project Status:** **READY FOR PRODUCTION (LOCAL MVP)**
 
