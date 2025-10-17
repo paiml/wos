@@ -726,7 +726,7 @@ class Terminal {
     if (!this.wos) return;
 
     try {
-      const reportHtml = this.wos.exportQualityHTML();
+      const reportHtml = this.wos.exportQualityHtml();
       const blob = new Blob([reportHtml], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
