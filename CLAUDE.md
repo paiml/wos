@@ -43,14 +43,34 @@ python3 -m http.server 8000
 
 ## Development Workflow
 
+### PRIORITY: PMAT Quality Gates (CRITICAL)
+**Current Status**: 8 quality violations blocking PMAT gates
+- 5 SATD violations (TODO comments - zero tolerance policy)
+- 3 complexity violations (functions exceeding max complexity 10)
+
+**All work must pass PMAT quality gates before commit**:
+- `make pmat-satd` - Zero TODO/FIXME comments
+- `make pmat-complexity` - Max cyclomatic/cognitive complexity 10
+- `make pmat-tdg` - Technical Debt Grade ≥ 0.90
+
+See `quality-issues.yaml` for detailed action plan.
+
 ### Test-Driven Development (TDD)
 This project follows **Extreme TDD** - no production code without failing test first:
 
-1. **RED**: Write failing test
+1. **RED**: Write failing test (unit + property + mutation + E2E)
 2. **GREEN**: Minimum implementation to pass
-3. **REFACTOR**: Add property tests and optimize
-4. **COMMIT**: Atomic commit with [WOS-XXX] prefix
-5. **PUSH**: Push to main after each completed ticket
+3. **REFACTOR**: Optimize while maintaining all test passes
+4. **VERIFY**: Run `make quality` + `make pmat-gates`
+5. **COMMIT**: Atomic commit with `[WOS-XXX]` ticket prefix
+6. **PUSH**: Push to main after each completed ticket
+
+**Testing Requirements (ALL required)**:
+- Unit tests: 85%+ coverage
+- Property tests: 10K inputs per test (proptest)
+- Mutation tests: 90%+ kill rate
+- Fuzz tests: For all parsers and input handlers
+- E2E tests: Playwright for browser functionality
 
 ### Ticket Workflow
 
