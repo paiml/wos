@@ -260,6 +260,50 @@ fn extract_filename(chars: &mut std::iter::Peekable<std::str::Chars>) -> String 
     filename
 }
 
+/// Helper: Update quote state based on current character
+/// Returns (in_single_quote, in_double_quote)
+fn update_quote_state(ch: char, in_single: bool, in_double: bool) -> (bool, bool) {
+    match ch {
+        '\'' if !in_double => (!in_single, in_double),
+        '"' if !in_single => (in_single, !in_double),
+        _ => (in_single, in_double),
+    }
+}
+
+/// Helper: Detect operator character and consume if it's a double operator
+/// Returns Some(operator) if operator detected, None if in quotes or single & (unsupported)
+fn detect_operator(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    ch: char,
+    in_single_quote: bool,
+    in_double_quote: bool,
+) -> Option<Operator> {
+    if in_single_quote || in_double_quote {
+        return None;
+    }
+
+    match ch {
+        '|' => {
+            if chars.peek() == Some(&'|') {
+                chars.next(); // consume second |
+                Some(Operator::Or)
+            } else {
+                Some(Operator::Pipe)
+            }
+        }
+        '&' => {
+            if chars.peek() == Some(&'&') {
+                chars.next(); // consume second &
+                Some(Operator::And)
+            } else {
+                None // Single & not supported
+            }
+        }
+        ';' => Some(Operator::Semicolon),
+        _ => None,
+    }
+}
+
 /// Split command line by operators, respecting quotes
 ///
 /// Returns vector of (command_string, next_operator)
@@ -271,51 +315,30 @@ fn split_by_operators(input: &str) -> Vec<(String, Option<Operator>)> {
     let mut in_double_quote = false;
 
     while let Some(ch) = chars.next() {
-        match ch {
-            '\'' if !in_double_quote => {
-                in_single_quote = !in_single_quote;
-                current.push(ch);
+        // Update quote state
+        let (new_single, new_double) = update_quote_state(ch, in_single_quote, in_double_quote);
+        if new_single != in_single_quote || new_double != in_double_quote {
+            in_single_quote = new_single;
+            in_double_quote = new_double;
+            current.push(ch);
+            continue;
+        }
+
+        // Handle escape sequences (not in single quotes)
+        if ch == '\\' && !in_single_quote {
+            current.push(ch);
+            if let Some(next_ch) = chars.next() {
+                current.push(next_ch);
             }
-            '"' if !in_single_quote => {
-                in_double_quote = !in_double_quote;
-                current.push(ch);
-            }
-            '\\' if !in_single_quote => {
-                // Escape sequence - include backslash and next char
-                current.push(ch);
-                if let Some(next_ch) = chars.next() {
-                    current.push(next_ch);
-                }
-            }
-            '|' if !in_single_quote && !in_double_quote => {
-                // Check for ||
-                if chars.peek() == Some(&'|') {
-                    chars.next(); // consume second |
-                    result.push((current.trim().to_string(), Some(Operator::Or)));
-                    current.clear();
-                } else {
-                    result.push((current.trim().to_string(), Some(Operator::Pipe)));
-                    current.clear();
-                }
-            }
-            '&' if !in_single_quote && !in_double_quote => {
-                // Check for &&
-                if chars.peek() == Some(&'&') {
-                    chars.next(); // consume second &
-                    result.push((current.trim().to_string(), Some(Operator::And)));
-                    current.clear();
-                } else {
-                    // Single & is not supported (background execution)
-                    current.push(ch);
-                }
-            }
-            ';' if !in_single_quote && !in_double_quote => {
-                result.push((current.trim().to_string(), Some(Operator::Semicolon)));
-                current.clear();
-            }
-            _ => {
-                current.push(ch);
-            }
+            continue;
+        }
+
+        // Detect and handle operators
+        if let Some(op) = detect_operator(&mut chars, ch, in_single_quote, in_double_quote) {
+            result.push((current.trim().to_string(), Some(op)));
+            current.clear();
+        } else {
+            current.push(ch);
         }
     }
 
@@ -698,5 +721,49 @@ mod tests {
         let mut chars = "   \t  hello".chars().peekable();
         skip_whitespace(&mut chars);
         assert_eq!(chars.next(), Some('h'));
+    }
+
+    // WOS-Q02: Tests for refactored split_by_operators helper functions
+    #[test]
+    fn test_detect_operator_pipe() {
+        let mut chars = "command".chars().peekable();
+        let result = detect_operator(&mut chars, '|', false, false);
+        assert_eq!(result, Some(Operator::Pipe));
+    }
+
+    #[test]
+    fn test_detect_operator_or() {
+        let mut chars = "| command".chars().peekable();
+        let result = detect_operator(&mut chars, '|', false, false);
+        assert_eq!(result, Some(Operator::Or));
+    }
+
+    #[test]
+    fn test_detect_operator_and() {
+        let mut chars = "& command".chars().peekable();
+        let result = detect_operator(&mut chars, '&', false, false);
+        assert_eq!(result, Some(Operator::And));
+    }
+
+    #[test]
+    fn test_detect_operator_in_quotes() {
+        let mut chars = "command".chars().peekable();
+        let result = detect_operator(&mut chars, '|', true, false);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_update_quote_state() {
+        let (in_single, in_double) = update_quote_state('\'', false, false);
+        assert_eq!(in_single, true);
+        assert_eq!(in_double, false);
+
+        let (in_single, in_double) = update_quote_state('"', false, false);
+        assert_eq!(in_single, false);
+        assert_eq!(in_double, true);
+
+        let (in_single, in_double) = update_quote_state('\'', true, false);
+        assert_eq!(in_single, false);
+        assert_eq!(in_double, false);
     }
 }
