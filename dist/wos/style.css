@@ -234,6 +234,18 @@ main {
   opacity: 0.6;
 }
 
+.quality-actions {
+  margin-top: 15px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.quality-actions button {
+  flex: 1;
+  min-width: 100px;
+}
+
 /* Footer */
 footer {
   text-align: center;
