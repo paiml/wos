@@ -17,5 +17,5 @@ pub mod vfs;
 
 pub use context::ExecutionContext;
 pub use parser::parse_command;
-pub use pipeline::{parse_pipeline, Command, Operator, Pipeline, PipelineStage};
+pub use pipeline::{parse_pipeline, Command, Operator, Pipeline, PipelineStage, Redirection};
 pub use vfs::VirtualFileSystem;

@@ -18,6 +18,17 @@ pub enum Operator {
     Semicolon,
 }
 
+/// Redirection type for I/O
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Redirection {
+    /// Redirect stdout to file (overwrite): cmd > file
+    StdoutOverwrite(String),
+    /// Redirect stdout to file (append): cmd >> file
+    StdoutAppend(String),
+    /// Redirect stdin from file: cmd < file
+    StdinFrom(String),
+}
+
 /// A single command in a pipeline
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Command {
@@ -25,12 +36,31 @@ pub struct Command {
     pub name: String,
     /// Command arguments
     pub args: Vec<String>,
+    /// Optional redirections for this command
+    pub redirections: Vec<Redirection>,
 }
 
 impl Command {
     /// Create a new command
     pub fn new(name: String, args: Vec<String>) -> Self {
-        Self { name, args }
+        Self {
+            name,
+            args,
+            redirections: Vec::new(),
+        }
+    }
+
+    /// Create a new command with redirections
+    pub fn with_redirections(
+        name: String,
+        args: Vec<String>,
+        redirections: Vec<Redirection>,
+    ) -> Self {
+        Self {
+            name,
+            args,
+            redirections,
+        }
     }
 }
 
@@ -105,9 +135,12 @@ pub fn parse_pipeline(input: &str) -> Pipeline {
     let commands = split_by_operators(input);
 
     for (cmd_str, op) in commands {
-        let (name, args) = parse_command(&cmd_str);
+        // Extract redirections from command string
+        let (cmd_without_redirects, redirections) = extract_redirections(&cmd_str);
+
+        let (name, args) = parse_command(&cmd_without_redirects);
         if !name.is_empty() {
-            let command = Command::new(name, args);
+            let command = Command::with_redirections(name, args, redirections);
             let stage = PipelineStage {
                 command,
                 operator: op,
@@ -117,6 +150,104 @@ pub fn parse_pipeline(input: &str) -> Pipeline {
     }
 
     pipeline
+}
+
+/// Extract redirection operators from a command string
+///
+/// Returns (command_without_redirects, vec_of_redirections)
+fn extract_redirections(input: &str) -> (String, Vec<Redirection>) {
+    let mut command = String::new();
+    let mut redirections = Vec::new();
+    let mut chars = input.chars().peekable();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\'' if !in_double_quote => {
+                in_single_quote = !in_single_quote;
+                command.push(ch);
+            }
+            '"' if !in_single_quote => {
+                in_double_quote = !in_double_quote;
+                command.push(ch);
+            }
+            '>' if !in_single_quote && !in_double_quote => {
+                // Check for >>
+                if chars.peek() == Some(&'>') {
+                    chars.next(); // consume second >
+
+                    // Skip whitespace
+                    while chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
+                        chars.next();
+                    }
+
+                    // Extract filename
+                    let filename = extract_filename(&mut chars);
+                    if !filename.is_empty() {
+                        redirections.push(Redirection::StdoutAppend(filename));
+                    }
+                } else {
+                    // Single >
+                    // Skip whitespace
+                    while chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
+                        chars.next();
+                    }
+
+                    // Extract filename
+                    let filename = extract_filename(&mut chars);
+                    if !filename.is_empty() {
+                        redirections.push(Redirection::StdoutOverwrite(filename));
+                    }
+                }
+            }
+            '<' if !in_single_quote && !in_double_quote => {
+                // Skip whitespace
+                while chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
+                    chars.next();
+                }
+
+                // Extract filename
+                let filename = extract_filename(&mut chars);
+                if !filename.is_empty() {
+                    redirections.push(Redirection::StdinFrom(filename));
+                }
+            }
+            _ => {
+                command.push(ch);
+            }
+        }
+    }
+
+    (command.trim().to_string(), redirections)
+}
+
+/// Extract a filename from the character iterator
+fn extract_filename(chars: &mut std::iter::Peekable<std::str::Chars>) -> String {
+    let mut filename = String::new();
+    let mut in_quotes = false;
+    let mut quote_char = ' ';
+
+    while let Some(&ch) = chars.peek() {
+        match ch {
+            ' ' | '\t' if !in_quotes => break,
+            '\'' | '"' if !in_quotes => {
+                in_quotes = true;
+                quote_char = ch;
+                chars.next();
+            }
+            c if in_quotes && c == quote_char => {
+                chars.next();
+                break;
+            }
+            _ => {
+                filename.push(ch);
+                chars.next();
+            }
+        }
+    }
+
+    filename
 }
 
 /// Split command line by operators, respecting quotes
@@ -403,5 +534,111 @@ mod tests {
         assert_eq!(pipeline.stages[1].operator, Some(Operator::Or));
         assert_eq!(pipeline.stages[2].operator, Some(Operator::Semicolon));
         assert_eq!(pipeline.stages[3].operator, None);
+    }
+
+    // Redirection tests
+    #[test]
+    fn test_parse_stdout_redirect_overwrite() {
+        let pipeline = parse_pipeline("echo hello > output.txt");
+        assert_eq!(pipeline.stages.len(), 1);
+        assert_eq!(pipeline.stages[0].command.name, "echo");
+        assert_eq!(pipeline.stages[0].command.args, vec!["hello"]);
+        assert_eq!(pipeline.stages[0].command.redirections.len(), 1);
+        assert_eq!(
+            pipeline.stages[0].command.redirections[0],
+            Redirection::StdoutOverwrite("output.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_stdout_redirect_append() {
+        let pipeline = parse_pipeline("echo world >> output.txt");
+        assert_eq!(pipeline.stages.len(), 1);
+        assert_eq!(pipeline.stages[0].command.name, "echo");
+        assert_eq!(pipeline.stages[0].command.redirections.len(), 1);
+        assert_eq!(
+            pipeline.stages[0].command.redirections[0],
+            Redirection::StdoutAppend("output.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_stdin_redirect() {
+        let pipeline = parse_pipeline("cat < input.txt");
+        assert_eq!(pipeline.stages.len(), 1);
+        assert_eq!(pipeline.stages[0].command.name, "cat");
+        assert_eq!(pipeline.stages[0].command.redirections.len(), 1);
+        assert_eq!(
+            pipeline.stages[0].command.redirections[0],
+            Redirection::StdinFrom("input.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_multiple_redirections() {
+        let pipeline = parse_pipeline("cat < input.txt > output.txt");
+        assert_eq!(pipeline.stages.len(), 1);
+        assert_eq!(pipeline.stages[0].command.redirections.len(), 2);
+        assert_eq!(
+            pipeline.stages[0].command.redirections[0],
+            Redirection::StdinFrom("input.txt".to_string())
+        );
+        assert_eq!(
+            pipeline.stages[0].command.redirections[1],
+            Redirection::StdoutOverwrite("output.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_redirection_with_quoted_filename() {
+        let pipeline = parse_pipeline("echo test > \"my file.txt\"");
+        assert_eq!(pipeline.stages.len(), 1);
+        assert_eq!(pipeline.stages[0].command.redirections.len(), 1);
+        assert_eq!(
+            pipeline.stages[0].command.redirections[0],
+            Redirection::StdoutOverwrite("my file.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_redirection_no_spaces() {
+        let pipeline = parse_pipeline("echo test>output.txt");
+        assert_eq!(pipeline.stages.len(), 1);
+        assert_eq!(pipeline.stages[0].command.redirections.len(), 1);
+        assert_eq!(
+            pipeline.stages[0].command.redirections[0],
+            Redirection::StdoutOverwrite("output.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_redirection_with_pipe() {
+        let pipeline = parse_pipeline("cat file.txt | grep pattern > results.txt");
+        assert_eq!(pipeline.stages.len(), 2);
+
+        // First stage: cat with no redirection
+        assert_eq!(pipeline.stages[0].command.name, "cat");
+        assert_eq!(pipeline.stages[0].command.redirections.len(), 0);
+
+        // Second stage: grep with output redirection
+        assert_eq!(pipeline.stages[1].command.name, "grep");
+        assert_eq!(pipeline.stages[1].command.redirections.len(), 1);
+        assert_eq!(
+            pipeline.stages[1].command.redirections[0],
+            Redirection::StdoutOverwrite("results.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_redirection_operators_in_quotes_ignored() {
+        let pipeline = parse_pipeline("echo \"test > file\" > output.txt");
+        assert_eq!(pipeline.stages.len(), 1);
+        // Quotes are stripped by parse_command (standard shell behavior)
+        assert_eq!(pipeline.stages[0].command.args, vec!["test > file"]);
+        assert_eq!(pipeline.stages[0].command.redirections.len(), 1);
+        assert_eq!(
+            pipeline.stages[0].command.redirections[0],
+            Redirection::StdoutOverwrite("output.txt".to_string())
+        );
     }
 }

@@ -335,13 +335,113 @@ impl WosWasm {
             let expanded_args: Vec<String> =
                 args.iter().map(|arg| self.expand_variables(arg)).collect();
 
+            // Process input redirection (<) - read from file and use as stdin
+            let mut stdin_override = output.clone();
+            for redir in &stage.command.redirections {
+                if let wos_shared::Redirection::StdinFrom(filename) = redir {
+                    // Expand variables in filename
+                    let expanded_filename = self.expand_variables(filename);
+                    let path = std::path::PathBuf::from(&expanded_filename);
+                    match self.state.vfs.read_file(&path) {
+                        Ok(contents) => {
+                            stdin_override = String::from_utf8_lossy(&contents).to_string();
+                        }
+                        Err(_) => {
+                            // File not found - set error and skip command
+                            let error_msg =
+                                format!("bash: {}: No such file or directory\n", expanded_filename);
+                            if should_accumulate {
+                                if !output.is_empty() {
+                                    output.push('\n');
+                                }
+                                output.push_str(&error_msg);
+                            } else {
+                                output = error_msg;
+                            }
+                            _last_exit_code = 1;
+                            should_execute_next = false;
+                            continue;
+                        }
+                    }
+                }
+            }
+
             // Execute this command only if we should
             let (cmd_output, executed) = if should_execute_next {
-                let result = self.execute_single_command(&expanded_cmd, &expanded_args, &output);
+                let result =
+                    self.execute_single_command(&expanded_cmd, &expanded_args, &stdin_override);
                 (result, true)
             } else {
                 // Skip execution, use empty output and preserve last exit code
                 ((String::new(), _last_exit_code), false)
+            };
+
+            // Process output redirections (>, >>) - write to file
+            let final_output = if executed {
+                let mut final_out = cmd_output.0.clone();
+                for redir in &stage.command.redirections {
+                    match redir {
+                        wos_shared::Redirection::StdoutOverwrite(filename) => {
+                            // Expand variables in filename
+                            let expanded_filename = self.expand_variables(filename);
+                            let path = std::path::PathBuf::from(&expanded_filename);
+                            let data = cmd_output.0.as_bytes().to_vec();
+
+                            // Try write_file first (for existing files), then create_file
+                            let result = if self.state.vfs.exists(&path) {
+                                self.state.vfs.write_file(&path, data.clone())
+                            } else {
+                                self.state.vfs.create_file(path.clone(), data)
+                            };
+
+                            if result.is_err() {
+                                final_out =
+                                    format!("bash: {}: cannot write to file\n", expanded_filename);
+                                _last_exit_code = 1;
+                            } else {
+                                // Redirect successful - suppress output
+                                final_out = String::new();
+                            }
+                        }
+                        wos_shared::Redirection::StdoutAppend(filename) => {
+                            // Expand variables in filename
+                            let expanded_filename = self.expand_variables(filename);
+                            let path = std::path::PathBuf::from(&expanded_filename);
+
+                            // Read existing content if file exists
+                            let mut data = if self.state.vfs.exists(&path) {
+                                self.state.vfs.read_file(&path).unwrap_or_default()
+                            } else {
+                                Vec::new()
+                            };
+
+                            // Append new content
+                            data.extend_from_slice(cmd_output.0.as_bytes());
+
+                            // Write back (create if doesn't exist, write if exists)
+                            let result = if self.state.vfs.exists(&path) {
+                                self.state.vfs.write_file(&path, data.clone())
+                            } else {
+                                self.state.vfs.create_file(path.clone(), data)
+                            };
+
+                            if result.is_err() {
+                                final_out =
+                                    format!("bash: {}: cannot write to file\n", expanded_filename);
+                                _last_exit_code = 1;
+                            } else {
+                                // Redirect successful - suppress output
+                                final_out = String::new();
+                            }
+                        }
+                        wos_shared::Redirection::StdinFrom(_) => {
+                            // Already processed above
+                        }
+                    }
+                }
+                (final_out, cmd_output.1)
+            } else {
+                cmd_output
             };
 
             // Process the result if command was executed
@@ -353,23 +453,23 @@ impl WosWasm {
                             if !output.is_empty() {
                                 output.push('\n');
                             }
-                            output.push_str(&cmd_output.0);
+                            output.push_str(&final_output.0);
                         } else {
-                            output = cmd_output.0;
+                            output = final_output.0;
                         }
-                        _last_exit_code = cmd_output.1;
+                        _last_exit_code = final_output.1;
                     }
                     Some(wos_shared::Operator::Pipe) => {
-                        output = cmd_output.0;
-                        _last_exit_code = cmd_output.1;
+                        output = final_output.0;
+                        _last_exit_code = final_output.1;
                         should_accumulate = false;
                     }
                     Some(wos_shared::Operator::And) => {
                         if !output.is_empty() {
                             output.push('\n');
                         }
-                        output.push_str(&cmd_output.0);
-                        _last_exit_code = cmd_output.1;
+                        output.push_str(&final_output.0);
+                        _last_exit_code = final_output.1;
                         should_accumulate = true;
                         // AND: execute next only if this succeeded
                         should_execute_next = _last_exit_code == 0;
@@ -378,8 +478,8 @@ impl WosWasm {
                         if !output.is_empty() {
                             output.push('\n');
                         }
-                        output.push_str(&cmd_output.0);
-                        _last_exit_code = cmd_output.1;
+                        output.push_str(&final_output.0);
+                        _last_exit_code = final_output.1;
                         should_accumulate = true;
                         // OR: execute next only if this failed
                         should_execute_next = _last_exit_code != 0;
@@ -388,8 +488,8 @@ impl WosWasm {
                         if !output.is_empty() {
                             output.push('\n');
                         }
-                        output.push_str(&cmd_output.0);
-                        _last_exit_code = cmd_output.1;
+                        output.push_str(&final_output.0);
+                        _last_exit_code = final_output.1;
                         should_accumulate = true;
                         // Semicolon: always execute next
                         should_execute_next = true;
@@ -1458,5 +1558,170 @@ mod tests {
             "test data",
             "Should pass through stdin unchanged"
         );
+    }
+
+    // ============================================================================
+    // FILE REDIRECTION TESTS (Sprint 8)
+    // ============================================================================
+
+    #[test]
+    fn test_stdout_redirect_overwrite() {
+        let mut wos = WosWasm::new();
+
+        // Redirect output to file
+        let output = wos.execute_command("echo hello world > /test.txt");
+
+        // Should produce no terminal output
+        assert_eq!(output.trim(), "", "Redirect should suppress output");
+
+        // Read the file
+        let content = wos.execute_command("cat /test.txt");
+        assert_eq!(
+            content.trim(),
+            "hello world",
+            "File should contain redirected output"
+        );
+    }
+
+    #[test]
+    fn test_stdout_redirect_overwrite_replaces() {
+        let mut wos = WosWasm::new();
+
+        // Write first content
+        wos.execute_command("echo first > /test.txt");
+
+        // Overwrite with new content
+        wos.execute_command("echo second > /test.txt");
+
+        // Read the file - should only have second content
+        let content = wos.execute_command("cat /test.txt");
+        assert_eq!(content.trim(), "second", "File should be overwritten");
+    }
+
+    #[test]
+    fn test_stdout_redirect_append() {
+        let mut wos = WosWasm::new();
+
+        // Write initial content
+        wos.execute_command("echo first >> /test.txt");
+
+        // Append more content
+        wos.execute_command("echo second >> /test.txt");
+
+        // Read the file - should have both
+        let content = wos.execute_command("cat /test.txt");
+        assert!(content.contains("first"), "Should contain first line");
+        assert!(content.contains("second"), "Should contain second line");
+    }
+
+    #[test]
+    fn test_stdin_redirect_from_file() {
+        let mut wos = WosWasm::new();
+
+        // Create a file with content
+        wos.execute_command("echo hello world > /input.txt");
+
+        // Read from file with stdin redirection
+        let output = wos.execute_command("cat < /input.txt");
+
+        assert_eq!(output.trim(), "hello world", "Should read from file");
+    }
+
+    #[test]
+    fn test_stdin_redirect_file_not_found() {
+        let mut wos = WosWasm::new();
+
+        // Try to read from non-existent file
+        let output = wos.execute_command("cat < /nonexistent.txt");
+
+        assert!(
+            output.contains("No such file or directory"),
+            "Should show error"
+        );
+    }
+
+    #[test]
+    fn test_redirect_with_pipe() {
+        let mut wos = WosWasm::new();
+
+        // Create test file
+        wos.execute_command("echo hello world > /test.txt");
+
+        // Pipe and redirect
+        let output = wos.execute_command("cat /test.txt | grep hello > /results.txt");
+
+        // Terminal output should be suppressed
+        assert_eq!(output.trim(), "", "Should suppress output");
+
+        // Check results file
+        let content = wos.execute_command("cat /results.txt");
+        assert_eq!(
+            content.trim(),
+            "hello world",
+            "Should have piped and redirected output"
+        );
+    }
+
+    #[test]
+    fn test_redirect_multiple_commands() {
+        let mut wos = WosWasm::new();
+
+        // Chain with redirects
+        wos.execute_command("echo first > /file1.txt && echo second > /file2.txt");
+
+        // Check both files
+        let content1 = wos.execute_command("cat /file1.txt");
+        let content2 = wos.execute_command("cat /file2.txt");
+
+        assert_eq!(content1.trim(), "first", "First file should exist");
+        assert_eq!(content2.trim(), "second", "Second file should exist");
+    }
+
+    #[test]
+    fn test_redirect_with_variables() {
+        let mut wos = WosWasm::new();
+
+        // Use variables in redirect
+        wos.execute_command("FILENAME=output.txt");
+        wos.execute_command("echo test > /$FILENAME");
+
+        // Read back
+        let content = wos.execute_command("cat /output.txt");
+        assert_eq!(
+            content.trim(),
+            "test",
+            "Should expand variables in filename"
+        );
+    }
+
+    #[test]
+    fn test_stdin_and_stdout_redirect() {
+        let mut wos = WosWasm::new();
+
+        // Create input file
+        wos.execute_command("echo hello world > /input.txt");
+
+        // Both input and output redirect
+        wos.execute_command("cat < /input.txt > /output.txt");
+
+        // Check output file
+        let content = wos.execute_command("cat /output.txt");
+        assert_eq!(
+            content.trim(),
+            "hello world",
+            "Should redirect both stdin and stdout"
+        );
+    }
+
+    #[test]
+    fn test_append_creates_file_if_not_exists() {
+        let mut wos = WosWasm::new();
+
+        // Append to non-existent file (should create it)
+        wos.execute_command("echo hello >> /newfile.txt");
+
+        // Read back
+        let content = wos.execute_command("cat /newfile.txt");
+        assert_eq!(content.trim(), "hello", "Should create file with append");
     }
 }
