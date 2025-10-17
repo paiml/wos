@@ -653,6 +653,217 @@ completion_status:
   mvp_status: "✅ COMPLETE"
   phase_1_6_status: "✅ ALL FEATURES IMPLEMENTED"
 
+  # PHASE 8: PMAT Quality Gate Fixes (CRITICAL PRIORITY)
+  - id: phase-8
+    name: "PMAT Quality Gates"
+    goal: "Fix all SATD and complexity violations to pass PMAT quality gates"
+    priority: critical
+    duration: 1_day
+    tickets:
+      - id: WOS-Q01
+        title: "Refactor extract_redirections to complexity < 10"
+        priority: critical
+        time_estimate: 2_hours
+        pmat_violation: complexity
+        current_complexity:
+          cyclomatic: 19
+          cognitive: 51
+        target_complexity: 10
+        file: shared/src/pipeline.rs
+        line: 50
+        requirements:
+          - "Split into extract_stdin, extract_stdout, validate_redirections"
+          - "Each function complexity < 10"
+          - "All tests pass"
+          - "Property tests for all refactored functions"
+        tests:
+          - "test_extract_redirections_stdin"
+          - "test_extract_redirections_stdout"
+          - "test_validate_redirections"
+          - "proptest_redirection_parsing_deterministic"
+        acceptance:
+          - "pmat-complexity passes"
+          - "All existing tests pass"
+          - "Coverage ≥ 85%"
+
+      - id: WOS-Q02
+        title: "Refactor split_by_operators to complexity < 10"
+        priority: critical
+        time_estimate: 1.5_hours
+        pmat_violation: complexity
+        current_complexity:
+          cyclomatic: 16
+          cognitive: ~30
+        target_complexity: 10
+        file: shared/src/pipeline.rs
+        line: 150
+        requirements:
+          - "Extract operator detection logic"
+          - "Use state machine pattern"
+          - "Each function complexity < 10"
+          - "Property tests for operator parsing"
+        tests:
+          - "test_detect_operators"
+          - "test_state_machine_transitions"
+          - "proptest_operator_splitting_deterministic"
+        acceptance:
+          - "pmat-complexity passes"
+          - "All existing tests pass"
+          - "Coverage ≥ 85%"
+
+      - id: WOS-Q03
+        title: "Refactor tokenize to complexity < 10"
+        priority: critical
+        time_estimate: 1.5_hours
+        pmat_violation: complexity
+        current_complexity:
+          cyclomatic: 16
+          cognitive: ~25
+        target_complexity: 10
+        file: shared/src/parser.rs
+        line: 50
+        requirements:
+          - "Extract quote handling function"
+          - "Extract escape sequence processing"
+          - "Each function complexity < 10"
+          - "Fuzz tests for parser robustness"
+        tests:
+          - "test_handle_quotes"
+          - "test_process_escapes"
+          - "fuzz_tokenize_never_panics"
+          - "proptest_tokenize_deterministic"
+        acceptance:
+          - "pmat-complexity passes"
+          - "All existing tests pass"
+          - "Coverage ≥ 85%"
+          - "Fuzz tests pass (10K+ inputs)"
+
+      - id: WOS-Q04
+        title: "Implement VFS file loading in vim"
+        priority: critical
+        time_estimate: 1_hour
+        pmat_violation: satd
+        satd_location: userspace/src/programs.rs:254
+        satd_comment: "TODO: Load file content from VFS"
+        requirements:
+          - "Load file from VFS in vim_main_loop on first call"
+          - "Handle UTF-8 conversion"
+          - "Handle file-not-found gracefully"
+          - "Unit + E2E tests"
+        tests:
+          - "test_vim_loads_existing_file"
+          - "test_vim_handles_nonexistent_file"
+          - "test_vim_handles_non_utf8"
+          - "e2e_vim_opens_file"
+        acceptance:
+          - "TODO comment removed"
+          - "Vim loads files from VFS"
+          - "E2E test passes"
+
+      - id: WOS-Q05
+        title: "Implement stdin input handling for vim"
+        priority: critical
+        time_estimate: 1_hour
+        pmat_violation: satd
+        satd_location: userspace/src/programs.rs:429
+        satd_comment: "TODO: Read input from stdin"
+        requirements:
+          - "Request stdin read via SystemCall::Read"
+          - "Process keystroke input"
+          - "Interactive editing loop"
+          - "Unit + E2E tests"
+        tests:
+          - "test_vim_reads_stdin"
+          - "test_vim_processes_keystrokes"
+          - "e2e_vim_interactive_editing"
+        acceptance:
+          - "TODO comment removed"
+          - "Vim reads stdin"
+          - "Interactive editing works"
+
+      - id: WOS-Q06
+        title: "Implement actual file writing for vim :w"
+        priority: critical
+        time_estimate: 1_hour
+        pmat_violation: satd
+        satd_location: userspace/src/vim/ex_commands.rs:11
+        satd_comment: "TODO: Actually write to file"
+        requirements:
+          - "Write buffer content to VFS via syscall"
+          - "Update modified flag"
+          - "Handle write errors"
+          - "Unit + E2E tests"
+        tests:
+          - "test_vim_write_to_vfs"
+          - "test_vim_write_error_handling"
+          - "e2e_vim_save_file"
+        acceptance:
+          - "TODO comment removed"
+          - ":w writes to VFS"
+          - "E2E test passes"
+
+      - id: WOS-Q07
+        title: "Implement quit signaling for vim :q"
+        priority: critical
+        time_estimate: 30_min
+        pmat_violation: satd
+        satd_location: userspace/src/vim/ex_commands.rs:24
+        satd_comment: "TODO: Signal quit to application"
+        requirements:
+          - "Set exit_requested flag"
+          - "Handle unsaved changes"
+          - "Return appropriate exit code"
+          - "Unit + E2E tests"
+        tests:
+          - "test_vim_quit_clean"
+          - "test_vim_quit_unsaved"
+          - "e2e_vim_quit_workflow"
+        acceptance:
+          - "TODO comment removed"
+          - ":q exits vim properly"
+          - "E2E test passes"
+
+      - id: WOS-Q08
+        title: "Implement O_CREAT flag handling in sys_open"
+        priority: critical
+        time_estimate: 1_hour
+        pmat_violation: satd
+        satd_location: kernel/src/syscall.rs:346
+        satd_comment: "TODO: Handle O_CREAT flag to create file if it doesn't exist"
+        requirements:
+          - "Parse O_CREAT flag from OpenFlags"
+          - "Create file in VFS if doesn't exist"
+          - "Handle permissions"
+          - "Unit + integration tests"
+        tests:
+          - "test_sys_open_creates_file_with_o_creat"
+          - "test_sys_open_o_creat_permissions"
+          - "proptest_open_flags_never_panic"
+        acceptance:
+          - "TODO comment removed"
+          - "O_CREAT creates files"
+          - "All tests pass"
+
+      - id: WOS-Q09
+        title: "Re-enable PMAT gates in quality target"
+        priority: critical
+        time_estimate: 15_min
+        dependencies: [WOS-Q01, WOS-Q02, WOS-Q03, WOS-Q04, WOS-Q05, WOS-Q06, WOS-Q07, WOS-Q08]
+        requirements:
+          - "Add pmat-satd back to quality target"
+          - "Add pmat-complexity back to quality target"
+          - "Add pmat-tdg to quality target"
+          - "Verify all gates pass"
+        tests:
+          - "make pmat-satd (should pass)"
+          - "make pmat-complexity (should pass)"
+          - "make pmat-tdg (should pass)"
+          - "make quality (should pass)"
+        acceptance:
+          - "All PMAT gates enabled"
+          - "Pre-commit hook enforces gates"
+          - "make quality passes"
+
   completed_features:
     - "WOS-001: Project scaffolding and quality gates"
     - "WOS-002: Kernel state types and serialization"
