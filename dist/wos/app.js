@@ -3,6 +3,562 @@
 
 import init, { wos_version, WosWasm } from './wos.js';
 
+class FileManager {
+  constructor(wos) {
+    this.wos = wos;
+    this.files = new Map(); // fileName -> {name, content, size, modified}
+    this.selectedFile = null;
+
+    this.setupEventListeners();
+    this.refreshFileList();
+  }
+
+  setupEventListeners() {
+    // Upload button
+    document.getElementById('btn-upload').addEventListener('click', () => {
+      document.getElementById('file-upload-input').click();
+    });
+
+    // File input change
+    document.getElementById('file-upload-input').addEventListener('change', (e) => {
+      this.handleFileUpload(e.target.files);
+    });
+
+    // New file button
+    document.getElementById('btn-new-file').addEventListener('click', () => {
+      this.createNewFile();
+    });
+
+    // Refresh button
+    document.getElementById('btn-refresh').addEventListener('click', () => {
+      this.refreshFileList();
+    });
+
+    // Action buttons
+    document.getElementById('btn-edit').addEventListener('click', () => {
+      if (this.selectedFile) {
+        this.openVimEditor(this.selectedFile);
+      }
+    });
+
+    document.getElementById('btn-download').addEventListener('click', () => {
+      if (this.selectedFile) {
+        this.downloadFile(this.selectedFile);
+      }
+    });
+
+    document.getElementById('btn-delete').addEventListener('click', () => {
+      if (this.selectedFile) {
+        this.deleteFile(this.selectedFile);
+      }
+    });
+  }
+
+  async handleFileUpload(files) {
+    for (const file of files) {
+      try {
+        const content = await file.text();
+        const fileData = {
+          name: file.name,
+          content: content,
+          size: content.length,
+          modified: new Date(file.lastModified).toLocaleString()
+        };
+
+        this.files.set(file.name, fileData);
+
+        // Write to VFS via WOS
+        if (this.wos) {
+          const path = `/tmp/${file.name}`;
+          const cmd = `echo "${content.replace(/"/g, '\\"').replace(/\n/g, '\\n')}" > ${path}`;
+          this.wos.executeCommand(`touch ${path}`);
+          // Store content in localStorage for now
+          localStorage.setItem(`wos-file-${file.name}`, content);
+        }
+      } catch (error) {
+        console.error(`Error uploading ${file.name}:`, error);
+      }
+    }
+
+    this.refreshFileList();
+    this.updateFileCount();
+  }
+
+  createNewFile() {
+    const fileName = prompt('Enter new file name:', 'untitled.txt');
+    if (!fileName) return;
+
+    const fileData = {
+      name: fileName,
+      content: '',
+      size: 0,
+      modified: new Date().toLocaleString()
+    };
+
+    this.files.set(fileName, fileData);
+    localStorage.setItem(`wos-file-${fileName}`, '');
+
+    this.refreshFileList();
+    this.updateFileCount();
+    this.selectFile(fileName);
+    this.openVimEditor(fileName);
+  }
+
+  refreshFileList() {
+    // Load files from localStorage
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith('wos-file-')) {
+        const fileName = key.replace('wos-file-', '');
+        const content = localStorage.getItem(key);
+        if (!this.files.has(fileName)) {
+          this.files.set(fileName, {
+            name: fileName,
+            content: content,
+            size: content.length,
+            modified: 'Loaded from storage'
+          });
+        }
+      }
+    }
+
+    this.renderFileList();
+    this.updateFileCount();
+  }
+
+  renderFileList() {
+    const browser = document.getElementById('file-browser');
+
+    if (this.files.size === 0) {
+      browser.innerHTML = '<div class="file-placeholder">No files loaded. Upload a file or create new file to begin.</div>';
+      return;
+    }
+
+    browser.innerHTML = '';
+
+    for (const [fileName, fileData] of this.files) {
+      const item = document.createElement('div');
+      item.className = 'file-item';
+      if (this.selectedFile === fileName) {
+        item.classList.add('selected');
+      }
+
+      item.innerHTML = `
+        <div class="file-item-name">
+          <svg class="file-item-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+          </svg>
+          <span>${fileName}</span>
+        </div>
+        <span class="file-item-size">${this.formatSize(fileData.size)}</span>
+      `;
+
+      item.addEventListener('click', () => this.selectFile(fileName));
+      item.addEventListener('dblclick', () => this.openVimEditor(fileName));
+
+      browser.appendChild(item);
+    }
+  }
+
+  selectFile(fileName) {
+    this.selectedFile = fileName;
+    this.renderFileList();
+    this.updateFileDetails();
+
+    // Enable action buttons
+    document.getElementById('btn-edit').disabled = false;
+    document.getElementById('btn-download').disabled = false;
+    document.getElementById('btn-delete').disabled = false;
+  }
+
+  updateFileDetails() {
+    const details = document.getElementById('file-details');
+
+    if (!this.selectedFile) {
+      details.innerHTML = '<p class="no-selection">No file selected</p>';
+      return;
+    }
+
+    const fileData = this.files.get(this.selectedFile);
+    details.innerHTML = `
+      <p><strong>Name:</strong> ${fileData.name}</p>
+      <p><strong>Size:</strong> ${this.formatSize(fileData.size)}</p>
+      <p><strong>Modified:</strong> ${fileData.modified}</p>
+      <p><strong>Lines:</strong> ${fileData.content.split('\n').length}</p>
+    `;
+  }
+
+  updateFileCount() {
+    document.getElementById('file-count').textContent = this.files.size;
+  }
+
+  formatSize(bytes) {
+    if (bytes === 0) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  openVimEditor(fileName) {
+    const fileData = this.files.get(fileName);
+    if (!fileData) return;
+
+    const vim = new VimEditor(fileData.name, fileData.content, (newContent) => {
+      // Save callback
+      fileData.content = newContent;
+      fileData.size = newContent.length;
+      fileData.modified = new Date().toLocaleString();
+      this.files.set(fileName, fileData);
+      localStorage.setItem(`wos-file-${fileName}`, newContent);
+      this.refreshFileList();
+    });
+
+    vim.open();
+  }
+
+  downloadFile(fileName) {
+    const fileData = this.files.get(fileName);
+    if (!fileData) return;
+
+    const blob = new Blob([fileData.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  deleteFile(fileName) {
+    if (!confirm(`Delete ${fileName}?`)) return;
+
+    this.files.delete(fileName);
+    localStorage.removeItem(`wos-file-${fileName}`);
+
+    if (this.selectedFile === fileName) {
+      this.selectedFile = null;
+      document.getElementById('btn-edit').disabled = true;
+      document.getElementById('btn-download').disabled = true;
+      document.getElementById('btn-delete').disabled = true;
+    }
+
+    this.refreshFileList();
+    this.updateFileCount();
+    this.updateFileDetails();
+  }
+}
+
+class VimEditor {
+  constructor(fileName, content, saveCallback) {
+    this.fileName = fileName;
+    this.lines = content.split('\n');
+    if (this.lines.length === 0) this.lines = [''];
+    this.saveCallback = saveCallback;
+
+    this.cursorRow = 0;
+    this.cursorCol = 0;
+    this.mode = 'NORMAL'; // NORMAL, INSERT, COMMAND
+    this.commandBuffer = '';
+    this.modified = false;
+    this.message = '';
+
+    this.modal = document.getElementById('vim-modal');
+    this.editor = document.getElementById('vim-editor');
+    this.setupVimEventListeners();
+  }
+
+  setupVimEventListeners() {
+    this.keyHandler = this.handleKeyPress.bind(this);
+
+    document.getElementById('vim-close').addEventListener('click', () => {
+      if (this.modified) {
+        if (confirm('You have unsaved changes. Close anyway?')) {
+          this.close();
+        }
+      } else {
+        this.close();
+      }
+    });
+  }
+
+  open() {
+    this.modal.classList.remove('hidden');
+    this.render();
+    this.editor.focus();
+    this.editor.setAttribute('tabindex', '0');
+    this.editor.addEventListener('keydown', this.keyHandler);
+  }
+
+  close() {
+    this.modal.classList.add('hidden');
+    this.editor.removeEventListener('keydown', this.keyHandler);
+  }
+
+  handleKeyPress(e) {
+    if (this.mode === 'NORMAL') {
+      this.handleNormalMode(e);
+    } else if (this.mode === 'INSERT') {
+      this.handleInsertMode(e);
+    } else if (this.mode === 'COMMAND') {
+      this.handleCommandMode(e);
+    }
+
+    this.render();
+  }
+
+  handleNormalMode(e) {
+    switch(e.key) {
+      case 'h': // Move left
+        e.preventDefault();
+        this.moveCursorLeft();
+        break;
+      case 'j': // Move down
+        e.preventDefault();
+        this.moveCursorDown();
+        break;
+      case 'k': // Move up
+        e.preventDefault();
+        this.moveCursorUp();
+        break;
+      case 'l': // Move right
+        e.preventDefault();
+        this.moveCursorRight();
+        break;
+      case 'i': // Insert mode
+        e.preventDefault();
+        this.mode = 'INSERT';
+        this.message = '-- INSERT --';
+        break;
+      case 'a': // Insert after cursor
+        e.preventDefault();
+        this.moveCursorRight();
+        this.mode = 'INSERT';
+        this.message = '-- INSERT --';
+        break;
+      case 'o': // New line below
+        e.preventDefault();
+        this.lines.splice(this.cursorRow + 1, 0, '');
+        this.cursorRow++;
+        this.cursorCol = 0;
+        this.mode = 'INSERT';
+        this.modified = true;
+        break;
+      case 'O': // New line above
+        e.preventDefault();
+        this.lines.splice(this.cursorRow, 0, '');
+        this.cursorCol = 0;
+        this.mode = 'INSERT';
+        this.modified = true;
+        break;
+      case 'x': // Delete character
+        e.preventDefault();
+        if (this.cursorCol < this.lines[this.cursorRow].length) {
+          this.lines[this.cursorRow] =
+            this.lines[this.cursorRow].slice(0, this.cursorCol) +
+            this.lines[this.cursorRow].slice(this.cursorCol + 1);
+          this.modified = true;
+        }
+        break;
+      case ':': // Command mode
+        e.preventDefault();
+        this.mode = 'COMMAND';
+        this.commandBuffer = ':';
+        break;
+      case 'Escape':
+        e.preventDefault();
+        this.message = '';
+        break;
+    }
+  }
+
+  handleInsertMode(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      this.mode = 'NORMAL';
+      this.message = '';
+      if (this.cursorCol > 0) this.cursorCol--;
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const currentLine = this.lines[this.cursorRow];
+      const beforeCursor = currentLine.slice(0, this.cursorCol);
+      const afterCursor = currentLine.slice(this.cursorCol);
+      this.lines[this.cursorRow] = beforeCursor;
+      this.lines.splice(this.cursorRow + 1, 0, afterCursor);
+      this.cursorRow++;
+      this.cursorCol = 0;
+      this.modified = true;
+      return;
+    }
+
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      if (this.cursorCol > 0) {
+        this.lines[this.cursorRow] =
+          this.lines[this.cursorRow].slice(0, this.cursorCol - 1) +
+          this.lines[this.cursorRow].slice(this.cursorCol);
+        this.cursorCol--;
+        this.modified = true;
+      } else if (this.cursorRow > 0) {
+        const prevLine = this.lines[this.cursorRow - 1];
+        this.lines[this.cursorRow - 1] = prevLine + this.lines[this.cursorRow];
+        this.lines.splice(this.cursorRow, 1);
+        this.cursorRow--;
+        this.cursorCol = prevLine.length;
+        this.modified = true;
+      }
+      return;
+    }
+
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      this.lines[this.cursorRow] =
+        this.lines[this.cursorRow].slice(0, this.cursorCol) +
+        e.key +
+        this.lines[this.cursorRow].slice(this.cursorCol);
+      this.cursorCol++;
+      this.modified = true;
+    }
+  }
+
+  handleCommandMode(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      this.mode = 'NORMAL';
+      this.commandBuffer = '';
+      this.message = '';
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      this.executeCommand(this.commandBuffer);
+      this.commandBuffer = '';
+      this.mode = 'NORMAL';
+      return;
+    }
+
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      if (this.commandBuffer.length > 1) {
+        this.commandBuffer = this.commandBuffer.slice(0, -1);
+      } else {
+        this.mode = 'NORMAL';
+        this.commandBuffer = '';
+      }
+      return;
+    }
+
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      this.commandBuffer += e.key;
+    }
+  }
+
+  executeCommand(cmd) {
+    cmd = cmd.slice(1); // Remove leading ':'
+
+    if (cmd === 'w' || cmd === 'write') {
+      this.save();
+      this.message = `"${this.fileName}" ${this.lines.length}L written`;
+    } else if (cmd === 'q' || cmd === 'quit') {
+      if (this.modified) {
+        this.message = 'No write since last change (add ! to override)';
+      } else {
+        this.close();
+      }
+    } else if (cmd === 'q!' || cmd === 'quit!') {
+      this.close();
+    } else if (cmd === 'wq' || cmd === 'x') {
+      this.save();
+      this.close();
+    } else {
+      this.message = `E492: Not an editor command: ${cmd}`;
+    }
+  }
+
+  save() {
+    const content = this.lines.join('\n');
+    this.saveCallback(content);
+    this.modified = false;
+  }
+
+  moveCursorUp() {
+    if (this.cursorRow > 0) {
+      this.cursorRow--;
+      this.cursorCol = Math.min(this.cursorCol, this.lines[this.cursorRow].length);
+    }
+  }
+
+  moveCursorDown() {
+    if (this.cursorRow < this.lines.length - 1) {
+      this.cursorRow++;
+      this.cursorCol = Math.min(this.cursorCol, this.lines[this.cursorRow].length);
+    }
+  }
+
+  moveCursorLeft() {
+    if (this.cursorCol > 0) {
+      this.cursorCol--;
+    }
+  }
+
+  moveCursorRight() {
+    if (this.cursorCol < this.lines[this.cursorRow].length) {
+      this.cursorCol++;
+    }
+  }
+
+  render() {
+    // Update header
+    document.getElementById('vim-filename').textContent = this.fileName;
+    document.getElementById('vim-modified').classList.toggle('hidden', !this.modified);
+
+    const modeText = this.mode === 'NORMAL' ? '-- NORMAL --' :
+                     this.mode === 'INSERT' ? '-- INSERT --' :
+                     '-- COMMAND --';
+    document.getElementById('vim-mode').textContent = modeText;
+    document.getElementById('vim-position').textContent = `${this.cursorRow + 1},${this.cursorCol + 1}`;
+
+    // Update command line
+    document.getElementById('vim-command').textContent = this.commandBuffer;
+    document.getElementById('vim-message').textContent = this.message;
+
+    // Render editor content
+    this.editor.innerHTML = '';
+
+    this.lines.forEach((line, idx) => {
+      const lineDiv = document.createElement('div');
+      lineDiv.className = 'vim-line';
+
+      if (idx === this.cursorRow) {
+        const beforeCursor = line.slice(0, this.cursorCol);
+        const atCursor = line[this.cursorCol] || ' ';
+        const afterCursor = line.slice(this.cursorCol + 1);
+
+        lineDiv.innerHTML =
+          this.escapeHtml(beforeCursor) +
+          `<span class="vim-cursor">${this.escapeHtml(atCursor)}</span>` +
+          this.escapeHtml(afterCursor);
+      } else {
+        lineDiv.textContent = line || ' ';
+      }
+
+      this.editor.appendChild(lineDiv);
+    });
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+}
+
 class Terminal {
   constructor() {
     this.output = document.getElementById('terminal-output');
@@ -11,6 +567,7 @@ class Terminal {
     this.history = [];
     this.historyIndex = -1;
     this.wos = null;
+    this.fileManager = null;
 
     this.setupEventListeners();
     this.printWelcome();
@@ -58,11 +615,6 @@ class Terminal {
     document.getElementById('btn-reset').addEventListener('click', () => this.reset());
     document.getElementById('btn-save').addEventListener('click', () => this.saveState());
     document.getElementById('btn-load').addEventListener('click', () => this.loadState());
-
-    // Quality export buttons
-    document.getElementById('btn-export-json').addEventListener('click', () => this.exportQualityJson());
-    document.getElementById('btn-export-html').addEventListener('click', () => this.exportQualityHtml());
-    document.getElementById('btn-export-sarif').addEventListener('click', () => this.exportQualitySarif());
 
     // Keep input focused
     this.terminalElement.addEventListener('click', () => {
@@ -248,78 +800,14 @@ class Terminal {
     try {
       const processCount = this.wos.processCount();
       document.getElementById('process-count').textContent = processCount;
-      this.updateQualityMetrics();
     } catch (error) {
       console.error('Error updating system info:', error);
     }
   }
 
-  updateQualityMetrics() {
-    if (!this.wos) return;
-
-    try {
-      const metricsJson = this.wos.getQualityMetrics();
-      const metrics = JSON.parse(metricsJson);
-
-      document.getElementById('tdg-grade').textContent = metrics.tdg_grade || 'A+';
-      document.getElementById('tdg-score').textContent = (metrics.tdg_score || 95.0).toFixed(1);
-      document.getElementById('test-count').textContent = metrics.test_count || '380';
-      document.getElementById('coverage').textContent = `${((metrics.coverage || 1.0) * 100).toFixed(0)}%`;
-    } catch (error) {
-      console.error('Error updating quality metrics:', error);
-    }
-  }
-
-  downloadFile(filename, content, mimeType = 'text/plain') {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  exportQualityJson() {
-    if (!this.wos) return;
-
-    try {
-      const json = this.wos.getQualityMetrics();
-      this.downloadFile('wos-quality-metrics.json', json, 'application/json');
-      this.printLine('Quality metrics exported as JSON', 'success');
-    } catch (error) {
-      this.printLine(`Export error: ${error}`, 'error');
-    }
-  }
-
-  exportQualityHtml() {
-    if (!this.wos) return;
-
-    try {
-      const html = this.wos.exportQualityHtml();
-      this.downloadFile('wos-quality-report.html', html, 'text/html');
-      this.printLine('Quality report exported as HTML', 'success');
-    } catch (error) {
-      this.printLine(`Export error: ${error}`, 'error');
-    }
-  }
-
-  exportQualitySarif() {
-    if (!this.wos) return;
-
-    try {
-      const sarif = this.wos.exportQualitySarif();
-      this.downloadFile('wos-quality-report.sarif', sarif, 'application/json');
-      this.printLine('Quality report exported as SARIF', 'success');
-    } catch (error) {
-      this.printLine(`Export error: ${error}`, 'error');
-    }
-  }
-
   setWOS(wos) {
     this.wos = wos;
+    this.fileManager = new FileManager(wos);
     this.updateSystemInfo();
   }
 }

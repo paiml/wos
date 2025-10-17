@@ -40,38 +40,77 @@
           </div>
         </div>
 
-        <div class="info-panels">
-          <div class="info-panel">
-            <h3>Process List</h3>
-            <div id="process-list" class="info-content">
-              <p class="info-placeholder">No processes running</p>
+        <div class="file-manager">
+          <div class="file-panel">
+            <div class="file-panel-header">
+              <h3>Files</h3>
+              <div class="file-controls">
+                <button id="btn-upload" class="btn-icon" title="Upload file">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+                  </svg>
+                </button>
+                <button id="btn-new-file" class="btn-icon" title="New file">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                  </svg>
+                </button>
+                <button id="btn-refresh" class="btn-icon" title="Refresh file list">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div id="file-browser" class="file-browser">
+              <div class="file-placeholder">No files loaded. Upload a file or create new file to begin.</div>
             </div>
           </div>
 
-          <div class="info-panel">
-            <h3>System Info</h3>
-            <div id="system-info" class="info-content">
-              <p><strong>Status:</strong> <span id="status">Initializing...</span></p>
-              <p><strong>Processes:</strong> <span id="process-count">0</span></p>
-              <p><strong>Version:</strong> <span id="version">Loading...</span></p>
+          <div class="file-panel">
+            <div class="file-panel-header">
+              <h3>File Actions</h3>
             </div>
-          </div>
+            <div class="file-actions">
+              <button id="btn-edit" class="action-btn" disabled>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                </svg>
+                Edit in Vim
+              </button>
+              <button id="btn-download" class="action-btn" disabled>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                </svg>
+                Download
+              </button>
+              <button id="btn-delete" class="action-btn" disabled>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                </svg>
+                Delete
+              </button>
+            </div>
 
-          <div class="info-panel">
-            <h3>Quality Metrics</h3>
-            <div id="quality-metrics" class="info-content">
-              <p><strong>TDG Grade:</strong> <span id="tdg-grade">A+</span></p>
-              <p><strong>TDG Score:</strong> <span id="tdg-score">95.0</span></p>
-              <p><strong>Tests:</strong> <span id="test-count">380</span></p>
-              <p><strong>Coverage:</strong> <span id="coverage">100%</span></p>
-              <div class="quality-actions">
-                <button id="btn-export-json" title="Export metrics as JSON">Export JSON</button>
-                <button id="btn-export-html" title="Export report as HTML">Export HTML</button>
-                <button id="btn-export-sarif" title="Export SARIF report">Export SARIF</button>
+            <div class="file-info">
+              <h4>Selected File</h4>
+              <div id="file-details" class="file-details">
+                <p class="no-selection">No file selected</p>
               </div>
             </div>
           </div>
 
+          <div class="file-panel system-panel">
+            <div class="file-panel-header">
+              <h3>System Info</h3>
+            </div>
+            <div class="system-info">
+              <p><strong>Status:</strong> <span id="status">Initializing...</span></p>
+              <p><strong>Processes:</strong> <span id="process-count">0</span></p>
+              <p><strong>Version:</strong> <span id="version">Loading...</span></p>
+              <p><strong>Files:</strong> <span id="file-count">0</span></p>
+            </div>
+          </div>
         </div>
       </main>
 
@@ -85,6 +124,31 @@
           Built with Rust + WebAssembly
         </p>
       </footer>
+    </div>
+
+    <!-- Hidden file input for upload -->
+    <input type="file" id="file-upload-input" style="display: none;" multiple />
+
+    <!-- Vim Editor Modal -->
+    <div id="vim-modal" class="vim-modal hidden">
+      <div class="vim-container">
+        <div class="vim-header">
+          <div class="vim-file-info">
+            <span id="vim-filename" class="vim-filename">/untitled</span>
+            <span id="vim-modified" class="vim-modified hidden">*</span>
+          </div>
+          <div class="vim-mode-info">
+            <span id="vim-mode" class="vim-mode">-- NORMAL --</span>
+            <span id="vim-position" class="vim-position">1,1</span>
+          </div>
+          <button id="vim-close" class="vim-close" title="Close editor (save changes first!)">×</button>
+        </div>
+        <div id="vim-editor" class="vim-editor"></div>
+        <div class="vim-statusline">
+          <div id="vim-command" class="vim-command"></div>
+          <div id="vim-message" class="vim-message"></div>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="app.js"></script>

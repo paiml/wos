@@ -178,72 +178,359 @@ main {
   color: var(--bg-terminal);
 }
 
-/* Info panels */
-.info-panels {
+/* File Manager */
+.file-manager {
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-.info-panel {
+.file-panel {
   background: var(--bg-secondary);
   border-radius: 8px;
   border: 1px solid var(--border);
   overflow: hidden;
 }
 
-.info-panel h3 {
+.file-panel-header {
   background: var(--bg-terminal);
-  color: var(--accent);
   padding: 12px 20px;
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   border-bottom: 1px solid var(--border);
 }
 
-.info-content {
+.file-panel-header h3 {
+  color: var(--accent);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.file-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-icon {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.btn-icon svg {
+  display: block;
+}
+
+/* File Browser */
+.file-browser {
+  padding: 15px;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.file-placeholder {
+  color: var(--text-secondary);
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+.file-item {
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  background: var(--bg-terminal);
+  border-radius: 4px;
+  border-left: 3px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.file-item:hover {
+  background: var(--bg-primary);
+  border-left-color: var(--accent);
+}
+
+.file-item.selected {
+  border-left-color: var(--accent);
+  background: var(--bg-primary);
+}
+
+.file-item-name {
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-item-icon {
+  color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.file-item-size {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+/* File Actions */
+.file-actions {
+  padding: 15px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.action-btn {
+  background: var(--bg-terminal);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: 10px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+
+.action-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.action-btn svg {
+  display: block;
+}
+
+/* File Info */
+.file-info {
+  padding: 15px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.file-info h4 {
+  color: var(--accent);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.file-details {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.file-details p {
+  margin-bottom: 6px;
+}
+
+.file-details strong {
+  color: var(--accent);
+}
+
+.no-selection {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* System Info Panel */
+.system-panel .system-info {
   padding: 15px 20px;
   font-family: var(--font-mono);
   font-size: 13px;
 }
 
-.info-placeholder {
-  color: var(--text-secondary);
-  font-style: italic;
-}
-
-.info-content p {
+.system-info p {
   margin-bottom: 8px;
 }
 
-.info-content strong {
+.system-info strong {
   color: var(--accent);
 }
 
-.process-item {
-  padding: 8px;
-  margin-bottom: 6px;
-  background: var(--bg-terminal);
-  border-radius: 4px;
-  border-left: 3px solid var(--accent);
-}
-
-.process-item.terminated {
-  border-left-color: var(--error);
-  opacity: 0.6;
-}
-
-.quality-actions {
-  margin-top: 15px;
+/* Vim Editor Modal */
+.vim-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.95);
+  z-index: 1000;
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
 }
 
-.quality-actions button {
+.vim-modal.hidden {
+  display: none;
+}
+
+.vim-container {
+  width: 100%;
+  max-width: 1200px;
+  height: 90vh;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.vim-header {
+  background: var(--bg-terminal);
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid var(--accent);
+}
+
+.vim-file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vim-filename {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.vim-modified {
+  color: var(--error);
+  font-weight: bold;
+  font-size: 18px;
+}
+
+.vim-modified.hidden {
+  display: none;
+}
+
+.vim-mode-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.vim-mode {
+  color: var(--success);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vim-position {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.vim-close {
+  background: var(--error);
+  color: white;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: bold;
+  line-height: 1;
+  transition: all 0.2s;
+}
+
+.vim-close:hover {
+  background: #ff4444;
+}
+
+.vim-editor {
   flex: 1;
-  min-width: 100px;
+  background: var(--bg-terminal);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 20px;
+  overflow: auto;
+  color: var(--text-primary);
+}
+
+.vim-editor:focus {
+  outline: none;
+}
+
+.vim-line {
+  white-space: pre;
+  min-height: 21px;
+}
+
+.vim-cursor {
+  background: var(--accent);
+  color: var(--bg-terminal);
+  display: inline-block;
+  width: 8px;
+}
+
+.vim-statusline {
+  background: var(--bg-terminal);
+  padding: 8px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-height: 32px;
+}
+
+.vim-command {
+  color: var(--accent);
+}
+
+.vim-message {
+  color: var(--text-secondary);
+}
+
+.vim-message.error {
+  color: var(--error);
+}
+
+.vim-message.success {
+  color: var(--success);
 }
 
 /* Footer */
