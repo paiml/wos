@@ -80,6 +80,9 @@ test.describe('UI Interactions', () => {
       await input.press('Enter');
     }
 
+    // Wait for DOM updates to complete (instant scroll with scroll-behavior: auto)
+    await page.waitForTimeout(100);
+
     // Terminal should be scrolled to bottom
     const isAtBottom = await terminal.evaluate((el) => {
       return Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 10;

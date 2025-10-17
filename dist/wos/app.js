@@ -643,10 +643,7 @@ class Terminal {
   }
 
   scrollToBottom() {
-    // Use requestAnimationFrame to ensure DOM has updated
-    requestAnimationFrame(() => {
-      this.terminalElement.scrollTop = this.terminalElement.scrollHeight;
-    });
+    this.terminalElement.scrollTop = this.terminalElement.scrollHeight;
   }
 
   clear() {
