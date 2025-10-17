@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Basic Loading', () => {
   test('should load the WOS application', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('index.html');
 
     // Wait for page to load
     await expect(page).toHaveTitle(/WOS/);
@@ -13,7 +13,7 @@ test.describe('Basic Loading', () => {
   });
 
   test('should display welcome message', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('index.html');
 
     // Wait for WASM to initialize
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
@@ -25,7 +25,7 @@ test.describe('Basic Loading', () => {
   });
 
   test('should load WASM successfully', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('index.html');
 
     // Wait for WASM initialization
     const status = page.locator('#status');
@@ -37,7 +37,7 @@ test.describe('Basic Loading', () => {
   });
 
   test('should have input field focused', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('index.html');
 
     // Wait for page to load
     await page.waitForSelector('#terminal-input');
@@ -48,7 +48,7 @@ test.describe('Basic Loading', () => {
   });
 
   test('should display process count', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('index.html');
 
     // Wait for initialization
     await page.waitForSelector('#status:has-text("Ready")');

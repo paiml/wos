@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('UI Interactions', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('index.html');
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
   });
 
