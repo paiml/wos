@@ -544,6 +544,7 @@ impl WosWasm {
             "echo" => self.cmd_echo(args.to_vec()),
             "grep" => self.cmd_grep(args.to_vec(), stdin),
             "wc" => self.cmd_wc(args.to_vec(), stdin),
+            "vim" => self.cmd_vim(args.to_vec()),
             "version" => wos_version(),
             "state" => self.cmd_state(),
             "reset" => {
@@ -583,6 +584,7 @@ impl WosWasm {
         output.push_str("  echo      - Echo arguments\n");
         output.push_str("  grep      - Search file contents\n");
         output.push_str("  wc        - Count words/lines/bytes\n");
+        output.push_str("  vim       - Modal text editor\n");
         output.push_str("  version   - Show system version\n");
         output.push_str("  state     - Show kernel state\n");
         output.push_str("  reset     - Reset system to initial state\n");
@@ -769,6 +771,46 @@ impl WosWasm {
             }
             Err(_) => format!("wc: {}: No such file or directory\n", args[0]),
         }
+    }
+
+    fn cmd_vim(&self, args: Vec<String>) -> String {
+        // Create vim program instance
+        let file_path = if !args.is_empty() {
+            Some(std::path::PathBuf::from(&args[0]))
+        } else {
+            None
+        };
+
+        // Create vim instance
+        let mut vim = wos_userspace::Vim::new(2, file_path.clone());
+
+        // Load file content if file exists
+        if let Some(ref path) = file_path {
+            match self.state.vfs.read_file(path) {
+                Ok(contents) => {
+                    let text = String::from_utf8_lossy(&contents).to_string();
+                    vim.vim_state = wos_userspace::VimState::new_with_text(&text);
+                }
+                Err(_) => {
+                    // File doesn't exist - start with empty buffer
+                    // Vim will create it on :w
+                }
+            }
+        }
+
+        // Render initial screen
+        vim.render_screen();
+
+        // Return the rendered screen
+        // In a real implementation, this would enter an interactive loop
+        // For MVP, we just show the initial state
+        format!(
+            "{}\n\nVim editor (MVP: non-interactive)\n\
+            In full implementation, this would be an interactive editor.\n\
+            Use 'cat <file>' to view file contents.\n\
+            Use 'echo \"text\" > file' to write to files.\n",
+            vim.get_screen()
+        )
     }
 
     /// Get current kernel state as JSON
@@ -1723,5 +1765,51 @@ mod tests {
         // Read back
         let content = wos.execute_command("cat /newfile.txt");
         assert_eq!(content.trim(), "hello", "Should create file with append");
+    }
+
+    #[test]
+    fn test_vim_empty_buffer() {
+        let mut wos = WosWasm::new();
+        let result = wos.execute_command("vim");
+
+        assert!(result.contains("[No Name]"));
+        assert!(result.contains("NORMAL"));
+        assert!(result.contains("Vim editor"));
+    }
+
+    #[test]
+    fn test_vim_with_existing_file() {
+        let mut wos = WosWasm::new();
+
+        // Create a file
+        wos.execute_command("echo 'Hello\nWorld' > /test.txt");
+
+        // Open with vim
+        let result = wos.execute_command("vim /test.txt");
+
+        assert!(result.contains("/test.txt"));
+        assert!(result.contains("Hello"));
+        assert!(result.contains("World"));
+        assert!(result.contains("NORMAL"));
+    }
+
+    #[test]
+    fn test_vim_with_nonexistent_file() {
+        let mut wos = WosWasm::new();
+
+        // Open non-existent file
+        let result = wos.execute_command("vim /newfile.txt");
+
+        assert!(result.contains("/newfile.txt"));
+        assert!(result.contains("NORMAL"));
+    }
+
+    #[test]
+    fn test_help_includes_vim() {
+        let mut wos = WosWasm::new();
+        let result = wos.execute_command("help");
+
+        assert!(result.contains("vim"));
+        assert!(result.contains("Modal text editor"));
     }
 }

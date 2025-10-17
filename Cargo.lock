@@ -1018,6 +1018,7 @@ dependencies = [
 name = "wos-userspace"
 version = "0.1.0"
 dependencies = [
+ "im",
  "proptest",
  "serde",
  "serde_json",

@@ -4,7 +4,10 @@
 //! - echo: print arguments to stdout
 //! - ls: list files in a directory
 //! - ps: list running processes
+//! - vim: modal text editor
 
+use crate::vim::{VimCommand, VimMode, VimState};
+use std::path::PathBuf;
 use wos_kernel::{KernelState, ProcessId, SystemCall};
 
 /// Echo program - prints arguments to stdout
@@ -224,6 +227,213 @@ pub fn ps_main_loop(ps: &mut Ps, state: &KernelState) -> Option<SystemCall> {
     Some(SystemCall::Exit(0))
 }
 
+/// Vim program - modal text editor
+#[derive(Clone, Debug)]
+pub struct Vim {
+    /// Process ID
+    pub pid: ProcessId,
+    /// File path being edited
+    pub file_path: Option<PathBuf>,
+    /// Vim editor state
+    pub vim_state: VimState,
+    /// Input buffer (keystrokes received)
+    pub input_buffer: Vec<char>,
+    /// Screen output buffer (for rendering)
+    pub screen_buffer: String,
+    /// Has rendered initial screen
+    pub initialized: bool,
+    /// Exit requested
+    pub exit_requested: bool,
+}
+
+impl Vim {
+    /// Create a new vim instance
+    pub fn new(pid: ProcessId, file_path: Option<PathBuf>) -> Self {
+        // Create vim state with optional file content
+        let vim_state = if let Some(ref _path) = file_path {
+            // TODO: Load file content from VFS
+            VimState::new_with_text("")
+        } else {
+            VimState::new()
+        };
+
+        Self {
+            pid,
+            file_path,
+            vim_state,
+            input_buffer: Vec::new(),
+            screen_buffer: String::new(),
+            initialized: false,
+            exit_requested: false,
+        }
+    }
+
+    /// Render the vim editor screen
+    pub fn render_screen(&mut self) {
+        let buffer = self.vim_state.current_buffer();
+        let mut output = String::new();
+
+        // Render buffer content (simplified for now)
+        for (i, line) in buffer.lines.iter().enumerate() {
+            if i == buffer.cursor.line {
+                // Show cursor position with a marker
+                output.push_str(&format!("{}~\n", line));
+            } else {
+                output.push_str(&format!("{}\n", line));
+            }
+        }
+
+        // Render status line
+        let file_display = self
+            .file_path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "[No Name]".to_string());
+
+        let modified_flag = if buffer.modified { " [+]" } else { "" };
+        let mode_str = format!("{}", self.vim_state.mode);
+
+        output.push_str(&format!(
+            "\n--- {} {}{} - {} ---\n",
+            file_display,
+            buffer.cursor.line + 1,
+            modified_flag,
+            mode_str
+        ));
+
+        // Show message if any
+        if !self.vim_state.message.is_empty() {
+            output.push_str(&self.vim_state.message);
+            output.push('\n');
+        }
+
+        self.screen_buffer = output;
+    }
+
+    /// Process input character
+    pub fn process_input(&mut self, ch: char) -> Result<(), String> {
+        match &self.vim_state.mode {
+            VimMode::Normal => {
+                // Handle normal mode keys
+                match ch {
+                    'i' => {
+                        self.vim_state.set_mode(VimMode::Insert);
+                        Ok(())
+                    }
+                    ':' => {
+                        self.vim_state.set_mode(VimMode::Command {
+                            buffer: String::new(),
+                        });
+                        Ok(())
+                    }
+                    'h' | 'j' | 'k' | 'l' | 'x' | 'u' | 'r' => {
+                        // Parse and execute vim command
+                        match crate::vim::parser::parse_normal_key(ch) {
+                            Ok(cmd) => {
+                                let buffer = self.vim_state.current_buffer_mut();
+                                cmd.execute(buffer).map_err(|e| e.to_string())?;
+                                Ok(())
+                            }
+                            Err(e) => Err(e.to_string()),
+                        }
+                    }
+                    _ => Ok(()), // Ignore unknown keys
+                }
+            }
+            VimMode::Insert => {
+                // Handle insert mode keys
+                if ch == '\x1b' {
+                    // ESC key - return to normal mode
+                    self.vim_state.set_mode(VimMode::Normal);
+                    Ok(())
+                } else {
+                    // Insert character
+                    let cmd = if ch == '\n' {
+                        VimCommand::InsertNewline
+                    } else if ch == '\x08' || ch == '\x7f' {
+                        // Backspace
+                        VimCommand::Backspace
+                    } else {
+                        VimCommand::InsertChar(ch)
+                    };
+
+                    let buffer = self.vim_state.current_buffer_mut();
+                    cmd.execute(buffer).map_err(|e| e.to_string())?;
+                    Ok(())
+                }
+            }
+            VimMode::Command { buffer: cmd_buffer } => {
+                if ch == '\n' {
+                    // Execute command
+                    let cmd = cmd_buffer.clone();
+                    match crate::vim::ex_commands::execute_ex_command(&mut self.vim_state, &cmd) {
+                        Ok(msg) => {
+                            self.vim_state.set_message(msg);
+                            self.vim_state.set_mode(VimMode::Normal);
+
+                            // Check if quit was requested
+                            if cmd.trim() == "q"
+                                || cmd.trim() == "q!"
+                                || cmd.trim() == "wq"
+                                || cmd.trim() == "x"
+                            {
+                                self.exit_requested = true;
+                            }
+                            Ok(())
+                        }
+                        Err(e) => {
+                            self.vim_state.set_message(format!("Error: {}", e));
+                            self.vim_state.set_mode(VimMode::Normal);
+                            Ok(())
+                        }
+                    }
+                } else if ch == '\x1b' {
+                    // ESC - cancel command
+                    self.vim_state.set_mode(VimMode::Normal);
+                    Ok(())
+                } else {
+                    // Add to command buffer
+                    let mut new_buffer = cmd_buffer.clone();
+                    new_buffer.push(ch);
+                    self.vim_state
+                        .set_mode(VimMode::Command { buffer: new_buffer });
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    /// Get the screen output
+    pub fn get_screen(&self) -> &str {
+        &self.screen_buffer
+    }
+}
+
+/// Vim main loop - handles input and renders screen
+pub fn vim_main_loop(vim: &mut Vim, _state: &KernelState) -> Option<SystemCall> {
+    // First call: render initial screen
+    if !vim.initialized {
+        vim.render_screen();
+        vim.initialized = true;
+        return Some(SystemCall::Write {
+            fd: 1,
+            data: vim.screen_buffer.as_bytes().to_vec(),
+        });
+    }
+
+    // Check if exit requested
+    if vim.exit_requested {
+        return Some(SystemCall::Exit(0));
+    }
+
+    // TODO: Read input from stdin
+    // For now, we'll just exit after rendering
+    // In a real implementation, this would block on stdin and process keystrokes
+
+    // Placeholder: exit after initial render
+    Some(SystemCall::Exit(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,5 +634,181 @@ mod tests {
 
         let syscall2 = echo_main_loop(&mut echo, &state);
         assert_eq!(syscall2, Some(SystemCall::Exit(0)));
+    }
+
+    // Vim tests
+    #[test]
+    fn test_vim_new_empty() {
+        let vim = Vim::new(2, None);
+        assert_eq!(vim.pid, 2);
+        assert_eq!(vim.file_path, None);
+        assert!(!vim.initialized);
+        assert!(!vim.exit_requested);
+        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
+    }
+
+    #[test]
+    fn test_vim_new_with_file() {
+        let path = PathBuf::from("/test.txt");
+        let vim = Vim::new(2, Some(path.clone()));
+        assert_eq!(vim.pid, 2);
+        assert_eq!(vim.file_path, Some(path));
+    }
+
+    #[test]
+    fn test_vim_render_screen_empty() {
+        let mut vim = Vim::new(2, None);
+        vim.render_screen();
+
+        let screen = vim.get_screen();
+        assert!(screen.contains("[No Name]"));
+        assert!(screen.contains("NORMAL"));
+    }
+
+    #[test]
+    fn test_vim_render_screen_with_content() {
+        let mut vim = Vim::new(2, None);
+        vim.vim_state = crate::vim::VimState::new_with_text("Hello\nWorld");
+        vim.render_screen();
+
+        let screen = vim.get_screen();
+        assert!(screen.contains("Hello"));
+        assert!(screen.contains("World"));
+    }
+
+    #[test]
+    fn test_vim_process_input_mode_switch() {
+        let mut vim = Vim::new(2, None);
+        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
+
+        // Switch to insert mode
+        vim.process_input('i').unwrap();
+        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Insert);
+
+        // Switch back to normal mode
+        vim.process_input('\x1b').unwrap();
+        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
+    }
+
+    #[test]
+    fn test_vim_process_input_command_mode() {
+        let mut vim = Vim::new(2, None);
+
+        // Enter command mode
+        vim.process_input(':').unwrap();
+        assert!(matches!(
+            vim.vim_state.mode,
+            crate::vim::VimMode::Command { .. }
+        ));
+
+        // Type a command
+        vim.process_input('w').unwrap();
+        if let crate::vim::VimMode::Command { buffer } = &vim.vim_state.mode {
+            assert_eq!(buffer, "w");
+        } else {
+            panic!("Expected Command mode");
+        }
+    }
+
+    #[test]
+    fn test_vim_process_input_insert_text() {
+        let mut vim = Vim::new(2, None);
+
+        // Switch to insert mode
+        vim.process_input('i').unwrap();
+
+        // Type some text
+        vim.process_input('H').unwrap();
+        vim.process_input('i').unwrap();
+
+        let buffer = vim.vim_state.current_buffer();
+        assert_eq!(buffer.text(), "Hi");
+    }
+
+    #[test]
+    fn test_vim_process_input_navigation() {
+        let mut vim = Vim::new(2, None);
+        vim.vim_state = crate::vim::VimState::new_with_text("Line1\nLine2\nLine3");
+
+        // Move down
+        vim.process_input('j').unwrap();
+        assert_eq!(vim.vim_state.current_buffer().cursor.line, 1);
+
+        // Move right
+        vim.process_input('l').unwrap();
+        assert_eq!(vim.vim_state.current_buffer().cursor.col, 1);
+
+        // Move left
+        vim.process_input('h').unwrap();
+        assert_eq!(vim.vim_state.current_buffer().cursor.col, 0);
+
+        // Move up
+        vim.process_input('k').unwrap();
+        assert_eq!(vim.vim_state.current_buffer().cursor.line, 0);
+    }
+
+    #[test]
+    fn test_vim_process_input_quit_command() {
+        let mut vim = Vim::new(2, None);
+
+        // Enter quit command
+        vim.process_input(':').unwrap();
+        vim.process_input('q').unwrap();
+        vim.process_input('\n').unwrap();
+
+        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
+        assert!(vim.exit_requested);
+    }
+
+    #[test]
+    fn test_vim_main_loop_initial_render() {
+        let mut vim = Vim::new(2, None);
+        let state = KernelState::new();
+
+        let syscall = vim_main_loop(&mut vim, &state);
+
+        // Should write initial screen
+        assert!(matches!(syscall, Some(SystemCall::Write { fd: 1, .. })));
+        assert!(vim.initialized);
+    }
+
+    #[test]
+    fn test_vim_main_loop_exit() {
+        let mut vim = Vim::new(2, None);
+        vim.initialized = true;
+        vim.exit_requested = true;
+        let state = KernelState::new();
+
+        let syscall = vim_main_loop(&mut vim, &state);
+        assert_eq!(syscall, Some(SystemCall::Exit(0)));
+    }
+
+    #[test]
+    fn test_vim_integration_full_session() {
+        let mut vim = Vim::new(2, None);
+        let state = KernelState::new();
+
+        // Initial render
+        let syscall1 = vim_main_loop(&mut vim, &state);
+        assert!(matches!(syscall1, Some(SystemCall::Write { .. })));
+
+        // Simulate user session
+        vim.process_input('i').unwrap(); // Enter insert mode
+        vim.process_input('H').unwrap();
+        vim.process_input('e').unwrap();
+        vim.process_input('l').unwrap();
+        vim.process_input('l').unwrap();
+        vim.process_input('o').unwrap();
+        vim.process_input('\x1b').unwrap(); // Exit insert mode
+
+        assert_eq!(vim.vim_state.current_buffer().text(), "Hello");
+
+        // Quit
+        vim.process_input(':').unwrap();
+        vim.process_input('q').unwrap();
+        vim.process_input('!').unwrap();
+        vim.process_input('\n').unwrap();
+
+        assert!(vim.exit_requested);
     }
 }

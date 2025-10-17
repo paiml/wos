@@ -12,6 +12,10 @@ wos-kernel = { path = "../kernel" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+im.workspace = true
+
+# NOTE: tree-sitter for syntax highlighting will be added in future
+# Currently blocked by WASM compilation issues with C dependencies
 
 [dev-dependencies]
 proptest.workspace = true
