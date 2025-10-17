@@ -227,10 +227,12 @@ pmat-roadmap-validate:
 	@pmat roadmap validate --roadmap roadmap.yaml || (echo "❌ Roadmap validation failed" && exit 1)
 	@echo "✓ Roadmap validated"
 
-quality: fmt clippy test-unit
+quality: fmt clippy test-unit pmat-complexity pmat-satd
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "✅ Fast quality gate passed (<30s)"
-	@echo "⚠️  PMAT checks temporarily disabled - see 'make pmat-*' targets"
+	@echo "✅ Quality gates passed (<30s)"
+	@echo "   • Format, Clippy, Unit Tests: PASSING"
+	@echo "   • PMAT Complexity: PASSING"
+	@echo "   • PMAT SATD (Zero TODO): PASSING"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 quality-complete: quality test coverage
