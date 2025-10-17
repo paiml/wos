@@ -152,6 +152,42 @@ pub fn parse_pipeline(input: &str) -> Pipeline {
     pipeline
 }
 
+/// Helper: Skip whitespace characters in iterator
+fn skip_whitespace(chars: &mut std::iter::Peekable<std::str::Chars>) {
+    while chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
+        chars.next();
+    }
+}
+
+/// Helper: Handle stdout redirection (> or >>)
+/// Returns the redirection if filename extracted successfully
+fn handle_stdout_redirect(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    is_append: bool,
+) -> Option<Redirection> {
+    skip_whitespace(chars);
+    let filename = extract_filename(chars);
+    if filename.is_empty() {
+        None
+    } else if is_append {
+        Some(Redirection::StdoutAppend(filename))
+    } else {
+        Some(Redirection::StdoutOverwrite(filename))
+    }
+}
+
+/// Helper: Handle stdin redirection (<)
+/// Returns the redirection if filename extracted successfully
+fn handle_stdin_redirect(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<Redirection> {
+    skip_whitespace(chars);
+    let filename = extract_filename(chars);
+    if filename.is_empty() {
+        None
+    } else {
+        Some(Redirection::StdinFrom(filename))
+    }
+}
+
 /// Extract redirection operators from a command string
 ///
 /// Returns (command_without_redirects, vec_of_redirections)
@@ -173,44 +209,18 @@ fn extract_redirections(input: &str) -> (String, Vec<Redirection>) {
                 command.push(ch);
             }
             '>' if !in_single_quote && !in_double_quote => {
-                // Check for >>
-                if chars.peek() == Some(&'>') {
+                // Check for >> (append) vs > (overwrite)
+                let is_append = chars.peek() == Some(&'>');
+                if is_append {
                     chars.next(); // consume second >
-
-                    // Skip whitespace
-                    while chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
-                        chars.next();
-                    }
-
-                    // Extract filename
-                    let filename = extract_filename(&mut chars);
-                    if !filename.is_empty() {
-                        redirections.push(Redirection::StdoutAppend(filename));
-                    }
-                } else {
-                    // Single >
-                    // Skip whitespace
-                    while chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
-                        chars.next();
-                    }
-
-                    // Extract filename
-                    let filename = extract_filename(&mut chars);
-                    if !filename.is_empty() {
-                        redirections.push(Redirection::StdoutOverwrite(filename));
-                    }
+                }
+                if let Some(redir) = handle_stdout_redirect(&mut chars, is_append) {
+                    redirections.push(redir);
                 }
             }
             '<' if !in_single_quote && !in_double_quote => {
-                // Skip whitespace
-                while chars.peek() == Some(&' ') || chars.peek() == Some(&'\t') {
-                    chars.next();
-                }
-
-                // Extract filename
-                let filename = extract_filename(&mut chars);
-                if !filename.is_empty() {
-                    redirections.push(Redirection::StdinFrom(filename));
+                if let Some(redir) = handle_stdin_redirect(&mut chars) {
+                    redirections.push(redir);
                 }
             }
             _ => {
@@ -640,5 +650,53 @@ mod tests {
             pipeline.stages[0].command.redirections[0],
             Redirection::StdoutOverwrite("output.txt".to_string())
         );
+    }
+
+    // WOS-Q01: Tests for refactored extract_redirections helper functions
+    #[test]
+    fn test_handle_stdout_redirect_single() {
+        let mut chars = " output.txt".chars().peekable();
+        let result = handle_stdout_redirect(&mut chars, false);
+        assert_eq!(
+            result,
+            Some(Redirection::StdoutOverwrite("output.txt".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_handle_stdout_redirect_append() {
+        let mut chars = " output.txt".chars().peekable();
+        let result = handle_stdout_redirect(&mut chars, true);
+        assert_eq!(
+            result,
+            Some(Redirection::StdoutAppend("output.txt".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_handle_stdin_redirect() {
+        let mut chars = " input.txt".chars().peekable();
+        let result = handle_stdin_redirect(&mut chars);
+        assert_eq!(
+            result,
+            Some(Redirection::StdinFrom("input.txt".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_handle_stdin_redirect_with_quotes() {
+        let mut chars = " \"my file.txt\"".chars().peekable();
+        let result = handle_stdin_redirect(&mut chars);
+        assert_eq!(
+            result,
+            Some(Redirection::StdinFrom("my file.txt".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_skip_whitespace_helper() {
+        let mut chars = "   \t  hello".chars().peekable();
+        skip_whitespace(&mut chars);
+        assert_eq!(chars.next(), Some('h'));
     }
 }
