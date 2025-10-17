@@ -328,8 +328,44 @@ pub enum ProcessState {
   - 80%+ user action coverage + 100% critical path coverage
   - Complete Playwright examples and 10-week roadmap
 
+## Bug Fixes & Improvements
+
+### 2025-10-17: Vim Editor Fixes
+**Commits**: 57c08ec, ac423c2
+
+Fixed three critical bugs preventing vim editor functionality:
+
+1. **Keyboard Event Capture** (dist/wos/app.js:286-297)
+   - **Issue**: Playwright keyboard simulation wasn't reaching the focused vim-editor element
+   - **Root Cause**: Element-level addEventListener wasn't capturing Playwright's keyboard events
+   - **Solution**: Changed to document-level event capture when modal is open
+   - **Files Changed**: dist/wos/index.html (added tabindex="0"), dist/wos/app.js (document.addEventListener)
+
+2. **Arrow Key Support** (dist/wos/app.js:314-333)
+   - **Issue**: Only vim keys (hjkl) worked, arrow keys did nothing
+   - **Root Cause**: handleNormalMode only had cases for hjkl keys
+   - **Solution**: Added ArrowUp/Down/Left/Right as fallthrough cases alongside vim keys
+   - **Files Changed**: dist/wos/app.js (handleNormalMode switch statement)
+
+3. **Error Message in Buffer** (dist/wos/app.js:883)
+   - **Issue**: Opening non-existent files showed "cat: filename: No such file or directory" as content
+   - **Root Cause**: Error detection string "not found" didn't match actual error message format
+   - **Solution**: Updated to check for exact error message: "No such file or directory"
+   - **Files Changed**: dist/wos/app.js (openVim error detection)
+
+**Test Results**: All 14 vim E2E tests now passing (was 3/14 before fixes)
+
+**Vim Features Now Working**:
+- Modal display and keyboard focus ✅
+- Mode switching (NORMAL → INSERT → COMMAND) ✅
+- Text editing with hjkl and arrow keys ✅
+- File operations (:w, :q, :q!, :wq) ✅
+- Backspace, Enter, character insertion ✅
+- Modified indicator display ✅
+- Opening existing and non-existent files ✅
+
 ---
 
-**Last Updated**: 2025-10-15
+**Last Updated**: 2025-10-17
 **Version**: 0.1.0
 **Status**: All Phases Complete - Elite-tier quality achieved across full stack (Rust backend + JavaScript frontend + Documentation)

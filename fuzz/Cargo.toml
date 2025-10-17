@@ -41,3 +41,15 @@ name = "fuzz_scheduler"
 path = "fuzz_targets/fuzz_scheduler.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_parser"
+path = "fuzz_targets/fuzz_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_pipeline"
+path = "fuzz_targets/fuzz_pipeline.rs"
+test = false
+doc = false
