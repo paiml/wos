@@ -606,3 +606,27 @@ footer a:hover {
     opacity: 0;
   }
 }
+
+/* Quality Metrics Panel */
+.quality-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.quality-metrics {
+  padding: 15px;
+}
+
+.quality-metrics p {
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.quality-metrics strong {
+  color: var(--text-secondary);
+}
+
+.quality-metrics span {
+  color: var(--accent);
+  font-weight: 600;
+}

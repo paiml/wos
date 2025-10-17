@@ -111,6 +111,30 @@
               <p><strong>Files:</strong> <span id="file-count">0</span></p>
             </div>
           </div>
+
+          <div class="file-panel quality-panel">
+            <div class="file-panel-header">
+              <h3>Quality Metrics</h3>
+              <div class="quality-controls">
+                <button id="btn-export-json" class="btn-icon" title="Export metrics as JSON">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                  </svg>
+                </button>
+                <button id="btn-export-html" class="btn-icon" title="Export report as HTML">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="quality-metrics">
+              <p><strong>TDG Grade:</strong> <span id="tdg-grade">-</span></p>
+              <p><strong>TDG Score:</strong> <span id="tdg-score">-</span></p>
+              <p><strong>Tests:</strong> <span id="test-count">-</span></p>
+              <p><strong>Coverage:</strong> <span id="coverage">-</span></p>
+            </div>
+          </div>
         </div>
       </main>
 
