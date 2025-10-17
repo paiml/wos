@@ -142,6 +142,38 @@ impl Process {
     pub fn is_fd_open(&self, fd: FileDescriptor) -> bool {
         self.open_files.contains_key(&fd)
     }
+
+    /// Duplicate file descriptor (for dup2)
+    pub fn dup_fd(&mut self, oldfd: FileDescriptor, newfd: FileDescriptor) -> Result<(), String> {
+        // Check if oldfd exists
+        let path = self
+            .open_files
+            .get(&oldfd)
+            .ok_or_else(|| format!("Invalid oldfd: {}", oldfd))?
+            .clone();
+
+        // Close newfd if it's open (except standard streams which can be overwritten)
+        if self.open_files.contains_key(&newfd) && newfd >= 3 {
+            self.open_files.remove(&newfd);
+        }
+
+        // Duplicate oldfd to newfd
+        self.open_files.insert(newfd, path);
+        Ok(())
+    }
+}
+
+/// Pipe buffer for inter-process communication
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PipeBuffer {
+    /// Pipe read file descriptor
+    pub read_fd: FileDescriptor,
+    /// Pipe write file descriptor
+    pub write_fd: FileDescriptor,
+    /// Process ID that owns this pipe
+    pub owner_pid: ProcessId,
+    /// Buffer data
+    pub data: Vec<u8>,
 }
 
 /// Complete kernel state
@@ -155,6 +187,8 @@ pub struct KernelState {
     pub current_pid: Option<ProcessId>,
     /// Virtual file system
     pub vfs: VirtualFileSystem,
+    /// Pipe buffers (keyed by read FD)
+    pub pipes: HashMap<FileDescriptor, PipeBuffer>,
 }
 
 impl KernelState {
@@ -165,6 +199,7 @@ impl KernelState {
             next_pid: 1, // PID 0 reserved for kernel
             current_pid: None,
             vfs: VirtualFileSystem::new(),
+            pipes: HashMap::new(),
         }
     }
 

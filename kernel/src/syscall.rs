@@ -125,6 +125,17 @@ pub enum SystemCall {
         /// Timeout in microseconds (0 = no timeout)
         timeout: u64,
     },
+
+    /// Create a pipe (returns read and write file descriptors)
+    Pipe,
+
+    /// Duplicate file descriptor
+    Dup2 {
+        /// Old file descriptor
+        oldfd: u32,
+        /// New file descriptor
+        newfd: u32,
+    },
 }
 
 /// System call output
@@ -147,6 +158,14 @@ pub enum SyscallOutput {
 
     /// File descriptor
     FileDescriptor(u32),
+
+    /// Pipe file descriptors (read_fd, write_fd)
+    Pipe {
+        /// Read file descriptor
+        read_fd: u32,
+        /// Write file descriptor
+        write_fd: u32,
+    },
 }
 
 /// Generate /proc/PID/status content
@@ -370,6 +389,23 @@ pub fn dispatch_syscall(
                 .get_file_path(fd)
                 .ok_or(KernelError::InvalidFileDescriptor(fd))?;
 
+            // Check if this is a pipe read
+            if path
+                .to_str()
+                .map(|s| s.starts_with("/pipe/"))
+                .unwrap_or(false)
+            {
+                // This is a pipe read - check if it's the read end
+                if let Some(pipe) = new_state.pipes.get(&fd) {
+                    // Read from pipe buffer
+                    let bytes_to_return = pipe.data.len().min(count);
+                    let data = pipe.data[..bytes_to_return].to_vec();
+                    return Ok((new_state, SyscallOutput::Data(data)));
+                } else {
+                    return Err(KernelError::InvalidFileDescriptor(fd));
+                }
+            }
+
             // Check if this is a ProcFS path and handle specially
             if let Some(procfs_result) = try_read_procfs(&new_state, path, calling_pid) {
                 let content = procfs_result?;
@@ -414,7 +450,27 @@ pub fn dispatch_syscall(
                     .clone()
             };
 
-            // Write to VFS
+            // Check if this is a pipe write
+            if path
+                .to_str()
+                .map(|s| s.starts_with("/pipe/"))
+                .unwrap_or(false)
+            {
+                // Extract read_fd from path like "/pipe/3/write" -> 3
+                if let Some(fd_str) = path.to_str().and_then(|s| s.split('/').nth(2)) {
+                    if let Ok(read_fd) = fd_str.parse::<u32>() {
+                        // This is a pipe write - find the corresponding pipe
+                        if let Some(pipe) = new_state.pipes.get_mut(&read_fd) {
+                            // Append data to pipe buffer
+                            pipe.data.extend_from_slice(&data);
+                            return Ok((new_state, SyscallOutput::Value(data.len() as i32)));
+                        }
+                    }
+                }
+                return Err(KernelError::InvalidFileDescriptor(fd));
+            }
+
+            // Write to VFS for regular files
             match new_state.vfs.write_file(&path, data.clone()) {
                 Ok(_) => {
                     // Return number of bytes written
@@ -510,6 +566,55 @@ pub fn dispatch_syscall(
 
             // Return message data
             Ok((new_state, SyscallOutput::Data(message.payload)))
+        }
+
+        SystemCall::Pipe => {
+            // Create a pipe
+            let mut new_state = state;
+
+            // Get mutable access to process
+            if let Some(process) = new_state.get_process_mut(calling_pid) {
+                // Allocate two file descriptors
+                let read_fd = process.allocate_fd();
+                let write_fd = read_fd + 1; // write_fd is next after read_fd
+
+                // Add pipe FDs to process (use special path to identify pipes)
+                process
+                    .open_files
+                    .insert(read_fd, PathBuf::from(format!("/pipe/{}/read", read_fd)));
+                process
+                    .open_files
+                    .insert(write_fd, PathBuf::from(format!("/pipe/{}/write", read_fd)));
+
+                // Create pipe buffer in kernel state
+                let pipe = crate::state::PipeBuffer {
+                    read_fd,
+                    write_fd,
+                    owner_pid: calling_pid,
+                    data: Vec::new(),
+                };
+                new_state.pipes.insert(read_fd, pipe);
+
+                Ok((new_state, SyscallOutput::Pipe { read_fd, write_fd }))
+            } else {
+                Err(KernelError::ProcessNotFound(calling_pid))
+            }
+        }
+
+        SystemCall::Dup2 { oldfd, newfd } => {
+            // Duplicate file descriptor
+            let mut new_state = state;
+
+            // Get mutable access to process
+            if let Some(process) = new_state.get_process_mut(calling_pid) {
+                // Duplicate the FD
+                match process.dup_fd(oldfd, newfd) {
+                    Ok(_) => Ok((new_state, SyscallOutput::Success)),
+                    Err(msg) => Err(KernelError::InvalidParameters(msg)),
+                }
+            } else {
+                Err(KernelError::ProcessNotFound(calling_pid))
+            }
         }
     }
 }
@@ -2125,6 +2230,296 @@ mod tests {
         let json = serde_json::to_string(&error).unwrap();
         let error2: KernelError = serde_json::from_str(&json).unwrap();
         assert_eq!(error, error2);
+    }
+
+    // Pipe syscall tests
+    #[test]
+    fn test_sys_pipe_creates_pipe() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a pipe
+        let result = dispatch_syscall(state.clone(), SystemCall::Pipe, pid);
+        assert!(result.is_ok());
+
+        let (new_state, output) = result.unwrap();
+
+        // Should return a pair of file descriptors [read_fd, write_fd]
+        match output {
+            SyscallOutput::Pipe { read_fd, write_fd } => {
+                assert_eq!(read_fd, 3); // First FD after stdin/stdout/stderr
+                assert_eq!(write_fd, 4); // Second FD
+
+                // Both FDs should be open in the process
+                let proc = new_state.get_process(pid).unwrap();
+                assert!(proc.is_fd_open(read_fd));
+                assert!(proc.is_fd_open(write_fd));
+            }
+            _ => panic!("Expected Pipe output"),
+        }
+    }
+
+    #[test]
+    fn test_sys_pipe_write_read_fifo() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create pipe
+        let result = dispatch_syscall(state, SystemCall::Pipe, pid);
+        let (state, output) = result.unwrap();
+
+        let (read_fd, write_fd) = match output {
+            SyscallOutput::Pipe { read_fd, write_fd } => (read_fd, write_fd),
+            _ => panic!("Expected Pipe output"),
+        };
+
+        // Write data to pipe
+        let data1 = b"Hello".to_vec();
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Write {
+                fd: write_fd,
+                data: data1.clone(),
+            },
+            pid,
+        );
+        let (state, _) = result.unwrap();
+
+        // Read data from pipe
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Read {
+                fd: read_fd,
+                count: 100,
+            },
+            pid,
+        );
+        let (_, output) = result.unwrap();
+
+        match output {
+            SyscallOutput::Data(data) => {
+                assert_eq!(data, data1);
+            }
+            _ => panic!("Expected Data"),
+        }
+    }
+
+    #[test]
+    fn test_sys_pipe_multiple_writes_fifo() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create pipe
+        let result = dispatch_syscall(state, SystemCall::Pipe, pid);
+        let (state, output) = result.unwrap();
+
+        let (read_fd, write_fd) = match output {
+            SyscallOutput::Pipe { read_fd, write_fd } => (read_fd, write_fd),
+            _ => panic!("Expected Pipe output"),
+        };
+
+        // Write multiple chunks
+        let data1 = b"Hello".to_vec();
+        let data2 = b" World".to_vec();
+
+        let (state, _) = dispatch_syscall(
+            state,
+            SystemCall::Write {
+                fd: write_fd,
+                data: data1.clone(),
+            },
+            pid,
+        )
+        .unwrap();
+
+        let (state, _) = dispatch_syscall(
+            state,
+            SystemCall::Write {
+                fd: write_fd,
+                data: data2.clone(),
+            },
+            pid,
+        )
+        .unwrap();
+
+        // Read should return data in FIFO order
+        let (_, output) = dispatch_syscall(
+            state,
+            SystemCall::Read {
+                fd: read_fd,
+                count: 100,
+            },
+            pid,
+        )
+        .unwrap();
+
+        match output {
+            SyscallOutput::Data(data) => {
+                let expected = [data1, data2].concat();
+                assert_eq!(data, expected);
+            }
+            _ => panic!("Expected Data"),
+        }
+    }
+
+    // Dup2 syscall tests
+    #[test]
+    fn test_sys_dup2_duplicates_fd() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file
+        state
+            .vfs
+            .create_file(PathBuf::from("/test.txt"), b"Hello".to_vec())
+            .unwrap();
+
+        // Open the file
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        );
+        let (state, output) = result.unwrap();
+
+        let oldfd = match output {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Duplicate FD to a new FD number
+        let newfd = 10;
+        let result = dispatch_syscall(state.clone(), SystemCall::Dup2 { oldfd, newfd }, pid);
+        assert!(result.is_ok());
+
+        let (new_state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+
+        // Both FDs should point to the same file
+        let proc = new_state.get_process(pid).unwrap();
+        assert!(proc.is_fd_open(oldfd));
+        assert!(proc.is_fd_open(newfd));
+        assert_eq!(proc.get_file_path(oldfd), proc.get_file_path(newfd));
+    }
+
+    #[test]
+    fn test_sys_dup2_closes_newfd_if_open() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create two files
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), vec![])
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file2.txt"), vec![])
+            .unwrap();
+
+        // Open both files
+        let (state, output1) = dispatch_syscall(
+            state,
+            SystemCall::Open {
+                path: "/file1.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        )
+        .unwrap();
+
+        let fd1 = match output1 {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        let (state, output2) = dispatch_syscall(
+            state,
+            SystemCall::Open {
+                path: "/file2.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        )
+        .unwrap();
+
+        let fd2 = match output2 {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Duplicate fd1 to fd2 (should close fd2 first)
+        let (new_state, _) = dispatch_syscall(
+            state,
+            SystemCall::Dup2 {
+                oldfd: fd1,
+                newfd: fd2,
+            },
+            pid,
+        )
+        .unwrap();
+
+        // fd2 should now point to file1
+        let proc = new_state.get_process(pid).unwrap();
+        assert_eq!(proc.get_file_path(fd2), Some(&PathBuf::from("/file1.txt")));
+    }
+
+    #[test]
+    fn test_sys_dup2_stdout_redirection() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create output file
+        state
+            .vfs
+            .create_file(PathBuf::from("/output.txt"), vec![])
+            .unwrap();
+
+        // Open the file
+        let (state, output) = dispatch_syscall(
+            state,
+            SystemCall::Open {
+                path: "/output.txt".to_string(),
+                flags: 0,
+            },
+            pid,
+        )
+        .unwrap();
+
+        let file_fd = match output {
+            SyscallOutput::FileDescriptor(fd) => fd,
+            _ => panic!("Expected FileDescriptor"),
+        };
+
+        // Redirect stdout (fd=1) to file
+        let (state, _) = dispatch_syscall(
+            state,
+            SystemCall::Dup2 {
+                oldfd: file_fd,
+                newfd: 1,
+            },
+            pid,
+        )
+        .unwrap();
+
+        // Now stdout should point to /output.txt
+        let proc = state.get_process(pid).unwrap();
+        assert_eq!(proc.get_file_path(1), Some(&PathBuf::from("/output.txt")));
     }
 
     // Property-based tests
