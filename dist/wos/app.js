@@ -774,6 +774,13 @@ class Terminal {
       return;
     }
 
+    // Handle vim command
+    if (cmd.startsWith('vim ') || cmd === 'vim') {
+      const fileName = cmd.split(' ')[1] || 'untitled.txt';
+      this.openVim(fileName);
+      return;
+    }
+
     // Execute via WASM if available
     if (this.wos) {
       try {
@@ -854,6 +861,40 @@ class Terminal {
     } catch (error) {
       console.error('Error updating system info:', error);
     }
+  }
+
+  openVim(fileName) {
+    if (!this.wos) {
+      this.printLine('WASM not initialized - cannot open vim', 'error');
+      return;
+    }
+
+    // Try to read file content from WASM filesystem
+    let content = '';
+    try {
+      const result = this.wos.executeCommand(`cat ${fileName}`);
+      // Check if file exists (cat returns error message if not)
+      if (!result.includes('Error') && !result.includes('not found')) {
+        content = result;
+      }
+    } catch (error) {
+      // File doesn't exist, start with empty content
+      content = '';
+    }
+
+    const vim = new VimEditor(fileName, content, (newContent) => {
+      // Save callback - write file back to WASM filesystem
+      try {
+        // Use echo with redirection to write file
+        const escapedContent = newContent.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+        this.wos.executeCommand(`echo "${escapedContent}" > ${fileName}`);
+        this.printLine(`File saved: ${fileName}`, 'success');
+      } catch (error) {
+        this.printLine(`Error saving file: ${error}`, 'error');
+      }
+    });
+
+    vim.open();
   }
 
   setWOS(wos) {
