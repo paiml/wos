@@ -36,10 +36,15 @@ help:
 	@echo "  make canary-terminal  Run terminal canary tests"
 	@echo ""
 	@echo "🎯 Quality Gates:"
-	@echo "  make quality          Fast quality checks (<30s)"
+	@echo "  make quality          Fast quality checks (<30s, includes PMAT)"
 	@echo "  make quality-complete Complete quality validation (~5min)"
 	@echo "  make fmt              Format code"
 	@echo "  make clippy           Run clippy lints"
+	@echo "  make pmat-complexity  Check complexity (max 10)"
+	@echo "  make pmat-satd        Check for SATD (zero tolerance)"
+	@echo "  make pmat-entropy     Analyze code entropy"
+	@echo "  make pmat-tdg         Grade technical debt (TDG)"
+	@echo "  make pmat-gates       Run all PMAT quality gates"
 	@echo "  make mutants          Run mutation tests (~10-15min)"
 	@echo "  make mutants-check    Verify mutation score ≥90%"
 	@echo "  make mutants-diff     Show diffs for caught mutants"
@@ -185,7 +190,32 @@ clippy:
 	@cargo clippy --workspace --all-features --target wasm32-unknown-unknown -- -D warnings
 	@echo "✓ Clippy passed"
 
-quality: fmt clippy test-unit
+pmat-complexity:
+	@echo "🔍 Checking code complexity (max 10)..."
+	@pmat analyze complexity --path . --max-complexity 10 --fail-on-threshold || (echo "❌ Complexity exceeded max of 10" && exit 1)
+	@echo "✓ Complexity check passed"
+
+pmat-satd:
+	@echo "🔍 Checking for technical debt (SATD)..."
+	@pmat analyze satd --path . || (echo "❌ SATD comments found" && exit 1)
+	@echo "✓ No SATD comments found"
+
+pmat-entropy:
+	@echo "🔍 Analyzing code entropy..."
+	@pmat analyze entropy --path . || true
+	@echo "✓ Entropy analysis complete"
+
+pmat-tdg:
+	@echo "🔍 Grading technical debt (TDG)..."
+	@pmat tdg --project-path . || (echo "❌ TDG threshold exceeded" && exit 1)
+	@echo "✓ TDG check passed"
+
+pmat-gates:
+	@echo "🔍 Running PMAT quality gates..."
+	@pmat quality-gates --project-dir . --config .pmat-gates.toml || (echo "❌ PMAT quality gates failed" && exit 1)
+	@echo "✓ PMAT gates passed"
+
+quality: fmt clippy test-unit pmat-complexity pmat-satd pmat-tdg
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "✅ Fast quality gate passed (<30s)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

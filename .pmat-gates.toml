@@ -9,8 +9,8 @@ description = "WASM Operating System - Educational Microkernel"
 
 [quality_gate]
 # Extreme quality standards (Toyota Way - Zero Defects)
-max_cyclomatic_complexity = 20
-max_cognitive_complexity = 15
+max_cyclomatic_complexity = 10  # Stricter: was 20
+max_cognitive_complexity = 10   # Stricter: was 15
 max_satd_comments = 0  # ZERO TOLERANCE for technical debt
 min_test_coverage = 85.0
 fail_fast = true
@@ -19,8 +19,8 @@ strict_mode = true
 [rust]
 # Rust-specific quality gates
 edition = "2021"
-max_cyclomatic_complexity = 20
-max_cognitive_complexity = 15
+max_cyclomatic_complexity = 10  # Stricter: was 20
+max_cognitive_complexity = 10   # Stricter: was 15
 enforce_clippy = true
 enforce_rustfmt = true
 forbid_unsafe = true  # 100% safe Rust
@@ -44,7 +44,7 @@ max_halstead_effort = 1000
 # Strict WASM quality enforcement
 max_module_size_bytes = 512_000  # 500KB uncompressed
 max_module_size_gzip_bytes = 102_400  # 100KB gzipped
-max_function_complexity = 20
+max_function_complexity = 10  # Stricter: was 20
 max_functions_per_module = 100
 
 # CRITICAL: No WASI imports (wasm32-unknown-unknown target)
