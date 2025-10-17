@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use thiserror::Error;
 
+/// Open flags
+pub const O_CREAT: u32 = 0x0040; // Create file if it doesn't exist
+
 /// System call error types
 #[derive(Debug, Clone, PartialEq, Eq, Error, Serialize, Deserialize)]
 pub enum KernelError {
@@ -335,16 +338,23 @@ pub fn dispatch_syscall(
             Err(KernelError::NotImplemented)
         }
 
-        SystemCall::Open { path, flags: _ } => {
+        SystemCall::Open { path, flags } => {
             // Open file: create file descriptor
             let mut new_state = state;
             let path_buf = PathBuf::from(&path);
 
             // Check if file exists in VFS
             if !new_state.vfs.exists(&path_buf) {
-                // File doesn't exist - for now, return error
-                // TODO: Handle O_CREAT flag to create file if it doesn't exist
-                return Err(KernelError::FileNotFound(path));
+                // File doesn't exist - check if O_CREAT flag is set
+                if (flags & O_CREAT) != 0 {
+                    // Create empty file using mutable VFS operation
+                    new_state
+                        .vfs
+                        .create_file(path_buf.clone(), vec![])
+                        .map_err(|_| KernelError::FileNotFound(path.clone()))?;
+                } else {
+                    return Err(KernelError::FileNotFound(path));
+                }
             }
 
             // Get mutable access to process
@@ -1138,6 +1148,32 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn test_sys_open_with_o_creat() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Open non-existent file with O_CREAT flag - should create it
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Open {
+                path: "/newfile.txt".to_string(),
+                flags: O_CREAT,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (new_state, output) = result.unwrap();
+
+        // Verify file was created
+        assert!(new_state.vfs.exists(&PathBuf::from("/newfile.txt")));
+
+        // Verify file descriptor was allocated
+        assert!(matches!(output, SyscallOutput::FileDescriptor(_)));
     }
 
     #[test]

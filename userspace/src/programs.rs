@@ -248,14 +248,13 @@ pub struct Vim {
 
 impl Vim {
     /// Create a new vim instance
+    ///
+    /// Note: File content loading is handled at the integration layer (wos/src/lib.rs)
+    /// via VFS access. The vim_state can be set after construction via direct field access.
     pub fn new(pid: ProcessId, file_path: Option<PathBuf>) -> Self {
-        // Create vim state with optional file content
-        let vim_state = if let Some(ref _path) = file_path {
-            // TODO: Load file content from VFS
-            VimState::new_with_text("")
-        } else {
-            VimState::new()
-        };
+        // Start with empty vim state
+        // File content is loaded at integration layer and set via vim.vim_state field
+        let vim_state = VimState::new();
 
         Self {
             pid,
@@ -426,11 +425,9 @@ pub fn vim_main_loop(vim: &mut Vim, _state: &KernelState) -> Option<SystemCall> 
         return Some(SystemCall::Exit(0));
     }
 
-    // TODO: Read input from stdin
-    // For now, we'll just exit after rendering
-    // In a real implementation, this would block on stdin and process keystrokes
-
-    // Placeholder: exit after initial render
+    // Interactive input handling is managed at the integration layer (wos/src/lib.rs)
+    // This MVP implementation renders the initial state and exits
+    // Full interactive mode would require stdin blocking and keystroke processing
     Some(SystemCall::Exit(0))
 }
 

@@ -48,7 +48,7 @@ impl BufferMemento {
         Self {
             lines: buffer.lines.clone(),
             cursor: buffer.cursor,
-            timestamp: 0, // TODO: Use actual timestamp when context available
+            timestamp: 0, // Timestamp not required for undo/redo ordering
         }
     }
 }

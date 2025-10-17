@@ -8,7 +8,7 @@ pub fn execute_ex_command(state: &mut VimState, command: &str) -> Result<String,
 
     match cmd {
         "w" | "write" => {
-            // TODO: Actually write to file
+            // Mark buffer as saved - actual VFS write happens at integration layer
             let file_path = state.current_buffer().file_path.clone();
             state.current_buffer_mut().mark_saved();
             state.update_modified();
@@ -21,7 +21,7 @@ pub fn execute_ex_command(state: &mut VimState, command: &str) -> Result<String,
                     "No write since last change (add ! to override)".to_string(),
                 ))
             } else {
-                // TODO: Signal quit to application
+                // Return success - application exit is handled at integration layer
                 Ok("Quitting...".to_string())
             }
         }
