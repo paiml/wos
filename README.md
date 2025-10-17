@@ -1,9 +1,9 @@
 # WOS - WebAssembly Operating System
 
-[![TDG Grade](https://img.shields.io/badge/TDG%20Grade-A%2B%20(96--97%25)-brightgreen)](PROGRESS.md)
-[![Test Coverage](https://img.shields.io/badge/Coverage-94.11%25-brightgreen)](PROGRESS.md)
-[![Mutation Score](https://img.shields.io/badge/Mutation%20Score-98.5%25-brightgreen)](PROGRESS.md)
-[![Tests](https://img.shields.io/badge/Tests-22%2C320%20passing-brightgreen)](PROGRESS.md)
+[![TDG Grade](https://img.shields.io/badge/TDG%20Grade-A%2B%20(99.3%2F100)-brightgreen)](PROGRESS.md)
+[![Test Coverage](https://img.shields.io/badge/Coverage-85%25%2B-brightgreen)](PROGRESS.md)
+[![Tests](https://img.shields.io/badge/Tests-452%20unit%20%7C%20147%20E2E-brightgreen)](PROGRESS.md)
+[![Quality Gates](https://img.shields.io/badge/Quality%20Gates-6%2F6%20passing-brightgreen)](Makefile)
 
 An educational microkernel operating system written in pure Rust that compiles to WebAssembly. WOS demonstrates OS concepts (processes, memory management, file systems, IPC) in a safe, testable environment that runs directly in your browser.
 
@@ -11,10 +11,10 @@ An educational microkernel operating system written in pure Rust that compiles t
 
 - **🦀 Pure Rust**: 100% safe Rust with `#![forbid(unsafe_code)]` - zero undefined behavior
 - **🌐 Browser-Native**: Compiles to WASM, runs in any modern browser without plugins
-- **🧪 Elite Testing**: 22,320 tests with 94% coverage and 98.5% mutation score
+- **🧪 Elite Testing**: 452 unit tests + 147 E2E tests with 85%+ coverage
 - **⚡ Functional Design**: Pure functional syscalls with immutable state transitions
 - **🔍 Time-Travel Debugging**: Bidirectional execution replay with full state snapshots
-- **📊 Quality Metrics**: Built-in TDG (Test-Driven Grade) dashboard with A+ rating
+- **📊 Quality Metrics**: Real-time TDG dashboard (99.3/100 A+) with JSON/HTML export
 
 ## Quick Start
 
@@ -239,21 +239,47 @@ make e2e             # Run E2E tests
 
 The WOS terminal runs entirely in your browser:
 
-- **Terminal Emulator**: Full-featured command-line interface
-- **Command History**: Arrow key navigation
+- **Terminal Emulator**: Full-featured command-line interface with history (↑/↓)
+- **File Manager**: Upload, create, edit, download files via browser UI
+- **Vim Editor**: Modal text editor with syntax highlighting (MVP)
 - **State Persistence**: localStorage for session continuity
-- **Quality Dashboard**: Real-time TDG metrics display
-- **Multi-Format Export**: Download quality reports (JSON/HTML/Markdown/SARIF)
+- **Quality Dashboard**: Real-time TDG metrics (grade, score, tests, coverage)
+- **Export Reports**: Download quality reports in JSON/HTML formats
 
 ### Terminal Commands
 
 ```bash
 help        # Show available commands
 ps          # List processes
+ls [path]   # List files
+cat <file>  # Display file contents
 echo <msg>  # Echo message
+grep <pat>  # Search for pattern (supports stdin)
+wc [file]   # Count lines/words/bytes (supports stdin)
+touch <f>   # Create empty file
+mkdir <dir> # Create directory
+rm <file>   # Remove file
+vim [file]  # Open vim editor (MVP)
 version     # Show WOS version
 state       # Show kernel state
 reset       # Reset system
+
+# Pipeline operators
+cmd1 | cmd2         # Pipe stdout to stdin
+cmd1 && cmd2        # Execute cmd2 if cmd1 succeeds
+cmd1 || cmd2        # Execute cmd2 if cmd1 fails
+cmd1 ; cmd2         # Execute both regardless
+
+# I/O redirection
+cmd > file          # Redirect stdout to file (overwrite)
+cmd >> file         # Redirect stdout to file (append)
+cmd < file          # Redirect file to stdin
+
+# Variables
+VAR=value           # Set variable
+echo $VAR           # Expand variable
+export VAR=value    # Export variable
+echo $?             # Last exit code
 ```
 
 ## Performance
