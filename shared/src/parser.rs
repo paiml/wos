@@ -41,6 +41,57 @@ pub fn parse_command(input: &str) -> (String, Vec<String>) {
     (cmd, args)
 }
 
+/// Helper: Process escape sequence after backslash
+/// Modifies the result string in place
+fn process_escape_sequence(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    result: &mut String,
+    in_double_quote: bool,
+) {
+    if let Some(next_ch) = chars.next() {
+        // Special case: \$ should be preserved for variable expander
+        if next_ch == '$' {
+            result.push('\\');
+            result.push('$');
+        } else if in_double_quote {
+            // Handle common escape sequences in double quotes
+            match next_ch {
+                'n' => result.push('\n'),
+                't' => result.push('\t'),
+                'r' => result.push('\r'),
+                '\\' => result.push('\\'),
+                '"' => result.push('"'),
+                _ => result.push(next_ch),
+            }
+        } else {
+            // Outside quotes, just push the next character
+            result.push(next_ch);
+        }
+    } else {
+        // Trailing backslash, treat as literal
+        result.push('\\');
+    }
+}
+
+/// Helper: Handle quote character toggle
+/// Returns (new_single_quote_state, new_double_quote_state, had_quotes_flag)
+fn handle_quote_toggle(
+    ch: char,
+    in_single_quote: bool,
+    in_double_quote: bool,
+) -> (bool, bool, bool) {
+    match ch {
+        '\'' if !in_double_quote => (!in_single_quote, in_double_quote, true),
+        '"' if !in_single_quote => (in_single_quote, !in_double_quote, true),
+        _ => (in_single_quote, in_double_quote, false),
+    }
+}
+
+/// Helper: Check if character should end current token
+fn should_end_token(ch: char, in_single_quote: bool, in_double_quote: bool) -> bool {
+    (ch == ' ' || ch == '\t') && !in_single_quote && !in_double_quote
+}
+
 /// Tokenize a command line respecting quotes and escapes
 fn tokenize(input: &str) -> Vec<String> {
     let mut tokens = Vec::new();
@@ -48,65 +99,40 @@ fn tokenize(input: &str) -> Vec<String> {
     let mut chars = input.chars().peekable();
     let mut in_single_quote = false;
     let mut in_double_quote = false;
-    let mut had_quotes = false; // Track if we've seen quotes for empty string handling
+    let mut had_quotes = false;
 
     while let Some(ch) = chars.next() {
-        match ch {
-            '\\' if !in_single_quote => {
-                // Backslash escapes next character (except in single quotes)
-                if let Some(next_ch) = chars.next() {
-                    // Special case: \$ should be preserved for variable expander
-                    if next_ch == '$' {
-                        current_token.push('\\');
-                        current_token.push('$');
-                    } else if in_double_quote {
-                        // Handle common escape sequences in double quotes
-                        match next_ch {
-                            'n' => current_token.push('\n'),
-                            't' => current_token.push('\t'),
-                            'r' => current_token.push('\r'),
-                            '\\' => current_token.push('\\'),
-                            '"' => current_token.push('"'),
-                            _ => {
-                                // For other characters, push the escaped char literally
-                                current_token.push(next_ch);
-                            }
-                        }
-                    } else {
-                        // Outside quotes, just push the next character (for \space, \", etc)
-                        current_token.push(next_ch);
-                    }
-                } else {
-                    // Trailing backslash, treat as literal
-                    current_token.push('\\');
-                }
-            }
-            '\'' if !in_double_quote => {
-                // Single quote toggle
-                in_single_quote = !in_single_quote;
-                had_quotes = true;
-            }
-            '"' if !in_single_quote => {
-                // Double quote toggle
-                in_double_quote = !in_double_quote;
-                had_quotes = true;
-            }
-            ' ' | '\t' if !in_single_quote && !in_double_quote => {
-                // Whitespace outside quotes - end current token
-                if !current_token.is_empty() || had_quotes {
-                    tokens.push(current_token.clone());
-                    current_token.clear();
-                    had_quotes = false;
-                }
-            }
-            _ => {
-                // Regular character
-                current_token.push(ch);
-            }
+        // Handle escape sequences (backslash outside single quotes)
+        if ch == '\\' && !in_single_quote {
+            process_escape_sequence(&mut chars, &mut current_token, in_double_quote);
+            continue;
         }
+
+        // Handle quote toggles
+        let (new_single, new_double, quotes_flag) =
+            handle_quote_toggle(ch, in_single_quote, in_double_quote);
+        if quotes_flag {
+            in_single_quote = new_single;
+            in_double_quote = new_double;
+            had_quotes = true;
+            continue;
+        }
+
+        // Handle token-ending whitespace
+        if should_end_token(ch, in_single_quote, in_double_quote) {
+            if !current_token.is_empty() || had_quotes {
+                tokens.push(current_token.clone());
+                current_token.clear();
+                had_quotes = false;
+            }
+            continue;
+        }
+
+        // Regular character
+        current_token.push(ch);
     }
 
-    // Add final token if any (including empty strings from quotes)
+    // Add final token if any
     if !current_token.is_empty() || had_quotes {
         tokens.push(current_token);
     }
@@ -310,5 +336,74 @@ mod tests {
         assert_eq!(cmd, "echo");
         // In single quotes, everything is literal including backslash
         assert_eq!(args, vec!["\\$VAR"]);
+    }
+
+    // WOS-Q03: Tests for refactored tokenize helper functions
+    #[test]
+    fn test_process_escape_sequence_dollar() {
+        let mut chars = "$VAR".chars().peekable();
+        let mut result = String::new();
+        process_escape_sequence(&mut chars, &mut result, false);
+        assert_eq!(result, "\\$");
+    }
+
+    #[test]
+    fn test_process_escape_sequence_in_double_quotes() {
+        let mut chars = "n".chars().peekable();
+        let mut result = String::new();
+        process_escape_sequence(&mut chars, &mut result, true);
+        assert_eq!(result, "\n");
+    }
+
+    #[test]
+    fn test_process_escape_sequence_outside_quotes() {
+        let mut chars = " ".chars().peekable();
+        let mut result = String::new();
+        process_escape_sequence(&mut chars, &mut result, false);
+        assert_eq!(result, " ");
+    }
+
+    #[test]
+    fn test_process_escape_sequence_trailing() {
+        let mut chars = "".chars().peekable();
+        let mut result = String::new();
+        process_escape_sequence(&mut chars, &mut result, false);
+        assert_eq!(result, "\\");
+    }
+
+    #[test]
+    fn test_handle_quote_toggle_single() {
+        let (new_single, new_double, had_quotes) = handle_quote_toggle('\'', false, false);
+        assert_eq!(new_single, true);
+        assert_eq!(new_double, false);
+        assert_eq!(had_quotes, true);
+    }
+
+    #[test]
+    fn test_handle_quote_toggle_double() {
+        let (new_single, new_double, had_quotes) = handle_quote_toggle('"', false, false);
+        assert_eq!(new_single, false);
+        assert_eq!(new_double, true);
+        assert_eq!(had_quotes, true);
+    }
+
+    #[test]
+    fn test_handle_quote_toggle_close_single() {
+        let (new_single, new_double, had_quotes) = handle_quote_toggle('\'', true, false);
+        assert_eq!(new_single, false);
+        assert_eq!(new_double, false);
+        assert_eq!(had_quotes, true);
+    }
+
+    #[test]
+    fn test_should_end_token_whitespace() {
+        assert_eq!(should_end_token(' ', false, false), true);
+        assert_eq!(should_end_token('\t', false, false), true);
+    }
+
+    #[test]
+    fn test_should_end_token_in_quotes() {
+        assert_eq!(should_end_token(' ', true, false), false);
+        assert_eq!(should_end_token(' ', false, true), false);
     }
 }
