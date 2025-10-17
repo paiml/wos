@@ -286,14 +286,15 @@ class VimEditor {
   open() {
     this.modal.classList.remove('hidden');
     this.render();
+    // Use document-level event capture to ensure all keyboard events are caught
+    document.addEventListener('keydown', this.keyHandler);
+    // Also focus the editor for visual feedback
     this.editor.focus();
-    this.editor.setAttribute('tabindex', '0');
-    this.editor.addEventListener('keydown', this.keyHandler);
   }
 
   close() {
     this.modal.classList.add('hidden');
-    this.editor.removeEventListener('keydown', this.keyHandler);
+    document.removeEventListener('keydown', this.keyHandler);
   }
 
   handleKeyPress(e) {
@@ -311,18 +312,22 @@ class VimEditor {
   handleNormalMode(e) {
     switch(e.key) {
       case 'h': // Move left
+      case 'ArrowLeft':
         e.preventDefault();
         this.moveCursorLeft();
         break;
       case 'j': // Move down
+      case 'ArrowDown':
         e.preventDefault();
         this.moveCursorDown();
         break;
       case 'k': // Move up
+      case 'ArrowUp':
         e.preventDefault();
         this.moveCursorUp();
         break;
       case 'l': // Move right
+      case 'ArrowRight':
         e.preventDefault();
         this.moveCursorRight();
         break;
