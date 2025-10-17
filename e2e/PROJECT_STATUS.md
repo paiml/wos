@@ -1,15 +1,15 @@
 # WOS Project Status
 
 **Date**: October 17, 2025
-**Status**: Pipe Syscalls Complete, All Core Features Functional
+**Status**: File Redirection Complete, All Core Features Functional
 
 ## Current State
 
 ### ✅ Fully Functional
-- **Unit Tests**: 362/362 passing (100%) ⬆️
-  - wos: 88 tests
-  - wos_kernel: 166 tests (+6 pipe/dup2 tests)
-  - wos_shared: 63 tests
+- **Unit Tests**: 380/380 passing (100%) ⬆️
+  - wos: 98 tests (+10 redirection tests)
+  - wos_kernel: 166 tests
+  - wos_shared: 71 tests (+8 redirection parsing tests)
   - wos_userspace: 45 tests
 
 - **E2E Tests**: 24/29 passing (83%)
@@ -47,23 +47,30 @@
 - **Code**: ~10K lines of safe Rust
 - **Quality Gates**: All passing (format, clippy, tests)
 
-## Recent Session Work (Sprint: Pipe & Redirection Syscalls)
+## Recent Session Work (Sprint 8: File Redirection)
 
 ### Commits Made
-1. `348a365` - feat(kernel): Add pipe and dup2 syscalls for I/O redirection (NEW)
-2. `30426d6` - docs: Add comprehensive project status document
-3. `082e42a` - fix(e2e): Resolve URL navigation for all Playwright tests
-4. `6b9f7a1` - chore(e2e): Update Playwright config for port 8001
-5. `eb9c6db` - chore(e2e): Fix TypeScript linting warnings
+1. `ae5f675` - feat(redirections): Add file I/O redirection operators (>, >>, <) ⬆️ NEW
+2. `348a365` - feat(kernel): Add pipe and dup2 syscalls for I/O redirection
+3. `30426d6` - docs: Add comprehensive project status document
+4. `082e42a` - fix(e2e): Resolve URL navigation for all Playwright tests
+5. `6b9f7a1` - chore(e2e): Update Playwright config for port 8001
 
 ### Features Implemented
+- ✅ **File Redirection Operators** - Unix-style I/O redirection (>, >>, <) ⬆️ NEW
+- ✅ **Redirection Parsing** - Quote-aware operator extraction with filename parsing ⬆️ NEW
+- ✅ **Variable Expansion in Paths** - $VAR support in redirect filenames ⬆️ NEW
+- ✅ **VFS Integration** - Smart file creation/overwrite/append handling ⬆️ NEW
 - ✅ **sys_pipe** - Create unidirectional pipes with read/write FD pairs
 - ✅ **sys_dup2** - Duplicate file descriptors for I/O redirection
 - ✅ **PipeBuffer** - Kernel-level pipe data storage with FIFO semantics
 - ✅ **Process::dup_fd()** - File descriptor duplication method
-- ✅ Comprehensive test coverage (6 new tests for pipe/dup2 functionality)
+- ✅ Comprehensive test coverage (18 new tests for redirection functionality) ⬆️
 
 ### Verified Working
+- ✅ File redirection: `echo hello > /file.txt`, `cat >> /file.txt`, `cat < /input.txt` ⬆️ NEW
+- ✅ Redirection + pipes: `cat /file.txt | grep pattern > /output.txt` ⬆️ NEW
+- ✅ Variable expansion in paths: `FILENAME=test.txt; echo data > /$FILENAME` ⬆️ NEW
 - ✅ Pipe operator (`cmd1 | cmd2`) - Passes output between commands
 - ✅ AND operator (`cmd1 && cmd2`) - Conditional execution on success
 - ✅ OR operator (`cmd1 || cmd2`) - Conditional execution on failure
@@ -95,10 +102,11 @@ According to `roadmap.yaml`, WOS is currently in **Phase 1-6** with most kernel 
 - ✅ WOS-009: VFS integration
 - ✅ WOS-010: File I/O operations (read, write)
 - ✅ WOS-010A: ProcFS implementation
-- ✅ WOS-011: Pipe syscalls (sys_pipe, sys_dup2) ⬆️ NEW
+- ✅ WOS-011: Pipe syscalls (sys_pipe, sys_dup2)
 - ✅ WOS-012: Message passing IPC
-- ✅ WOS-013: Pipeline operators (|, &&, ||, ;) ⬆️ NEW
-- ✅ WOS-014: Stdin support for commands (cat, grep, wc) ⬆️ NEW
+- ✅ WOS-013: Pipeline operators (|, &&, ||, ;)
+- ✅ WOS-014: Stdin support for commands (cat, grep, wc)
+- ✅ WOS-014A: File redirection operators (>, >>, <) ⬆️ NEW
 - ✅ WOS-015: Init process (PID 1)
 - ✅ WOS-016: Shell process
 - ✅ WOS-017: Core user programs (echo, ls, ps, cat, grep, wc)
