@@ -879,7 +879,8 @@ class Terminal {
     try {
       const result = this.wos.executeCommand(`cat ${fileName}`);
       // Check if file exists (cat returns error message if not)
-      if (!result.includes('Error') && !result.includes('not found')) {
+      // Error format: "cat: filename: No such file or directory"
+      if (!result.includes('No such file or directory')) {
         content = result;
       }
     } catch (error) {
