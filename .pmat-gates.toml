@@ -9,12 +9,21 @@ description = "WASM Operating System - Educational Microkernel"
 
 [quality_gate]
 # Extreme quality standards (Toyota Way - Zero Defects)
-max_cyclomatic_complexity = 10  # Stricter: was 20
-max_cognitive_complexity = 10   # Stricter: was 15
-max_satd_comments = 0  # ZERO TOLERANCE for technical debt
-min_test_coverage = 85.0
+# Synced with roadmap.yaml quality_gates section
+max_cyclomatic_complexity = 10  # roadmap: 20, stricter for new code
+max_cognitive_complexity = 10   # roadmap: 15, stricter for new code
+max_satd_comments = 0  # ZERO TOLERANCE for technical debt (roadmap: 0)
+min_test_coverage = 85.0  # roadmap: 0.85
 fail_fast = true
 strict_mode = true
+
+[roadmap]
+# Roadmap-driven development integration
+roadmap_file = "roadmap.yaml"
+enforce_tickets = true
+require_ticket_id_in_commits = true
+commit_pattern = "^(feat|fix|refactor|test|docs|chore)\\(.*\\):"
+validate_on_commit = true
 
 [rust]
 # Rust-specific quality gates

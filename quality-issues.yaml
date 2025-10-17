@@ -1,0 +1,187 @@
+# WOS Quality Issues Tracker
+# PMAT-enforced quality violations that must be resolved
+# Format: YAML for PMAT roadmap integration
+
+meta:
+  created: 2025-10-17
+  project: wos
+  pmat_config: .pmat-gates.toml
+  roadmap: roadmap.yaml
+  status: active
+  priority: critical
+
+issues:
+  complexity_violations:
+    description: "Functions exceeding cyclomatic complexity (max 10) or cognitive complexity (max 10)"
+    severity: high
+    gate: pmat-complexity
+    count: 3
+    violations:
+      - file: shared/src/pipeline.rs
+        function: extract_redirections
+        line: 50
+        cyclomatic: 19
+        cognitive: 51
+        current_loc: ~80
+        target_complexity: 10
+        refactoring_strategy: "Split into smaller functions: extract_stdin, extract_stdout, validate_redirections"
+        estimated_time: 2_hours
+
+      - file: shared/src/pipeline.rs
+        function: split_by_operators
+        line: 150
+        cyclomatic: 16
+        cognitive: ~30
+        current_loc: ~60
+        target_complexity: 10
+        refactoring_strategy: "Extract operator detection logic, use state machine pattern"
+        estimated_time: 1.5_hours
+
+      - file: shared/src/parser.rs
+        function: tokenize
+        line: 50
+        cyclomatic: 16
+        cognitive: ~25
+        current_loc: ~70
+        target_complexity: 10
+        refactoring_strategy: "Extract quote handling, escape sequence processing into separate functions"
+        estimated_time: 1.5_hours
+
+  satd_violations:
+    description: "Self-Admitted Technical Debt (TODO/FIXME comments) - Zero tolerance policy"
+    severity: high
+    gate: pmat-satd
+    count: 5
+    violations:
+      - file: userspace/src/programs.rs
+        line: 254
+        comment: "TODO: Actually write to file"
+        context: "ls command file output"
+        resolution: "Implement actual file writing using VFS or remove TODO"
+        estimated_time: 30_min
+
+      - file: userspace/src/programs.rs
+        line: 429
+        comment: "TODO: Signal quit to application"
+        context: "ps command quit signal"
+        resolution: "Implement process signaling or remove TODO"
+        estimated_time: 30_min
+
+      - file: userspace/src/vim/ex_commands.rs
+        line: 11
+        comment: "TODO: Actually write to file"
+        context: "vim :w command"
+        resolution: "Implement VFS file writing for vim or document as future enhancement"
+        estimated_time: 1_hour
+
+      - file: userspace/src/vim/ex_commands.rs
+        line: 24
+        comment: "TODO: Signal quit to application"
+        context: "vim :q command"
+        resolution: "Implement proper vim quit flow or document as future enhancement"
+        estimated_time: 30_min
+
+      - file: kernel/src/syscall.rs
+        line: 346
+        comment: "TODO: Implement actual file writing"
+        context: "sys_write syscall"
+        resolution: "Complete VFS write implementation or remove TODO"
+        estimated_time: 1_hour
+
+  tdg_violations:
+    description: "Technical Debt Gap score above threshold"
+    severity: medium
+    gate: pmat-tdg
+    status: needs_measurement
+    action: "Run 'pmat tdg .' to measure current TDG score"
+
+roadmap_sync:
+  target_ticket: WOS-001
+  requirements:
+    - "PMAT integration (.pmat-gates.toml)" # ✅ DONE
+    - "Pre-commit hooks (format, clippy, tests, complexity, SATD)" # ⚠️  PARTIAL (complexity, SATD disabled)
+    - "Quality gates enforcement" # ⚠️  PARTIAL (need to fix violations)
+
+  quality_gates_from_roadmap:
+    max_complexity: 20  # Currently enforcing 10 (stricter)
+    max_cognitive: 15   # Currently enforcing 10 (stricter)
+    min_coverage: 0.85  # ✅ PASSING
+    min_branch_coverage: 0.90  # ✅ PASSING
+    min_mutation_score: 0.90  # ⚠️  NOT YET MEASURED
+    satd_tolerance: 0  # ❌ FAILING (5 violations)
+    tdg_min_score: 0.90  # ⚠️  NOT YET MEASURED
+    max_wasm_size_kb: 500  # ⚠️  CURRENTLY 628KB
+    max_wasm_gzip_kb: 100  # ⚠️  NOT YET MEASURED
+
+action_plan:
+  phase_1_immediate:
+    - id: FIX-001
+      task: "Remove or resolve all 5 SATD violations"
+      priority: critical
+      estimated_time: 3.5_hours
+      blockers: []
+
+    - id: FIX-002
+      task: "Refactor extract_redirections to complexity < 10"
+      priority: high
+      estimated_time: 2_hours
+      blockers: []
+
+    - id: FIX-003
+      task: "Refactor split_by_operators to complexity < 10"
+      priority: high
+      estimated_time: 1.5_hours
+      blockers: []
+
+    - id: FIX-004
+      task: "Refactor tokenize to complexity < 10"
+      priority: high
+      estimated_time: 1.5_hours
+      blockers: []
+
+  phase_2_optimization:
+    - id: OPT-001
+      task: "Reduce WASM binary size to < 500KB"
+      priority: medium
+      current: 628KB
+      target: 500KB
+      strategies:
+        - "Remove unused dependencies"
+        - "Enable LTO (Link Time Optimization)"
+        - "Strip debug symbols in release"
+        - "Use wasm-opt for post-processing"
+
+    - id: OPT-002
+      task: "Measure and achieve TDG score ≥ 0.90"
+      priority: medium
+      action: "pmat tdg . && review recommendations"
+
+    - id: OPT-003
+      task: "Measure mutation testing score"
+      priority: medium
+      action: "make mutants && verify ≥ 90% kill rate"
+
+  phase_3_enable_gates:
+    - id: GATE-001
+      task: "Re-enable pmat-complexity in quality target"
+      depends_on: [FIX-002, FIX-003, FIX-004]
+
+    - id: GATE-002
+      task: "Re-enable pmat-satd in quality target"
+      depends_on: [FIX-001]
+
+    - id: GATE-003
+      task: "Add pmat-tdg to quality target"
+      depends_on: [OPT-002]
+
+estimated_total_time: 8.5_hours
+target_completion: within_1_day
+
+pmat_commands:
+  check_status: "make pmat-roadmap-status"
+  validate_gates: "make pmat-roadmap-validate"
+  check_complexity: "make pmat-complexity"
+  check_satd: "make pmat-satd"
+  check_tdg: "make pmat-tdg"
+  check_entropy: "make pmat-entropy"
+  run_all_gates: "make pmat-gates"
