@@ -298,6 +298,31 @@ mod tests {
     }
 
     #[test]
+    fn test_shell_builtin_pwd() {
+        let mut shell = Shell::new(2);
+        shell.cwd = "/home/user".to_string();
+        let cmd = Command::new("pwd".to_string(), vec![]);
+        let result = shell.execute_builtin(&cmd);
+        assert!(result);
+        // pwd is a builtin, so it should return true
+        assert_eq!(shell.cwd, "/home/user");
+    }
+
+    #[test]
+    fn test_shell_builtin_history() {
+        let mut shell = Shell::new(2);
+        shell.add_to_history("ls -la".to_string());
+        shell.add_to_history("pwd".to_string());
+
+        let cmd = Command::new("history".to_string(), vec![]);
+        let result = shell.execute_builtin(&cmd);
+        assert!(result);
+        // history is a builtin, so it should return true
+        // The history should still contain the commands
+        assert_eq!(shell.history.len(), 2);
+    }
+
+    #[test]
     fn test_shell_exec_external() {
         let shell = Shell::new(2);
         let cmd = Command::new("ls".to_string(), vec![]);

@@ -93,6 +93,37 @@ mod tests {
     }
 
     #[test]
+    fn test_wq_command() {
+        let mut state = VimState::new();
+        state.current_buffer_mut().mark_modified();
+        state.update_modified();
+
+        let result = execute_ex_command(&mut state, "wq");
+        assert!(result.is_ok());
+        assert!(!state.modified);
+    }
+
+    #[test]
+    fn test_x_command() {
+        let mut state = VimState::new();
+        state.current_buffer_mut().mark_modified();
+        state.update_modified();
+
+        let result = execute_ex_command(&mut state, "x");
+        assert!(result.is_ok());
+        assert!(!state.modified);
+    }
+
+    #[test]
+    fn test_empty_command() {
+        let mut state = VimState::new();
+
+        let result = execute_ex_command(&mut state, "");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "");
+    }
+
+    #[test]
     fn test_invalid_command() {
         let mut state = VimState::new();
 

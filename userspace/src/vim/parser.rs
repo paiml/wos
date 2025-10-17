@@ -61,6 +61,40 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_normal_key_line_navigation() {
+        assert!(matches!(
+            parse_normal_key('0'),
+            Ok(VimCommand::MoveLineStart)
+        ));
+        assert!(matches!(parse_normal_key('$'), Ok(VimCommand::MoveLineEnd)));
+    }
+
+    #[test]
+    fn test_parse_normal_key_insert_line() {
+        assert!(matches!(
+            parse_normal_key('o'),
+            Ok(VimCommand::InsertLineBelow)
+        ));
+        assert!(matches!(
+            parse_normal_key('O'),
+            Ok(VimCommand::InsertLineAbove)
+        ));
+    }
+
+    #[test]
+    fn test_parse_normal_key_undo() {
+        assert!(matches!(parse_normal_key('u'), Ok(VimCommand::Undo)));
+    }
+
+    #[test]
+    fn test_parse_normal_key_command_mode() {
+        assert!(matches!(
+            parse_normal_key(':'),
+            Ok(VimCommand::EnterCommandMode)
+        ));
+    }
+
+    #[test]
     fn test_parse_normal_key_invalid() {
         assert!(parse_normal_key('z').is_err());
     }
@@ -78,6 +112,14 @@ mod tests {
         assert!(matches!(
             parse_insert_key('\x7f', true),
             VimCommand::Backspace
+        ));
+    }
+
+    #[test]
+    fn test_parse_insert_key_escape() {
+        assert!(matches!(
+            parse_insert_key('\x1b', true),
+            VimCommand::EnterNormalMode
         ));
     }
 }

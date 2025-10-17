@@ -241,6 +241,34 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_escape_tab_in_double_quotes() {
+        let (cmd, args) = parse_command("echo \"Col1\\tCol2\"");
+        assert_eq!(cmd, "echo");
+        assert_eq!(args, vec!["Col1\tCol2"]);
+    }
+
+    #[test]
+    fn test_parse_escape_carriage_return_in_double_quotes() {
+        let (cmd, args) = parse_command("echo \"Line1\\rLine2\"");
+        assert_eq!(cmd, "echo");
+        assert_eq!(args, vec!["Line1\rLine2"]);
+    }
+
+    #[test]
+    fn test_parse_escape_backslash_in_double_quotes() {
+        let (cmd, args) = parse_command("echo \"Path\\\\is\\\\escaped\"");
+        assert_eq!(cmd, "echo");
+        assert_eq!(args, vec!["Path\\is\\escaped"]);
+    }
+
+    #[test]
+    fn test_parse_escape_quote_in_double_quotes() {
+        let (cmd, args) = parse_command("echo \"She said \\\"Hello\\\"\"");
+        assert_eq!(cmd, "echo");
+        assert_eq!(args, vec!["She said \"Hello\""]);
+    }
+
+    #[test]
     fn test_parse_no_escape_in_single_quotes() {
         let (cmd, args) = parse_command("echo 'Line 1\\nLine 2'");
         assert_eq!(cmd, "echo");
