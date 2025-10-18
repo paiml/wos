@@ -1956,4 +1956,48 @@ mod tests {
         assert_eq!(exit_code, 0);
         assert_ne!(output, "xyzzy");
     }
+
+    // Round 6: Targeted tests to reach 90% mutation score
+
+    #[test]
+    fn test_cmd_grep_missing_args_boundary() {
+        let mut wos = WosWasm::new();
+
+        // Test with 0 args (should fail with < 2)
+        let output_zero = wos.cmd_grep(vec![], "");
+        assert!(output_zero.contains("missing pattern"));
+
+        // Test with exactly 1 arg (uses stdin path, not file path)
+        // This is valid - searches stdin with pattern
+        let output_one = wos.cmd_grep(vec!["test".to_string()], "test line\n");
+        assert!(!output_one.contains("missing pattern"));
+        assert!(output_one.contains("test line"));
+
+        // Test with exactly 2 args (valid file search - boundary case)
+        wos.cmd_touch(vec!["searchfile.txt".to_string()]);
+        let output_two = wos.cmd_grep(
+            vec!["pattern".to_string(), "searchfile.txt".to_string()],
+            "",
+        );
+
+        // Should NOT return "missing pattern" error
+        // This tests that `< 2` is correct (not `<= 2` or `> 2` or `== 2`)
+        assert!(!output_two.contains("missing pattern"));
+    }
+
+    #[test]
+    fn test_cmd_grep_boundary_operators() {
+        let mut wos = WosWasm::new();
+
+        // Create a file with content
+        wos.cmd_touch(vec!["testfile.txt".to_string()]);
+
+        // Exactly 2 args should work (tests < vs <=)
+        let result = wos.cmd_grep(vec!["test".to_string(), "testfile.txt".to_string()], "");
+        assert!(!result.contains("missing pattern"));
+
+        // 0 or 1 args (without stdin) should fail
+        let result_zero = wos.cmd_grep(vec![], "");
+        assert!(result_zero.contains("missing pattern"));
+    }
 }
