@@ -623,28 +623,94 @@ footer a:hover {
   }
 }
 
-/* Quality Metrics Panel */
-.quality-controls {
-  display: flex;
-  gap: 8px;
+/* System Monitor Panel - Zenith Style */
+.system-monitor-panel {
+  background: var(--bg-secondary);
 }
 
-.quality-metrics {
+.system-monitor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 15px;
   padding: 15px;
 }
 
-.quality-metrics p {
-  margin: 8px 0;
-  font-size: 14px;
+.monitor-card {
+  background: var(--bg-terminal);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 15px;
+  transition: all 0.3s ease;
 }
 
-.quality-metrics strong {
+.monitor-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(0, 212, 170, 0.1);
+}
+
+.monitor-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   color: var(--text-secondary);
+  margin-bottom: 8px;
+  font-weight: 600;
 }
 
-.quality-metrics span {
+.monitor-value {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 700;
   color: var(--accent);
-  font-weight: 600;
+  line-height: 1.2;
+  margin-bottom: 10px;
+}
+
+.monitor-unit {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin-left: 4px;
+  font-weight: 400;
+}
+
+.monitor-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.monitor-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease, background-color 0.3s ease;
+}
+
+.monitor-bar-cpu {
+  background: linear-gradient(90deg, var(--accent), #00b894);
+}
+
+.monitor-bar-memory {
+  background: linear-gradient(90deg, #6c5ce7, #a29bfe);
+}
+
+.monitor-bar-fill[style*="width: 0"] {
+  background: var(--border);
+}
+
+.monitor-subtext {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+/* Responsive monitor grid */
+@media (max-width: 768px) {
+  .system-monitor-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Panel Management */

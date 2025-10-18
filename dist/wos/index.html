@@ -197,27 +197,53 @@
             </div>
           </div>
 
-          <div class="file-panel quality-panel">
+          <div class="file-panel system-monitor-panel" data-panel="system_monitor_detailed">
             <div class="file-panel-header">
-              <h3>Quality Metrics</h3>
-              <div class="quality-controls">
-                <button id="btn-export-json" class="btn-icon" title="Export metrics as JSON">
+              <h3>System Monitor</h3>
+              <div class="file-controls">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                  </svg>
-                </button>
-                <button id="btn-export-html" class="btn-icon" title="Export report as HTML">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                    <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                    <path d="M7 14l5-5 5 5z"/>
                   </svg>
                 </button>
               </div>
             </div>
-            <div class="quality-metrics">
-              <p><strong>TDG Grade:</strong> <span id="tdg-grade">-</span></p>
-              <p><strong>TDG Score:</strong> <span id="tdg-score">-</span></p>
-              <p><strong>Tests:</strong> <span id="test-count">-</span></p>
-              <p><strong>Coverage:</strong> <span id="coverage">-</span></p>
+            <div class="panel-content">
+              <div class="system-monitor-grid">
+                <!-- CPU Usage -->
+                <div class="monitor-card">
+                  <div class="monitor-label">CPU Usage</div>
+                  <div class="monitor-value" id="monitor-cpu">0<span class="monitor-unit">%</span></div>
+                  <div class="monitor-bar">
+                    <div class="monitor-bar-fill monitor-bar-cpu" id="monitor-cpu-bar" style="width: 0%"></div>
+                  </div>
+                  <div class="monitor-subtext" id="monitor-cpu-info">Scheduler: Ready</div>
+                </div>
+
+                <!-- Memory Usage -->
+                <div class="monitor-card">
+                  <div class="monitor-label">Memory</div>
+                  <div class="monitor-value" id="monitor-memory">0<span class="monitor-unit">KB</span></div>
+                  <div class="monitor-bar">
+                    <div class="monitor-bar-fill monitor-bar-memory" id="monitor-memory-bar" style="width: 0%"></div>
+                  </div>
+                  <div class="monitor-subtext" id="monitor-memory-info">0 KB / 4096 KB</div>
+                </div>
+
+                <!-- Process Count -->
+                <div class="monitor-card">
+                  <div class="monitor-label">Processes</div>
+                  <div class="monitor-value" id="monitor-processes">0</div>
+                  <div class="monitor-subtext" id="monitor-process-info">0 running</div>
+                </div>
+
+                <!-- Syscall Activity -->
+                <div class="monitor-card">
+                  <div class="monitor-label">Syscalls</div>
+                  <div class="monitor-value" id="monitor-syscalls">0</div>
+                  <div class="monitor-subtext" id="monitor-syscall-info">0 /sec</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
