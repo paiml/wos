@@ -576,31 +576,48 @@ impl WosWasm {
         args: &[String],
         stdin: &str, // Pipe input from previous command
     ) -> (String, i32) {
-        let output = match cmd_name {
-            "help" => self.cmd_help(),
-            "ps" => self.cmd_ps(args.to_vec()),
-            "ls" => self.cmd_ls(args.to_vec()),
-            "cat" => self.cmd_cat(args.to_vec(), stdin),
-            "pwd" => self.cmd_pwd(),
-            "touch" => self.cmd_touch(args.to_vec()),
-            "mkdir" => self.cmd_mkdir(args.to_vec()),
-            "rm" => self.cmd_rm(args.to_vec()),
-            "echo" => self.cmd_echo(args.to_vec()),
-            "grep" => self.cmd_grep(args.to_vec(), stdin),
-            "wc" => self.cmd_wc(args.to_vec(), stdin),
-            "vim" => self.cmd_vim(args.to_vec()),
-            "bash" => self.cmd_bash(args.to_vec()),
-            "source" => self.cmd_source(args.to_vec()),
-            "version" => wos_version(),
-            "state" => self.cmd_state(),
-            "reset" => {
-                self.reset();
-                "System reset complete".to_string()
+        // Check if command is an executable script (./script.sh or ../script.sh)
+        let output = if cmd_name.starts_with("./") || cmd_name.starts_with("../") {
+            // Convert relative path to absolute path
+            // For now, we're at root (/), so ./script.sh -> /script.sh
+            let abs_path = if let Some(rel_path) = cmd_name.strip_prefix("./") {
+                format!("/{}", rel_path)
+            } else if let Some(rel_path) = cmd_name.strip_prefix("../") {
+                // For ../, we'd need to go up one directory, but since we're at /, just use /
+                format!("/{}", rel_path)
+            } else {
+                cmd_name.to_string()
+            };
+
+            // Execute as a script using bash
+            self.cmd_bash(vec![abs_path])
+        } else {
+            match cmd_name {
+                "help" => self.cmd_help(),
+                "ps" => self.cmd_ps(args.to_vec()),
+                "ls" => self.cmd_ls(args.to_vec()),
+                "cat" => self.cmd_cat(args.to_vec(), stdin),
+                "pwd" => self.cmd_pwd(),
+                "touch" => self.cmd_touch(args.to_vec()),
+                "mkdir" => self.cmd_mkdir(args.to_vec()),
+                "rm" => self.cmd_rm(args.to_vec()),
+                "echo" => self.cmd_echo(args.to_vec()),
+                "grep" => self.cmd_grep(args.to_vec(), stdin),
+                "wc" => self.cmd_wc(args.to_vec(), stdin),
+                "vim" => self.cmd_vim(args.to_vec()),
+                "bash" => self.cmd_bash(args.to_vec()),
+                "source" => self.cmd_source(args.to_vec()),
+                "version" => wos_version(),
+                "state" => self.cmd_state(),
+                "reset" => {
+                    self.reset();
+                    "System reset complete".to_string()
+                }
+                _ => format!(
+                    "Unknown command: {}\nType 'help' for available commands",
+                    cmd_name
+                ),
             }
-            _ => format!(
-                "Unknown command: {}\nType 'help' for available commands",
-                cmd_name
-            ),
         };
 
         // Determine exit code (0 = success, 1 = error)
@@ -2466,5 +2483,84 @@ environment: production
 
         // Should return shebang error
         assert!(output.contains("unsupported shebang") || output.contains("invalid shebang"));
+    }
+
+    // WOS-206: ./script.sh executable script tests
+
+    #[test]
+    fn test_executable_script_dot_slash() {
+        let mut wos = WosWasm::new();
+
+        // Create a script in current directory
+        let script_content = "#!/bin/bash\necho hello from executable";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/test.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute with ./test.sh syntax
+        let output = wos.execute_command("./test.sh");
+
+        // Should execute the script
+        assert_eq!(output.trim(), "hello from executable");
+    }
+
+    #[test]
+    fn test_executable_script_relative_path() {
+        let mut wos = WosWasm::new();
+
+        // Create a script in a subdirectory
+        let script_content = "#!/bin/bash\necho relative path works";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/scripts/test.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute with relative path
+        let output = wos.execute_command("./scripts/test.sh");
+
+        // Should execute the script
+        assert_eq!(output.trim(), "relative path works");
+    }
+
+    #[test]
+    fn test_executable_script_file_not_found() {
+        let mut wos = WosWasm::new();
+
+        // Try to execute non-existent script
+        let output = wos.execute_command("./nonexistent.sh");
+
+        // Should return file not found error
+        assert!(output.contains("script not found") || output.contains("not found"));
+    }
+
+    #[test]
+    fn test_executable_script_vs_bash_command() {
+        let mut wos = WosWasm::new();
+
+        // Create a script
+        let script_content = "#!/bin/bash\necho from script";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/test.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute with ./test.sh
+        let output1 = wos.execute_command("./test.sh");
+
+        // Execute with bash test.sh
+        let output2 = wos.execute_command("bash /test.sh");
+
+        // Both should produce same output
+        assert_eq!(output1.trim(), output2.trim());
     }
 }
