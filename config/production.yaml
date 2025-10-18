@@ -1,0 +1,6 @@
+# WOS UX Layout Configuration - Production Environment
+# This configuration is optimized for production deployment with
+# minimal logging and maximum performance.
+
+version: "1.0"
+environment: production

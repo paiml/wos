@@ -5,8 +5,10 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod config;
 mod quality;
 
+pub use config::{Environment, UxLayoutConfig};
 pub use quality::{BuildStatus, QualityMetrics};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;

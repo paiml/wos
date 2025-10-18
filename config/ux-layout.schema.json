@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/noahgift/wos/schemas/ux-layout.schema.json",
+  "title": "WOS UX Layout Configuration",
+  "description": "Configuration schema for WOS browser UI layout and behavior",
+  "type": "object",
+  "required": ["version", "environment"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration schema version (semantic versioning)",
+      "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$",
+      "examples": ["1.0", "1.0.0", "2.1.0"]
+    },
+    "environment": {
+      "type": "string",
+      "description": "Deployment environment for this configuration",
+      "enum": ["development", "staging", "production"],
+      "examples": ["development"]
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "version": "1.0",
+      "environment": "development"
+    },
+    {
+      "version": "1.0",
+      "environment": "staging"
+    },
+    {
+      "version": "1.0",
+      "environment": "production"
+    }
+  ]
+}

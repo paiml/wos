@@ -1,0 +1,6 @@
+# WOS UX Layout Configuration - Staging Environment
+# This configuration provides a production-like environment for
+# pre-release testing and validation.
+
+version: "1.0"
+environment: staging

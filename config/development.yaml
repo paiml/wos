@@ -1,0 +1,6 @@
+# WOS UX Layout Configuration - Development Environment
+# This configuration enables all debugging features and verbose logging
+# for local development.
+
+version: "1.0"
+environment: development
