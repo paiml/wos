@@ -1,7 +1,7 @@
 # WOS Specifications & Documentation Directory
 
-**Total Documentation**: 318KB across 8 comprehensive documents (10,174 lines)
-**Last Updated**: 2025-10-15
+**Total Documentation**: 423KB across 10 comprehensive documents (~13,674 lines)
+**Last Updated**: 2025-10-18
 **Status**: Production-ready, industry-leading documentation
 
 ---
@@ -10,6 +10,7 @@
 
 **New to WOS?** → Start with [WOS Specification v1.0](#1-wos-specification-v10) for project overview
 **Implementing WOS?** → Read [Architectural Components](#2-architectural-components) for design patterns
+**Implementing shell scripts?** → See [Shell Script Execution Specification](#shell-script-execution-specification) and [Shell Script SQLite-Style Testing](#shell-script-sqlite-style-testing)
 **Setting up testing?** → See [Testing Strategy & Architecture](#4-testing-strategy--architecture)
 **Need help with tests?** → Check [Navigation Guide](#8-navigation-guide) for testing docs
 
@@ -111,7 +112,126 @@ pub fn dispatch_syscall(
 
 ### 🧪 Testing Strategy Documentation (186KB)
 
-Comprehensive testing documentation covering all 10 testing types, SQLite-inspired methodologies, and quality reviews.
+Comprehensive testing documentation covering all 10 testing types, SQLite-inspired methodologies, quality reviews, and shell script execution testing.
+
+---
+
+### 🚀 Shell Script Execution Specifications (NEW)
+
+Two companion specifications covering WOS's shell script execution capability with NASA-grade testing rigor.
+
+#### Shell Script Execution Specification
+**File**: `running-shell-scripts.md` (~60KB estimated)
+**Purpose**: Complete implementation specification for shell script execution in WOS browser environment
+**Status**: Implementation-ready
+
+**Contents**:
+- **Problem Analysis**: Why `bash foo.sh` doesn't work in WOS (no shebang handling)
+- **Complete Implementation**: `ScriptLoader` and `ScriptExecutor` design
+- **Integration Points**: VFS, process execution, Vim editor workflow
+- **Bash Compatibility**: Variable expansion, control flow, redirection, exit codes
+- **Security Model**: Sandboxing and resource limits
+- **Testing Strategy**: E2E tests, property tests, security tests
+
+**Key Features**:
+```rust
+// Core API design
+pub struct ScriptLoader;
+impl ScriptLoader {
+    pub fn load(vfs: &VirtualFileSystem, path: &str) -> Result<Script, ScriptError>;
+    pub fn validate_shebang(content: &str) -> Result<(), ScriptError>;
+}
+
+pub struct ScriptExecutor;
+impl ScriptExecutor {
+    pub fn execute(script: &Script, vfs: &mut VirtualFileSystem,
+                   ctx: &ExecutionContext) -> Result<ExecutionResult, ExecutionError>;
+}
+```
+
+**Recommended For**:
+- Implementing shell script support
+- Understanding VFS integration
+- Learning sandboxed execution patterns
+- Vim-to-execution workflow design
+
+---
+
+#### Shell Script SQLite-Style Testing
+**File**: `shell-script-sqlite-testing.md` (~45KB, 1,500+ lines)
+**Purpose**: SQLite-level testing framework for shell script execution
+**Methodology**: Adapted from SQLite's 608:1 test-to-code ratio with NASA DO-178B standards
+
+**Contents**:
+- **Eight Independent Test Harnesses**:
+  1. **E2E Playwright Suite**: 500+ tests with 100% MC/DC coverage
+  2. **Property-Based Testing**: 1M+ iterations validating invariants
+  3. **Coverage-Guided Fuzzing**: 24-hour AFL campaigns
+  4. **Metamorphic Testing**: 10K+ semantic equivalence tests
+  5. **Anomaly Testing**: 100% error path coverage
+  6. **Veryquick Pre-Commit**: <90 second fast feedback
+  7. **Regression Snapshot Testing**: 1000+ snapshots
+  8. **Real-World Corpus**: 10K+ actual shell scripts
+
+**Quality Targets**:
+- 100% Branch Coverage
+- 100% MC/DC Coverage (NASA DO-178B Level A)
+- 90%+ Mutation Kill Rate
+- 50:1 Test-to-Code Ratio
+- Zero production bugs guarantee
+
+**Key Testing Patterns**:
+```typescript
+// MC/DC Example
+test('SCRIPT-003: MC/DC - Script execution with conditional', async ({ page }) => {
+  /**
+   * MC/DC Test Matrix for: if [ -f "file.txt" ]; then
+   *
+   * Condition | File Exists | Branch Taken | Independent Effect
+   * ---------|-------------|--------------|-------------------
+   * Test 1   | true        | then         | ✓ (baseline)
+   * Test 2   | false       | else         | ✓ (proves condition matters)
+   */
+  // ... test implementation
+});
+```
+
+```rust
+// Property-Based Testing Example
+proptest! {
+    #[test]
+    fn prop_script_execution_deterministic(script_content in ".*") {
+        // Execute twice, must produce identical results
+        let result1 = ScriptExecutor::execute(&script, &mut vfs1, &ctx);
+        let result2 = ScriptExecutor::execute(&script, &mut vfs2, &ctx);
+        prop_assert_eq!(result1, result2);
+    }
+}
+```
+
+**Research Foundations**:
+- NASA DO-178B/C (avionics software certification)
+- SQLite testing methodology (Hipp, 2020)
+- Chen et al. metamorphic testing (ACM CSUR 2018)
+- Zalewski American Fuzzy Lop (AFL)
+- Pierce type system soundness
+
+**Recommended For**:
+- Implementing mission-critical testing infrastructure
+- Learning SQLite-style testing methodology
+- Understanding MC/DC coverage requirements
+- Setting up fuzzing and chaos testing
+- Property-based testing for shell scripts
+
+**Implementation Roadmap**:
+- Week 1: Test infrastructure setup
+- Week 2: E2E suite (500 tests)
+- Week 3: Property tests (20 properties)
+- Week 4: Fuzzing + anomaly testing
+- Week 5: Regression + corpus validation
+- Week 6: Quality validation and release
+
+---
 
 #### 4. Testing Strategy & Architecture
 **File**: `testing-implementation-strategy-architecture.md` (88KB, 3,151 lines)
@@ -270,12 +390,14 @@ Comprehensive testing documentation covering all 10 testing types, SQLite-inspir
 | WOS Specification v1.0 | 44KB | 1,457 | Architecture | Complete |
 | Architectural Components | 32KB | 506 | Architecture | Complete |
 | Technical Review | 56KB | 1,813 | Architecture | Complete |
+| Shell Script Execution | 60KB | ~2,000 | Implementation | Complete |
+| Shell Script Testing | 45KB | ~1,500 | Testing | Complete |
 | Testing Strategy v1.1 | 88KB | 3,151 | Testing | Complete |
 | Canary Testing Spec | 40KB | 1,281 | Testing | Complete |
 | Quality Review | 22KB | 864 | Testing | Complete |
 | Research Review | 32KB | 1,328 | Testing | Complete |
 | Navigation Guide | 4.5KB | 123 | Testing | Complete |
-| **TOTAL** | **318KB** | **10,174** | - | **Complete** |
+| **TOTAL** | **423KB** | **~13,674** | - | **Complete** |
 
 ---
 
@@ -301,6 +423,12 @@ Comprehensive testing documentation covering all 10 testing types, SQLite-inspir
 1. WOS Specification v1.0 (full spec) - 1 hour
 2. Architectural Components (detailed design) - 1.5 hours
 3. Technical Review (assessment & principles) - 1.5 hours
+
+### Path 5: Shell Script Implementation (4-5 hours)
+1. Shell Script Execution Specification (implementation) - 2 hours
+2. Shell Script SQLite-Style Testing (testing framework) - 1.5 hours
+3. Testing Strategy & Architecture (general testing) - 1 hour
+4. Canary Testing Spec (E2E testing patterns) - 30 min
 
 ---
 
