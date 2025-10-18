@@ -590,6 +590,7 @@ impl WosWasm {
             "wc" => self.cmd_wc(args.to_vec(), stdin),
             "vim" => self.cmd_vim(args.to_vec()),
             "bash" => self.cmd_bash(args.to_vec()),
+            "source" => self.cmd_source(args.to_vec()),
             "version" => wos_version(),
             "state" => self.cmd_state(),
             "reset" => {
@@ -631,6 +632,7 @@ impl WosWasm {
         output.push_str("  wc        - Count words/lines/bytes\n");
         output.push_str("  vim       - Modal text editor\n");
         output.push_str("  bash      - Execute shell script\n");
+        output.push_str("  source    - Execute script in current shell\n");
         output.push_str("  version   - Show system version\n");
         output.push_str("  state     - Show kernel state\n");
         output.push_str("  reset     - Reset system to initial state\n");
@@ -877,6 +879,41 @@ impl WosWasm {
 
         // Use ScriptExecutor to execute the script
         match script_executor::ScriptExecutor::execute(
+            &script,
+            &mut self.state.vfs,
+            &mut self.variables,
+        ) {
+            Ok(result) => {
+                // Update exit code
+                self.last_exit_code = result.exit_code;
+                result.output
+            }
+            Err(err) => {
+                self.last_exit_code = 1;
+                format!("{}", err)
+            }
+        }
+    }
+
+    fn cmd_source(&mut self, args: Vec<String>) -> String {
+        // Check if script path provided
+        if args.is_empty() {
+            return "source: missing script file\nUsage: source <script.sh>".to_string();
+        }
+
+        let script_path = &args[0];
+
+        // Use ScriptLoader to load the script
+        let script = match script_loader::ScriptLoader::load(&self.state.vfs, script_path) {
+            Ok(script) => script,
+            Err(err) => {
+                return format!("{}", err);
+            }
+        };
+
+        // Use ScriptExecutor to execute the script in current shell context
+        // Unlike bash, source should persist script-local variables
+        match script_executor::ScriptExecutor::execute_in_shell_context(
             &script,
             &mut self.state.vfs,
             &mut self.variables,
@@ -2326,5 +2363,108 @@ environment: production
 
         // Should execute script (args ignored for now)
         assert!(output.contains("hello"));
+    }
+
+    // WOS-205: source command tests
+
+    #[test]
+    fn test_source_command_execute_script() {
+        let mut wos = WosWasm::new();
+
+        // Create a test script in VFS
+        let script_content = "#!/bin/bash\necho hello from source";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/source_test.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute source command
+        let output = wos.execute_command("source /source_test.sh");
+
+        // Should execute the script and return output
+        assert_eq!(output.trim(), "hello from source");
+    }
+
+    #[test]
+    fn test_source_variables_persist() {
+        let mut wos = WosWasm::new();
+
+        // Create script that sets variables
+        let script_content = "#!/bin/bash\nTEST_VAR=hello\nFOO=bar";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/setvar.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute source command
+        wos.execute_command("source /setvar.sh");
+
+        // Variables should persist in shell after source completes
+        assert_eq!(wos.variables.get("TEST_VAR"), Some(&"hello".to_string()));
+        assert_eq!(wos.variables.get("FOO"), Some(&"bar".to_string()));
+    }
+
+    #[test]
+    fn test_source_vs_bash_variable_scope() {
+        let mut wos = WosWasm::new();
+
+        // Create script that sets a script-local variable
+        let script_content = "#!/bin/bash\nLOCAL_VAR=sourced";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/local_var.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute with source - variable should persist
+        wos.execute_command("source /local_var.sh");
+        assert_eq!(wos.variables.get("LOCAL_VAR"), Some(&"sourced".to_string()));
+
+        // Clear the variable
+        wos.variables.remove("LOCAL_VAR");
+
+        // Execute with bash - script-local variable should NOT persist
+        wos.execute_command("bash /local_var.sh");
+        assert_eq!(wos.variables.get("LOCAL_VAR"), None);
+    }
+
+    #[test]
+    fn test_source_command_file_not_found() {
+        let mut wos = WosWasm::new();
+
+        // Execute source on non-existent file
+        let output = wos.execute_command("source /nonexistent.sh");
+
+        // Should return file not found error
+        assert!(output.contains("script not found"));
+    }
+
+    #[test]
+    fn test_source_command_invalid_shebang() {
+        let mut wos = WosWasm::new();
+
+        // Create script with invalid shebang
+        let script_content = "#!/bin/python\nprint('test')";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/invalid.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute source command
+        let output = wos.execute_command("source /invalid.sh");
+
+        // Should return shebang error
+        assert!(output.contains("unsupported shebang") || output.contains("invalid shebang"));
     }
 }

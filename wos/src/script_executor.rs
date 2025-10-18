@@ -113,6 +113,103 @@ impl ScriptExecutor {
         })
     }
 
+    /// Execute a script in current shell context (for 'source' command)
+    ///
+    /// # Arguments
+    /// * `script` - The script to execute
+    /// * `vfs` - Virtual file system (unused in this simple implementation)
+    /// * `variables` - Shell variable environment (will be modified with script-local vars)
+    ///
+    /// # Returns
+    /// * `Ok(ExecutionResult)` - Successful execution with accumulated output
+    /// * `Err(ScriptError)` - If execution fails
+    ///
+    /// # Behavior
+    /// - Same as execute() but merges script-local variables into shell environment
+    /// - This is the key difference between 'bash' and 'source' commands
+    /// - ALL variables (not just exported ones) persist in shell after source completes
+    pub fn execute_in_shell_context(
+        script: &Script,
+        _vfs: &mut VirtualFileSystem,
+        variables: &mut HashMap<String, String>,
+    ) -> Result<ExecutionResult, ScriptError> {
+        let mut accumulated_output = String::new();
+        let mut exit_code = 0;
+        let mut script_vars = HashMap::new(); // Script-local variables
+
+        // Process each line in the script
+        for line in script.content.lines() {
+            let trimmed = line.trim();
+
+            // Skip empty lines
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // Skip comments (lines starting with #)
+            if trimmed.starts_with('#') {
+                continue;
+            }
+
+            // Check for export VAR=value
+            if let Some(rest) = trimmed.strip_prefix("export ") {
+                if let Some((var_name, var_value)) = rest.split_once('=') {
+                    // Export to shell environment
+                    variables.insert(var_name.trim().to_string(), var_value.trim().to_string());
+                    script_vars.insert(var_name.trim().to_string(), var_value.trim().to_string());
+                    continue;
+                }
+            }
+
+            // Check for variable assignment VAR=value
+            if let Some((var_name, var_value)) = trimmed.split_once('=') {
+                // Only treat as assignment if var_name is valid identifier
+                if var_name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                    && !var_name.is_empty()
+                    && !var_name.contains(' ')
+                {
+                    script_vars.insert(var_name.trim().to_string(), var_value.trim().to_string());
+                    continue;
+                }
+            }
+
+            // Expand variables in the line
+            let expanded_line = Self::expand_variables(trimmed, &script_vars);
+
+            // Execute the command using a simple built-in executor
+            let (output, code) = Self::execute_line(&expanded_line);
+
+            // Accumulate output
+            if !output.is_empty() {
+                if !accumulated_output.is_empty() {
+                    accumulated_output.push('\n');
+                }
+                accumulated_output.push_str(&output);
+            }
+
+            // Update exit code
+            exit_code = code;
+
+            // Stop on first error (bash default behavior)
+            if code != 0 {
+                break;
+            }
+        }
+
+        // Merge script-local variables into shell context (source behavior)
+        // This is the key difference from execute() - ALL variables persist
+        for (key, value) in script_vars {
+            variables.insert(key, value);
+        }
+
+        Ok(ExecutionResult {
+            output: accumulated_output,
+            exit_code,
+        })
+    }
+
     /// Expand variables in a line
     ///
     /// Supports $VAR and ${VAR} syntax
@@ -653,6 +750,76 @@ mod proptests {
             if let Ok(exec_result) = result {
                 prop_assert_eq!(exec_result.output.trim(), var_value);
             }
+        }
+    }
+
+    // WOS-205 Property test: execute_in_shell_context never panics
+    proptest! {
+        #[test]
+        fn proptest_execute_in_shell_context_never_panics(
+            content in "[a-zA-Z0-9 \\n]{0,100}"
+        ) {
+            let script = Script {
+                path: "/test.sh".to_string(),
+                content: format!("#!/bin/bash\\n{}", content),
+                shebang: "#!/bin/bash".to_string(),
+            };
+
+            let mut vfs = VirtualFileSystem::new();
+            let mut vars = HashMap::new();
+
+            // Should not panic, regardless of input
+            let _ = ScriptExecutor::execute_in_shell_context(&script, &mut vfs, &mut vars);
+        }
+    }
+
+    // WOS-205 Property test: Shell context variables persist
+    proptest! {
+        #[test]
+        fn proptest_shell_context_variables_persist(
+            var_name in "[A-Z][A-Z0-9_]{0,10}",
+            var_value in "[a-z0-9]{1,20}"
+        ) {
+            let content = format!("#!/bin/bash\n{}={}", var_name, var_value);
+            let script = Script {
+                path: "/test.sh".to_string(),
+                content,
+                shebang: "#!/bin/bash".to_string(),
+            };
+
+            let mut vfs = VirtualFileSystem::new();
+            let mut vars = HashMap::new();
+            let _ = ScriptExecutor::execute_in_shell_context(&script, &mut vfs, &mut vars);
+
+            // Variable should persist in shell context
+            prop_assert_eq!(vars.get(&var_name), Some(&var_value));
+        }
+    }
+
+    // WOS-205 Property test: Deterministic execution in shell context
+    proptest! {
+        #[test]
+        fn proptest_shell_context_deterministic(
+            commands in prop::collection::vec("echo [a-z]+", 1..5)
+        ) {
+            let content = format!("#!/bin/bash\\n{}", commands.join("\\n"));
+            let script = Script {
+                path: "/test.sh".to_string(),
+                content,
+                shebang: "#!/bin/bash".to_string(),
+            };
+
+            let mut vfs1 = VirtualFileSystem::new();
+            let mut vars1 = HashMap::new();
+            let result1 = ScriptExecutor::execute_in_shell_context(&script, &mut vfs1, &mut vars1);
+
+            let mut vfs2 = VirtualFileSystem::new();
+            let mut vars2 = HashMap::new();
+            let result2 = ScriptExecutor::execute_in_shell_context(&script, &mut vfs2, &mut vars2);
+
+            // Same script should produce same result and same shell variables
+            prop_assert_eq!(result1, result2);
+            prop_assert_eq!(vars1, vars2);
         }
     }
 }
