@@ -1,6 +1,29 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
+ * Load UX layout configuration from YAML with fallback to default
+ *
+ * Never fails - returns default config if YAML is invalid.
+ * Returns the config as JSON string.
+ */
+export function loadConfigFromYamlWithFallback(yaml: string): string;
+/**
+ * Validate a UX layout configuration YAML string
+ *
+ * Returns Ok(()) if valid, Err(message) if invalid
+ */
+export function validateConfig(yaml: string): void;
+/**
+ * Get the default UX layout configuration as JSON string
+ */
+export function getDefaultConfig(): string;
+/**
+ * Load UX layout configuration from YAML string
+ *
+ * Returns the config as JSON string on success, or error message on failure
+ */
+export function loadConfigFromYaml(yaml: string): string;
+/**
  * Get WOS version
  */
 export function wos_version(): string;
@@ -67,6 +90,10 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly __wbg_woswasm_free: (a: number, b: number) => void;
+  readonly getDefaultConfig: (a: number) => void;
+  readonly loadConfigFromYaml: (a: number, b: number, c: number) => void;
+  readonly loadConfigFromYamlWithFallback: (a: number, b: number, c: number) => void;
+  readonly validateConfig: (a: number, b: number, c: number) => void;
   readonly wos_version: (a: number) => void;
   readonly woswasm_executeCommand: (a: number, b: number, c: number, d: number) => void;
   readonly woswasm_executeSyscall: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -80,9 +107,9 @@ export interface InitOutput {
   readonly woswasm_reset: (a: number) => void;
   readonly woswasm_setState: (a: number, b: number, c: number, d: number) => void;
   readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
-  readonly __wbindgen_export_0: (a: number, b: number, c: number) => void;
-  readonly __wbindgen_export_1: (a: number, b: number) => number;
-  readonly __wbindgen_export_2: (a: number, b: number, c: number, d: number) => number;
+  readonly __wbindgen_export_0: (a: number, b: number) => number;
+  readonly __wbindgen_export_1: (a: number, b: number, c: number, d: number) => number;
+  readonly __wbindgen_export_2: (a: number, b: number, c: number) => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;

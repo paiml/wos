@@ -1,7 +1,67 @@
 // WOS Terminal Application
 // Integrates WebAssembly kernel with HTML terminal interface
 
-import init, { wos_version, WosWasm } from './wos.js';
+import init, {
+  wos_version,
+  WosWasm,
+  getDefaultConfig,
+  loadConfigFromYaml,
+  loadConfigFromYamlWithFallback
+} from './wos.js';
+
+class ConfigManager {
+  constructor() {
+    this.config = null;
+    this.loadConfig();
+  }
+
+  loadConfig() {
+    const savedConfig = localStorage.getItem('wos-config');
+    if (savedConfig) {
+      try {
+        this.config = JSON.parse(loadConfigFromYamlWithFallback(savedConfig));
+      } catch (error) {
+        console.error('Error loading saved config, using default:', error);
+        this.loadDefaultConfig();
+      }
+    } else {
+      this.loadDefaultConfig();
+    }
+    this.applyConfig();
+  }
+
+  loadDefaultConfig() {
+    const defaultConfigJson = getDefaultConfig();
+    this.config = JSON.parse(defaultConfigJson);
+  }
+
+  saveConfig(yamlConfig) {
+    localStorage.setItem('wos-config', yamlConfig);
+    this.config = JSON.parse(loadConfigFromYamlWithFallback(yamlConfig));
+    this.applyConfig();
+  }
+
+  applyConfig() {
+    if (!this.config || !this.config.ui) return;
+
+    const theme = this.config.ui.theme || 'auto';
+    if (theme === 'dark') {
+      document.body.classList.add('theme-dark');
+      document.body.classList.remove('theme-light');
+    } else if (theme === 'light') {
+      document.body.classList.add('theme-light');
+      document.body.classList.remove('theme-dark');
+    } else {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.body.classList.toggle('theme-dark', prefersDark);
+      document.body.classList.toggle('theme-light', !prefersDark);
+    }
+  }
+
+  getConfig() {
+    return this.config;
+  }
+}
 
 class FileManager {
   constructor(wos) {
@@ -565,7 +625,7 @@ class VimEditor {
 }
 
 class Terminal {
-  constructor() {
+  constructor(configManager) {
     this.output = document.getElementById('terminal-output');
     this.input = document.getElementById('terminal-input');
     this.terminalElement = document.getElementById('terminal');
@@ -573,6 +633,7 @@ class Terminal {
     this.historyIndex = -1;
     this.wos = null;
     this.fileManager = null;
+    this.configManager = configManager;
 
     this.setupEventListeners();
     this.printWelcome();
@@ -779,6 +840,26 @@ class Terminal {
       return;
     }
 
+    if (cmd === 'config') {
+      this.printConfig();
+      return;
+    }
+
+    if (cmd === 'theme dark') {
+      this.setTheme('dark');
+      return;
+    }
+
+    if (cmd === 'theme light') {
+      this.setTheme('light');
+      return;
+    }
+
+    if (cmd === 'theme auto') {
+      this.setTheme('auto');
+      return;
+    }
+
     // Handle vim command
     if (cmd.startsWith('vim ') || cmd === 'vim') {
       const fileName = cmd.split(' ')[1] || 'untitled.txt';
@@ -804,10 +885,14 @@ class Terminal {
     this.printLine('Available commands:', 'output');
     this.printLine('', 'output');
     this.printLine('Terminal commands:', 'output');
-    this.printLine('  help      - Show this help message', 'output');
-    this.printLine('  clear     - Clear terminal', 'output');
-    this.printLine('  history   - Show command history', 'output');
-    this.printLine('  version   - Show OS version', 'output');
+    this.printLine('  help        - Show this help message', 'output');
+    this.printLine('  clear       - Clear terminal', 'output');
+    this.printLine('  history     - Show command history', 'output');
+    this.printLine('  version     - Show OS version', 'output');
+    this.printLine('  config      - Show current configuration', 'output');
+    this.printLine('  theme dark  - Switch to dark theme', 'output');
+    this.printLine('  theme light - Switch to light theme', 'output');
+    this.printLine('  theme auto  - Auto theme (system preference)', 'output');
     this.printLine('', 'output');
     this.printLine('OS commands (via WASM):', 'output');
     this.printLine('  ps        - List processes', 'output');
@@ -847,6 +932,92 @@ class Terminal {
     } else {
       this.printLine('WOS Version: Not loaded', 'error');
     }
+  }
+
+  printConfig() {
+    if (!this.configManager) {
+      this.printLine('Config manager not available', 'error');
+      return;
+    }
+
+    const config = this.configManager.getConfig();
+    if (!config) {
+      this.printLine('No configuration loaded', 'error');
+      return;
+    }
+
+    this.printLine('Current Configuration:', 'output');
+    this.printLine('', 'output');
+    this.printLine(`  Version: ${config.version}`, 'output');
+    this.printLine(`  Environment: ${config.environment}`, 'output');
+
+    if (config.ui) {
+      this.printLine('', 'output');
+      this.printLine('  UI Settings:', 'output');
+      this.printLine(`    Mode: ${config.ui.mode}`, 'output');
+      this.printLine(`    Theme: ${config.ui.theme}`, 'output');
+      this.printLine(`    Terminal history size: ${config.ui.terminal?.history_size || 1000}`, 'output');
+    }
+    this.printLine('', 'output');
+    this.printLine('Available commands:', 'output');
+    this.printLine('  theme dark   - Switch to dark theme', 'output');
+    this.printLine('  theme light  - Switch to light theme', 'output');
+    this.printLine('  theme auto   - Auto theme based on system', 'output');
+  }
+
+  setTheme(theme) {
+    if (!this.configManager) {
+      this.printLine('Config manager not available', 'error');
+      return;
+    }
+
+    const config = this.configManager.getConfig();
+    if (!config || !config.ui) {
+      this.printLine('Configuration error', 'error');
+      return;
+    }
+
+    config.ui.theme = theme;
+
+    const yamlConfig = `version: "${config.version}"
+environment: ${config.environment}
+ui:
+  mode: ${config.ui.mode}
+  theme: ${theme}
+  panels:
+    process_list:
+      visible: ${config.ui.panels.process_list.visible}
+      collapsed: ${config.ui.panels.process_list.collapsed}
+      position: ${config.ui.panels.process_list.position}
+    memory_map:
+      visible: ${config.ui.panels.memory_map.visible}
+      collapsed: ${config.ui.panels.memory_map.collapsed}
+      position: ${config.ui.panels.memory_map.position}
+    syscall_trace:
+      visible: ${config.ui.panels.syscall_trace.visible}
+    filesystem:
+      visible: ${config.ui.panels.filesystem.visible}
+      collapsed: ${config.ui.panels.filesystem.collapsed}
+      position: ${config.ui.panels.filesystem.position}
+    system_monitor:
+      visible: ${config.ui.panels.system_monitor.visible}
+      collapsed: ${config.ui.panels.system_monitor.collapsed}
+      position: ${config.ui.panels.system_monitor.position}
+  terminal:
+    history_size: ${config.ui.terminal?.history_size || 1000}
+    font_size: ${config.ui.terminal?.font_size || 14}
+    show_line_numbers: ${config.ui.terminal?.show_line_numbers || false}
+  progressive_disclosure:
+    auto_collapse_timeout_sec: ${config.ui.progressive_disclosure?.auto_collapse_timeout_sec || 60}
+    show_tooltips: ${config.ui.progressive_disclosure?.show_tooltips || false}
+  accessibility:
+    screen_reader: ${config.ui.accessibility?.screen_reader || false}
+    high_contrast: ${config.ui.accessibility?.high_contrast || false}
+    keyboard_navigation: ${config.ui.accessibility?.keyboard_navigation || true}
+`;
+
+    this.configManager.saveConfig(yamlConfig);
+    this.printLine(`Theme set to: ${theme}`, 'success');
   }
 
   updateSystemInfo() {
@@ -912,7 +1083,8 @@ class Terminal {
 
 // Initialize application
 async function initApp() {
-  const terminal = new Terminal();
+  const configManager = new ConfigManager();
+  const terminal = new Terminal(configManager);
   const statusElement = document.getElementById('status');
   const versionElement = document.getElementById('version');
 
