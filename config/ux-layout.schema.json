@@ -17,6 +17,133 @@
       "description": "Deployment environment for this configuration",
       "enum": ["development", "staging", "production"],
       "examples": ["development"]
+    },
+    "ui": {
+      "type": "object",
+      "description": "UI configuration (optional - allows minimal configs)",
+      "required": ["mode", "theme"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "UI mode controlling progressive disclosure",
+          "enum": ["minimal", "standard", "debug"],
+          "examples": ["debug"]
+        },
+        "theme": {
+          "type": "string",
+          "description": "Color theme",
+          "enum": ["dark", "light", "auto"],
+          "examples": ["dark"]
+        },
+        "panels": {
+          "type": "object",
+          "description": "Panel visibility and layout configuration",
+          "properties": {
+            "process_list": {
+              "$ref": "#/definitions/PanelConfig"
+            },
+            "memory_map": {
+              "$ref": "#/definitions/PanelConfig"
+            },
+            "syscall_trace": {
+              "$ref": "#/definitions/PanelConfig"
+            },
+            "filesystem": {
+              "$ref": "#/definitions/PanelConfig"
+            },
+            "system_monitor": {
+              "$ref": "#/definitions/PanelConfig"
+            }
+          }
+        },
+        "terminal": {
+          "type": "object",
+          "description": "Terminal-specific configuration",
+          "properties": {
+            "history_size": {
+              "type": "integer",
+              "description": "Number of lines in history buffer",
+              "default": 1000,
+              "minimum": 100,
+              "maximum": 10000
+            },
+            "font_size": {
+              "type": "integer",
+              "description": "Font size in pixels",
+              "default": 14,
+              "minimum": 8,
+              "maximum": 32
+            },
+            "show_line_numbers": {
+              "type": "boolean",
+              "description": "Whether to show line numbers",
+              "default": false
+            }
+          }
+        },
+        "progressive_disclosure": {
+          "type": "object",
+          "description": "Progressive disclosure settings",
+          "properties": {
+            "auto_collapse_timeout_sec": {
+              "type": ["integer", "null"],
+              "description": "Auto-collapse panels after this many seconds of inactivity",
+              "minimum": 5,
+              "maximum": 3600
+            },
+            "show_tooltips": {
+              "type": "boolean",
+              "description": "Show tooltips on hover",
+              "default": true
+            }
+          }
+        },
+        "accessibility": {
+          "type": "object",
+          "description": "Accessibility settings",
+          "properties": {
+            "screen_reader": {
+              "type": "boolean",
+              "description": "Enable screen reader support",
+              "default": false
+            },
+            "high_contrast": {
+              "type": "boolean",
+              "description": "Enable high contrast mode",
+              "default": false
+            },
+            "keyboard_navigation": {
+              "type": "boolean",
+              "description": "Keyboard navigation enabled",
+              "default": true
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "PanelConfig": {
+      "type": "object",
+      "description": "Individual panel configuration",
+      "properties": {
+        "visible": {
+          "type": "boolean",
+          "description": "Whether panel is visible",
+          "default": true
+        },
+        "collapsed": {
+          "type": "boolean",
+          "description": "Whether panel starts collapsed",
+          "default": false
+        },
+        "position": {
+          "type": "integer",
+          "description": "Panel position priority (lower = higher priority)",
+          "default": 0,
+          "minimum": 0
+        }
+      }
     }
   },
   "additionalProperties": false,
@@ -27,11 +154,11 @@
     },
     {
       "version": "1.0",
-      "environment": "staging"
-    },
-    {
-      "version": "1.0",
-      "environment": "production"
+      "environment": "production",
+      "ui": {
+        "mode": "minimal",
+        "theme": "light"
+      }
     }
   ]
 }

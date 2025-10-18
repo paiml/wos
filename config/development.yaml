@@ -4,3 +4,38 @@
 
 version: "1.0"
 environment: development
+ui:
+  mode: debug
+  theme: dark
+  panels:
+    process_list:
+      visible: true
+      collapsed: false
+      position: 0
+    memory_map:
+      visible: true
+      collapsed: false
+      position: 1
+    syscall_trace:
+      visible: true
+      collapsed: false
+      position: 2
+    filesystem:
+      visible: true
+      collapsed: false
+      position: 3
+    system_monitor:
+      visible: true
+      collapsed: false
+      position: 4
+  terminal:
+    history_size: 5000
+    font_size: 14
+    show_line_numbers: true
+  progressive_disclosure:
+    auto_collapse_timeout_sec: null  # Never auto-collapse in development
+    show_tooltips: true
+  accessibility:
+    screen_reader: false
+    high_contrast: false
+    keyboard_navigation: true

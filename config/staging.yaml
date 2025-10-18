@@ -4,3 +4,36 @@
 
 version: "1.0"
 environment: staging
+ui:
+  mode: standard
+  theme: light
+  panels:
+    process_list:
+      visible: true
+      collapsed: true
+      position: 0
+    memory_map:
+      visible: true
+      collapsed: true
+      position: 1
+    syscall_trace:
+      visible: false
+    filesystem:
+      visible: true
+      collapsed: false
+      position: 2
+    system_monitor:
+      visible: true
+      collapsed: true
+      position: 3
+  terminal:
+    history_size: 2000
+    font_size: 14
+    show_line_numbers: false
+  progressive_disclosure:
+    auto_collapse_timeout_sec: 120  # Auto-collapse after 2 minutes
+    show_tooltips: true
+  accessibility:
+    screen_reader: false
+    high_contrast: false
+    keyboard_navigation: true

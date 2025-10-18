@@ -4,3 +4,30 @@
 
 version: "1.0"
 environment: production
+ui:
+  mode: minimal
+  theme: auto
+  panels:
+    process_list:
+      visible: false
+    memory_map:
+      visible: false
+    syscall_trace:
+      visible: false
+    filesystem:
+      visible: true
+      collapsed: false
+      position: 0
+    system_monitor:
+      visible: false
+  terminal:
+    history_size: 1000
+    font_size: 14
+    show_line_numbers: false
+  progressive_disclosure:
+    auto_collapse_timeout_sec: 60  # Auto-collapse after 1 minute
+    show_tooltips: false
+  accessibility:
+    screen_reader: false
+    high_contrast: false
+    keyboard_navigation: true

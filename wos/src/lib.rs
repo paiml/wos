@@ -8,7 +8,10 @@
 mod config;
 mod quality;
 
-pub use config::{Environment, UxLayoutConfig};
+pub use config::{
+    AccessibilityConfig, Environment, PanelConfig, PanelsConfig, ProgressiveDisclosureConfig,
+    TerminalConfig, Theme, UiConfig, UiMode, UxLayoutConfig,
+};
 pub use quality::{BuildStatus, QualityMetrics};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
