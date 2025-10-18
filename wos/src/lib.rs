@@ -589,6 +589,7 @@ impl WosWasm {
             "grep" => self.cmd_grep(args.to_vec(), stdin),
             "wc" => self.cmd_wc(args.to_vec(), stdin),
             "vim" => self.cmd_vim(args.to_vec()),
+            "bash" => self.cmd_bash(args.to_vec()),
             "version" => wos_version(),
             "state" => self.cmd_state(),
             "reset" => {
@@ -629,6 +630,7 @@ impl WosWasm {
         output.push_str("  grep      - Search file contents\n");
         output.push_str("  wc        - Count words/lines/bytes\n");
         output.push_str("  vim       - Modal text editor\n");
+        output.push_str("  bash      - Execute shell script\n");
         output.push_str("  version   - Show system version\n");
         output.push_str("  state     - Show kernel state\n");
         output.push_str("  reset     - Reset system to initial state\n");
@@ -855,6 +857,40 @@ impl WosWasm {
             Use 'echo \"text\" > file' to write to files.\n",
             vim.get_screen()
         )
+    }
+
+    fn cmd_bash(&mut self, args: Vec<String>) -> String {
+        // Check if script path provided
+        if args.is_empty() {
+            return "bash: missing script file\nUsage: bash <script.sh>".to_string();
+        }
+
+        let script_path = &args[0];
+
+        // Use ScriptLoader to load the script
+        let script = match script_loader::ScriptLoader::load(&self.state.vfs, script_path) {
+            Ok(script) => script,
+            Err(err) => {
+                return format!("{}", err);
+            }
+        };
+
+        // Use ScriptExecutor to execute the script
+        match script_executor::ScriptExecutor::execute(
+            &script,
+            &mut self.state.vfs,
+            &mut self.variables,
+        ) {
+            Ok(result) => {
+                // Update exit code
+                self.last_exit_code = result.exit_code;
+                result.output
+            }
+            Err(err) => {
+                self.last_exit_code = 1;
+                format!("{}", err)
+            }
+        }
     }
 
     /// Get current kernel state as JSON
@@ -2171,5 +2207,124 @@ environment: production
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["environment"], "development");
         assert_eq!(parsed["version"], "1.0");
+    }
+
+    // WOS-204: bash command integration tests
+    #[test]
+    fn test_bash_command_execute_script() {
+        let mut wos = WosWasm::new();
+
+        // Create a test script in VFS
+        let script_content = "#!/bin/bash\necho hello world";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/test.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute bash command
+        let output = wos.execute_command("bash /test.sh");
+
+        // Should execute the script and return output
+        assert_eq!(output.trim(), "hello world");
+    }
+
+    #[test]
+    fn test_bash_command_file_not_found() {
+        let mut wos = WosWasm::new();
+
+        // Execute bash on non-existent file
+        let output = wos.execute_command("bash /nonexistent.sh");
+
+        // Should return file not found error
+        assert!(output.contains("script not found"));
+    }
+
+    #[test]
+    fn test_bash_command_invalid_shebang() {
+        let mut wos = WosWasm::new();
+
+        // Create script with invalid shebang
+        let script_content = "#!/usr/bin/python\nprint('hello')";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/invalid.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute bash command
+        let output = wos.execute_command("bash /invalid.sh");
+
+        // Should return shebang error
+        assert!(output.contains("Invalid shebang") || output.contains("only #!/bin/bash"));
+    }
+
+    #[test]
+    fn test_bash_command_script_execution_error() {
+        let mut wos = WosWasm::new();
+
+        // Create script with command that will fail
+        let script_content = "#!/bin/bash\nnonexistent_command";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/error.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute bash command
+        let output = wos.execute_command("bash /error.sh");
+
+        // Should return command not found error
+        assert!(output.contains("command not found"));
+    }
+
+    #[test]
+    fn test_bash_command_output_display() {
+        let mut wos = WosWasm::new();
+
+        // Create script with multiple echo statements
+        let script_content = "#!/bin/bash\necho line1\necho line2\necho line3";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/multi.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute bash command
+        let output = wos.execute_command("bash /multi.sh");
+
+        // Should display all output
+        assert!(output.contains("line1"));
+        assert!(output.contains("line2"));
+        assert!(output.contains("line3"));
+    }
+
+    #[test]
+    fn test_bash_command_with_arguments() {
+        let mut wos = WosWasm::new();
+
+        // Create script that uses arguments
+        let script_content = "#!/bin/bash\necho hello";
+        wos.state
+            .vfs
+            .create_file(
+                std::path::PathBuf::from("/args.sh"),
+                script_content.as_bytes().to_vec(),
+            )
+            .unwrap();
+
+        // Execute bash command with arguments (currently ignored, but should work)
+        let output = wos.execute_command("bash /args.sh arg1 arg2");
+
+        // Should execute script (args ignored for now)
+        assert!(output.contains("hello"));
     }
 }
