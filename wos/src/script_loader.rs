@@ -294,7 +294,7 @@ mod proptests {
         #[test]
         fn proptest_load_never_panics(
             path in "[a-z/]{1,20}",
-            content in "[a-zA-Z0-9 \n]{0,100}"
+            _content in "[a-zA-Z0-9 \n]{0,100}"
         ) {
             let vfs = VirtualFileSystem::new();
             // Loading may succeed or fail, but should never panic
