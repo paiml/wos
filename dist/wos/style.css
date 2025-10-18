@@ -646,3 +646,103 @@ footer a:hover {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* Panel Management */
+.panel-content {
+  padding: 15px;
+}
+
+.file-panel.collapsed {
+  max-height: 50px;
+}
+
+.file-panel.collapsed .panel-content {
+  display: none;
+}
+
+/* Process List Panel */
+.process-list {
+  overflow-x: auto;
+}
+
+.process-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.process-table thead {
+  background: var(--bg-terminal);
+}
+
+.process-table th {
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--accent);
+  font-weight: 600;
+  border-bottom: 2px solid var(--border);
+}
+
+.process-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.process-table tbody tr:hover {
+  background: var(--bg-terminal);
+}
+
+.process-table .no-data {
+  text-align: center;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 20px;
+}
+
+/* Memory Panel */
+.memory-info {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.memory-info p {
+  margin-bottom: 8px;
+}
+
+.memory-info strong {
+  color: var(--accent);
+}
+
+/* System Call Trace Panel */
+.syscall-trace {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.syscall-trace .no-data {
+  color: var(--text-secondary);
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+.syscall-entry {
+  padding: 4px 8px;
+  margin-bottom: 2px;
+  background: var(--bg-terminal);
+  border-left: 2px solid var(--accent);
+  border-radius: 2px;
+}
+
+.syscall-entry .syscall-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.syscall-entry .syscall-time {
+  color: var(--text-secondary);
+  font-size: 11px;
+}

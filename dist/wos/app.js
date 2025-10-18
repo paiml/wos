@@ -63,6 +63,119 @@ class ConfigManager {
   }
 }
 
+class PanelManager {
+  constructor(configManager) {
+    this.configManager = configManager;
+    this.panels = {};
+    this.initializePanels();
+    this.setupEventListeners();
+  }
+
+  initializePanels() {
+    const config = this.configManager.getConfig();
+    if (!config || !config.ui || !config.ui.panels) return;
+
+    // Get all panels with data-panel attribute
+    const panelElements = document.querySelectorAll('[data-panel]');
+    panelElements.forEach(panelEl => {
+      const panelName = panelEl.dataset.panel;
+      const panelConfig = config.ui.panels[panelName];
+
+      if (panelConfig) {
+        this.panels[panelName] = {
+          element: panelEl,
+          config: panelConfig
+        };
+
+        // Apply initial visibility
+        if (panelConfig.visible === false) {
+          panelEl.style.display = 'none';
+        }
+
+        // Apply initial collapsed state
+        if (panelConfig.collapsed === true) {
+          this.collapsePanel(panelName);
+        }
+      }
+    });
+  }
+
+  setupEventListeners() {
+    // Add click listeners to all collapse buttons
+    document.querySelectorAll('.btn-collapse').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const panel = e.target.closest('[data-panel]');
+        if (panel) {
+          const panelName = panel.dataset.panel;
+          this.toggleCollapse(panelName);
+        }
+      });
+    });
+  }
+
+  toggleCollapse(panelName) {
+    const panel = this.panels[panelName];
+    if (!panel) return;
+
+    const isCollapsed = panel.element.classList.contains('collapsed');
+    if (isCollapsed) {
+      this.expandPanel(panelName);
+    } else {
+      this.collapsePanel(panelName);
+    }
+  }
+
+  collapsePanel(panelName) {
+    const panel = this.panels[panelName];
+    if (!panel) return;
+
+    panel.element.classList.add('collapsed');
+    const content = panel.element.querySelector('.panel-content, .file-browser, .file-actions, .file-info, .system-info, .quality-metrics');
+    if (content) {
+      content.style.display = 'none';
+    }
+
+    // Rotate collapse icon
+    const collapseBtn = panel.element.querySelector('.btn-collapse svg');
+    if (collapseBtn) {
+      collapseBtn.style.transform = 'rotate(180deg)';
+    }
+  }
+
+  expandPanel(panelName) {
+    const panel = this.panels[panelName];
+    if (!panel) return;
+
+    panel.element.classList.remove('collapsed');
+    const content = panel.element.querySelector('.panel-content, .file-browser, .file-actions, .file-info, .system-info, .quality-metrics');
+    if (content) {
+      content.style.display = '';
+    }
+
+    // Rotate collapse icon back
+    const collapseBtn = panel.element.querySelector('.btn-collapse svg');
+    if (collapseBtn) {
+      collapseBtn.style.transform = 'rotate(0deg)';
+    }
+  }
+
+  showPanel(panelName) {
+    const panel = this.panels[panelName];
+    if (!panel) return;
+
+    panel.element.style.display = '';
+    panel.config.visible = true;
+  }
+
+  hidePanel(panelName) {
+    const panel = this.panels[panelName];
+    if (!panel) return;
+
+    panel.element.style.display = 'none';
+    panel.config.visible = false;
+  }
+}
+
 class FileManager {
   constructor(wos) {
     this.wos = wos;
@@ -1094,6 +1207,7 @@ async function initApp() {
 
     // Create ConfigManager AFTER WASM is initialized
     const configManager = new ConfigManager();
+    const panelManager = new PanelManager(configManager);
     const terminal = new Terminal(configManager);
 
     // Create WOS instance

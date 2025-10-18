@@ -41,7 +41,92 @@
         </div>
 
         <div class="file-manager">
-          <div class="file-panel">
+          <!-- Process List Panel -->
+          <div id="panel-process-list" class="file-panel process-panel" data-panel="process_list">
+            <div class="file-panel-header">
+              <h3>Process List</h3>
+              <div class="file-controls">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M7 14l5-5 5 5z"/>
+                  </svg>
+                </button>
+                <button class="btn-icon btn-refresh-panel" title="Refresh process list">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="panel-content">
+              <div class="process-list">
+                <table class="process-table">
+                  <thead>
+                    <tr>
+                      <th>PID</th>
+                      <th>State</th>
+                      <th>Parent</th>
+                      <th>Command</th>
+                    </tr>
+                  </thead>
+                  <tbody id="process-table-body">
+                    <tr>
+                      <td colspan="4" class="no-data">No processes running</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Memory Map Panel -->
+          <div id="panel-memory-map" class="file-panel memory-panel" data-panel="memory_map">
+            <div class="file-panel-header">
+              <h3>Memory Map</h3>
+              <div class="file-controls">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M7 14l5-5 5 5z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="panel-content">
+              <div class="memory-info">
+                <p><strong>Total Memory:</strong> <span id="mem-total">4096 KB</span></p>
+                <p><strong>Used:</strong> <span id="mem-used">0 KB</span></p>
+                <p><strong>Free:</strong> <span id="mem-free">4096 KB</span></p>
+                <p><strong>Usage:</strong> <span id="mem-percent">0%</span></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- System Call Trace Panel -->
+          <div id="panel-syscall-trace" class="file-panel syscall-panel" data-panel="syscall_trace">
+            <div class="file-panel-header">
+              <h3>System Call Trace</h3>
+              <div class="file-controls">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M7 14l5-5 5 5z"/>
+                  </svg>
+                </button>
+                <button class="btn-icon btn-clear-trace" title="Clear trace">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="panel-content">
+              <div id="syscall-trace-list" class="syscall-trace">
+                <p class="no-data">No system calls traced yet</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filesystem Panel (existing Files panel) -->
+          <div id="panel-filesystem" class="file-panel" data-panel="filesystem">
             <div class="file-panel-header">
               <h3>Files</h3>
               <div class="file-controls">
@@ -100,7 +185,7 @@
             </div>
           </div>
 
-          <div class="file-panel system-panel">
+          <div id="panel-system-monitor" class="file-panel system-panel" data-panel="system_monitor">
             <div class="file-panel-header">
               <h3>System Info</h3>
             </div>
