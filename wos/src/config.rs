@@ -250,8 +250,9 @@ ui:
       collapsed: false
       position: 0
     system_monitor:
-      visible: false
-      position: 0
+      visible: true
+      collapsed: false
+      position: 1
   terminal:
     history_size: 1000
     font_size: 14
