@@ -1083,8 +1083,6 @@ ui:
 
 // Initialize application
 async function initApp() {
-  const configManager = new ConfigManager();
-  const terminal = new Terminal(configManager);
   const statusElement = document.getElementById('status');
   const versionElement = document.getElementById('version');
 
@@ -1093,6 +1091,10 @@ async function initApp() {
 
     // Initialize WASM module
     await init();
+
+    // Create ConfigManager AFTER WASM is initialized
+    const configManager = new ConfigManager();
+    const terminal = new Terminal(configManager);
 
     // Create WOS instance
     const wos = new WosWasm();
