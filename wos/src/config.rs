@@ -200,6 +200,122 @@ pub enum Environment {
     Production,
 }
 
+/// Config loading errors
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConfigError {
+    /// YAML parsing error
+    ParseError(String),
+    /// File not found or cannot be read
+    FileNotFound(String),
+    /// Invalid configuration (validation error)
+    ValidationError(String),
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::ParseError(msg) => write!(f, "YAML parse error: {}", msg),
+            ConfigError::FileNotFound(path) => write!(f, "Config file not found: {}", path),
+            ConfigError::ValidationError(msg) => write!(f, "Config validation error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
+impl From<serde_yaml::Error> for ConfigError {
+    fn from(err: serde_yaml::Error) -> Self {
+        ConfigError::ParseError(err.to_string())
+    }
+}
+
+/// Default configuration embedded in binary (production minimal config)
+pub const DEFAULT_CONFIG_YAML: &str = r#"version: "1.0"
+environment: production
+ui:
+  mode: minimal
+  theme: auto
+  panels:
+    process_list:
+      visible: false
+      position: 0
+    memory_map:
+      visible: false
+      position: 0
+    syscall_trace:
+      visible: false
+      position: 0
+    filesystem:
+      visible: true
+      collapsed: false
+      position: 0
+    system_monitor:
+      visible: false
+      position: 0
+  terminal:
+    history_size: 1000
+    font_size: 14
+    show_line_numbers: false
+  progressive_disclosure:
+    auto_collapse_timeout_sec: 60
+    show_tooltips: false
+  accessibility:
+    screen_reader: false
+    high_contrast: false
+    keyboard_navigation: true
+"#;
+
+impl UxLayoutConfig {
+    /// Load configuration from YAML string
+    pub fn from_yaml(yaml: &str) -> Result<Self, ConfigError> {
+        serde_yaml::from_str(yaml).map_err(ConfigError::from)
+    }
+
+    /// Load configuration from YAML string with fallback to default
+    pub fn from_yaml_with_fallback(yaml: &str) -> Self {
+        Self::from_yaml(yaml).unwrap_or_else(|_| Self::default_config())
+    }
+
+    /// Get the default configuration
+    pub fn default_config() -> Self {
+        // Should never panic - default config is guaranteed valid
+        Self::from_yaml(DEFAULT_CONFIG_YAML).expect("Default config must be valid")
+    }
+
+    /// Validate configuration (basic validation rules)
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        // Version must be semantic versioning format
+        if !self.version.chars().any(|c| c == '.') {
+            return Err(ConfigError::ValidationError(
+                "Version must contain at least one '.' (e.g., '1.0')".to_string(),
+            ));
+        }
+
+        // If UI is present, validate panel positions are unique
+        if let Some(ui) = &self.ui {
+            let mut positions = std::collections::HashSet::new();
+            let panels = [
+                (&ui.panels.process_list, "process_list"),
+                (&ui.panels.memory_map, "memory_map"),
+                (&ui.panels.syscall_trace, "syscall_trace"),
+                (&ui.panels.filesystem, "filesystem"),
+                (&ui.panels.system_monitor, "system_monitor"),
+            ];
+
+            for (panel, name) in panels.iter() {
+                if panel.visible && !positions.insert(panel.position) {
+                    return Err(ConfigError::ValidationError(format!(
+                        "Duplicate panel position {} for {}",
+                        panel.position, name
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -601,6 +717,224 @@ ui:
         assert!(!a11y.screen_reader);
         assert!(!a11y.high_contrast);
         assert!(a11y.keyboard_navigation);
+    }
+
+    // Config Loader Tests - Phase 2
+
+    #[test]
+    fn test_from_yaml_valid_minimal() {
+        let yaml = r#"
+version: "1.0"
+environment: development
+"#;
+        let result = UxLayoutConfig::from_yaml(yaml);
+        assert!(result.is_ok(), "Should load minimal config");
+        let config = result.unwrap();
+        assert_eq!(config.version, "1.0");
+        assert_eq!(config.environment, Environment::Development);
+    }
+
+    #[test]
+    fn test_from_yaml_invalid() {
+        let yaml = "invalid: yaml: structure:";
+        let result = UxLayoutConfig::from_yaml(yaml);
+        assert!(result.is_err(), "Should fail on invalid YAML");
+        assert!(matches!(result.unwrap_err(), ConfigError::ParseError(_)));
+    }
+
+    #[test]
+    fn test_from_yaml_with_fallback_valid() {
+        let yaml = r#"
+version: "2.0"
+environment: staging
+"#;
+        let config = UxLayoutConfig::from_yaml_with_fallback(yaml);
+        assert_eq!(config.version, "2.0");
+        assert_eq!(config.environment, Environment::Staging);
+    }
+
+    #[test]
+    fn test_from_yaml_with_fallback_invalid() {
+        let yaml = "invalid: yaml: {";
+        let config = UxLayoutConfig::from_yaml_with_fallback(yaml);
+        // Should fall back to default (production minimal)
+        assert_eq!(config.environment, Environment::Production);
+        assert!(config.ui.is_some());
+    }
+
+    #[test]
+    fn test_default_config() {
+        let config = UxLayoutConfig::default_config();
+        assert_eq!(config.version, "1.0");
+        assert_eq!(config.environment, Environment::Production);
+        assert!(config.ui.is_some());
+
+        let ui = config.ui.unwrap();
+        assert_eq!(ui.mode, UiMode::Minimal);
+        assert_eq!(ui.theme, Theme::Auto);
+        assert!(ui.panels.filesystem.visible);
+    }
+
+    #[test]
+    fn test_default_config_is_valid() {
+        let config = UxLayoutConfig::default_config();
+        assert!(config.validate().is_ok(), "Default config must be valid");
+    }
+
+    #[test]
+    fn test_validate_version_format() {
+        let yaml_invalid = r#"
+version: "1"
+environment: production
+"#;
+        let config = UxLayoutConfig::from_yaml(yaml_invalid).unwrap();
+        let result = config.validate();
+        assert!(result.is_err(), "Should reject version without '.'");
+        assert!(matches!(
+            result.unwrap_err(),
+            ConfigError::ValidationError(_)
+        ));
+
+        let yaml_valid = r#"
+version: "1.0"
+environment: production
+"#;
+        let config = UxLayoutConfig::from_yaml(yaml_valid).unwrap();
+        assert!(config.validate().is_ok(), "Should accept version with '.'");
+    }
+
+    #[test]
+    fn test_validate_duplicate_panel_positions() {
+        let yaml = r#"
+version: "1.0"
+environment: development
+ui:
+  mode: debug
+  theme: dark
+  panels:
+    process_list:
+      visible: true
+      position: 0
+    memory_map:
+      visible: true
+      position: 0
+"#;
+        let config = UxLayoutConfig::from_yaml(yaml).unwrap();
+        let result = config.validate();
+        assert!(result.is_err(), "Should reject duplicate positions");
+        assert!(matches!(
+            result.unwrap_err(),
+            ConfigError::ValidationError(_)
+        ));
+    }
+
+    #[test]
+    fn test_validate_unique_panel_positions() {
+        let yaml = r#"
+version: "1.0"
+environment: development
+ui:
+  mode: debug
+  theme: dark
+  panels:
+    process_list:
+      visible: true
+      position: 0
+    memory_map:
+      visible: true
+      position: 1
+    syscall_trace:
+      visible: true
+      position: 2
+    filesystem:
+      visible: false
+      position: 0
+    system_monitor:
+      visible: false
+      position: 0
+"#;
+        let config = UxLayoutConfig::from_yaml(yaml).unwrap();
+        assert!(config.validate().is_ok(), "Should accept unique positions");
+    }
+
+    #[test]
+    fn test_validate_invisible_panels_can_duplicate_position() {
+        let yaml = r#"
+version: "1.0"
+environment: production
+ui:
+  mode: minimal
+  theme: auto
+  panels:
+    process_list:
+      visible: false
+      position: 0
+    memory_map:
+      visible: false
+      position: 0
+    syscall_trace:
+      visible: false
+      position: 0
+    filesystem:
+      visible: true
+      position: 0
+    system_monitor:
+      visible: false
+      position: 0
+"#;
+        let config = UxLayoutConfig::from_yaml(yaml).unwrap();
+        assert!(
+            config.validate().is_ok(),
+            "Invisible panels can share positions"
+        );
+    }
+
+    #[test]
+    fn test_config_error_display() {
+        let err = ConfigError::ParseError("bad yaml".to_string());
+        assert_eq!(err.to_string(), "YAML parse error: bad yaml");
+
+        let err = ConfigError::FileNotFound("/path/to/config.yaml".to_string());
+        assert_eq!(
+            err.to_string(),
+            "Config file not found: /path/to/config.yaml"
+        );
+
+        let err = ConfigError::ValidationError("invalid".to_string());
+        assert_eq!(err.to_string(), "Config validation error: invalid");
+    }
+
+    #[test]
+    fn test_load_development_config() {
+        let yaml = std::fs::read_to_string("../config/development.yaml")
+            .expect("Development config should exist");
+        let config = UxLayoutConfig::from_yaml(&yaml).expect("Should parse development config");
+        assert_eq!(config.environment, Environment::Development);
+        assert!(
+            config.validate().is_ok(),
+            "Development config should be valid"
+        );
+    }
+
+    #[test]
+    fn test_load_staging_config() {
+        let yaml =
+            std::fs::read_to_string("../config/staging.yaml").expect("Staging config should exist");
+        let config = UxLayoutConfig::from_yaml(&yaml).expect("Should parse staging config");
+        assert_eq!(config.environment, Environment::Staging);
+        assert!(config.validate().is_ok(), "Staging config should be valid");
+    }
+
+    #[test]
+    fn test_load_production_config() {
+        let yaml = std::fs::read_to_string("../config/production.yaml")
+            .expect("Production config should exist");
+        let config = UxLayoutConfig::from_yaml(&yaml).expect("Should parse production config");
+        assert_eq!(config.environment, Environment::Production);
+        assert!(
+            config.validate().is_ok(),
+            "Production config should be valid"
+        );
     }
 }
 

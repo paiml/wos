@@ -9,8 +9,8 @@ mod config;
 mod quality;
 
 pub use config::{
-    AccessibilityConfig, Environment, PanelConfig, PanelsConfig, ProgressiveDisclosureConfig,
-    TerminalConfig, Theme, UiConfig, UiMode, UxLayoutConfig,
+    AccessibilityConfig, ConfigError, Environment, PanelConfig, PanelsConfig,
+    ProgressiveDisclosureConfig, TerminalConfig, Theme, UiConfig, UiMode, UxLayoutConfig,
 };
 pub use quality::{BuildStatus, QualityMetrics};
 use std::collections::HashMap;
