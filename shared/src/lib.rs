@@ -13,9 +13,11 @@
 pub mod context;
 pub mod parser;
 pub mod pipeline;
+pub mod script;
 pub mod vfs;
 
 pub use context::ExecutionContext;
 pub use parser::parse_command;
 pub use pipeline::{parse_pipeline, Command, Operator, Pipeline, PipelineStage, Redirection};
+pub use script::{Script, ScriptError};
 pub use vfs::VirtualFileSystem;
