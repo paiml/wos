@@ -421,4 +421,102 @@ mod tests {
         assert_eq!(VimCommand::DeleteLine.description(), "Delete line");
         assert_eq!(VimCommand::Undo.description(), "Undo");
     }
+
+    // Behavioral tests for mutation testing coverage
+
+    #[test]
+    fn test_move_line_start_execution() {
+        let mut buffer = create_test_buffer();
+        buffer.cursor = CursorPos::new(0, 3); // Middle of "Hello"
+
+        let result = VimCommand::MoveLineStart.execute(&mut buffer);
+        assert!(result.is_ok());
+        assert!(!result.unwrap()); // No modification
+        assert_eq!(buffer.cursor.col, 0); // Moved to column 0
+    }
+
+    #[test]
+    fn test_move_line_end_execution() {
+        let mut buffer = create_test_buffer();
+        buffer.cursor = CursorPos::new(0, 0); // Start of "Hello"
+
+        let result = VimCommand::MoveLineEnd.execute(&mut buffer);
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+        assert_eq!(buffer.cursor.col, 5); // Moved to end of "Hello" (length 5)
+    }
+
+    #[test]
+    fn test_move_down_boundary() {
+        let mut buffer = create_test_buffer();
+        buffer.cursor = CursorPos::new(0, 0);
+
+        // Move down once - should work
+        VimCommand::MoveDown.execute(&mut buffer).unwrap();
+        assert_eq!(buffer.cursor.line, 1);
+
+        // Try to move down again - should stay at line 1 (last line)
+        VimCommand::MoveDown.execute(&mut buffer).unwrap();
+        assert_eq!(buffer.cursor.line, 1);
+    }
+
+    #[test]
+    fn test_move_up_boundary() {
+        let mut buffer = create_test_buffer();
+        buffer.cursor = CursorPos::new(0, 0);
+
+        // Try to move up - should stay at line 0 (first line)
+        VimCommand::MoveUp.execute(&mut buffer).unwrap();
+        assert_eq!(buffer.cursor.line, 0);
+    }
+
+    #[test]
+    fn test_move_left_boundary() {
+        let mut buffer = create_test_buffer();
+        buffer.cursor = CursorPos::new(0, 0);
+
+        // Try to move left - should stay at column 0
+        VimCommand::MoveLeft.execute(&mut buffer).unwrap();
+        assert_eq!(buffer.cursor.col, 0);
+    }
+
+    #[test]
+    fn test_move_right_boundary() {
+        let mut buffer = create_test_buffer();
+        buffer.cursor = CursorPos::new(0, 4); // At 'o' in "Hello"
+
+        // Move right to end of line
+        VimCommand::MoveRight.execute(&mut buffer).unwrap();
+        assert_eq!(buffer.cursor.col, 5); // At end
+
+        // Try to move right again - should stay at end
+        VimCommand::MoveRight.execute(&mut buffer).unwrap();
+        assert_eq!(buffer.cursor.col, 5);
+    }
+
+    #[test]
+    fn test_move_down_with_shorter_line() {
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "LongLine\nShort");
+        buffer.cursor = CursorPos::new(0, 7); // At end of "LongLine"
+
+        VimCommand::MoveDown.execute(&mut buffer).unwrap();
+
+        // Cursor should be clamped to length of "Short" (5)
+        assert_eq!(buffer.cursor.line, 1);
+        assert!(buffer.cursor.col <= 5);
+    }
+
+    #[test]
+    fn test_delete_char_at_line_end() {
+        let mut buffer = create_test_buffer();
+        buffer.cursor = CursorPos::new(0, 5); // After "Hello"
+
+        // Should not delete when at end of line
+        VimCommand::DeleteChar.execute(&mut buffer).unwrap();
+        assert_eq!(buffer.lines[0], "Hello");
+    }
+
+    // Note: InsertLineBelow and InsertLineAbove are not yet implemented
+    // (they're stubs returning Ok(false)), so no execution tests for those yet
 }

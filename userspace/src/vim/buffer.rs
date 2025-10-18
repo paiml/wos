@@ -337,4 +337,90 @@ mod tests {
         assert_eq!(CursorPos::new(0, 0), CursorPos::zero());
         assert_ne!(CursorPos::new(1, 0), CursorPos::zero());
     }
+
+    // Edge case tests for mutation testing coverage
+
+    #[test]
+    fn test_is_cursor_valid_empty_buffer() {
+        let buffer = VimBuffer::new(BufferId(0), "/test.txt".into());
+
+        // Empty buffer has one empty line, cursor at (0,0) is valid
+        assert!(buffer.is_cursor_valid());
+
+        // Cursor at column 1 on empty line is invalid
+        let mut buffer2 = buffer.clone();
+        buffer2.cursor.col = 1;
+        assert!(!buffer2.is_cursor_valid());
+    }
+
+    #[test]
+    fn test_is_cursor_valid_at_line_end() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Hello");
+
+        // Cursor at exact end of line (col = length) should be valid
+        buffer.cursor = CursorPos::new(0, 5);
+        assert!(buffer.is_cursor_valid());
+
+        // Cursor past end of line should be invalid
+        buffer.cursor.col = 6;
+        assert!(!buffer.is_cursor_valid());
+    }
+
+    #[test]
+    fn test_is_cursor_valid_past_last_line() {
+        let buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Line1\nLine2");
+
+        // Buffer has 2 lines (0 and 1), cursor at line 2 is invalid
+        let mut buffer2 = buffer.clone();
+        buffer2.cursor.line = 2;
+        assert!(!buffer2.is_cursor_valid());
+    }
+
+    #[test]
+    fn test_is_cursor_valid_boundary_conditions() {
+        let buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Short\nMediumLine\nX");
+
+        // Valid positions
+        let mut test_buffer = buffer.clone();
+        test_buffer.cursor = CursorPos::new(0, 0); // Start of line 0
+        assert!(test_buffer.is_cursor_valid());
+
+        test_buffer.cursor = CursorPos::new(0, 5); // End of "Short"
+        assert!(test_buffer.is_cursor_valid());
+
+        test_buffer.cursor = CursorPos::new(1, 10); // End of "MediumLine"
+        assert!(test_buffer.is_cursor_valid());
+
+        test_buffer.cursor = CursorPos::new(2, 1); // End of "X"
+        assert!(test_buffer.is_cursor_valid());
+
+        // Invalid positions
+        test_buffer.cursor = CursorPos::new(0, 6); // Past end of "Short"
+        assert!(!test_buffer.is_cursor_valid());
+
+        test_buffer.cursor = CursorPos::new(1, 11); // Past end of "MediumLine"
+        assert!(!test_buffer.is_cursor_valid());
+
+        test_buffer.cursor = CursorPos::new(3, 0); // Past last line
+        assert!(!test_buffer.is_cursor_valid());
+    }
+
+    #[test]
+    fn test_clamp_cursor_long_to_short_line() {
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "LongLine\nShort");
+
+        // Set cursor to end of long line
+        buffer.cursor = CursorPos::new(0, 8);
+        assert!(buffer.is_cursor_valid());
+
+        // Move to short line (should be clamped)
+        buffer.cursor.line = 1;
+        buffer.clamp_cursor();
+
+        // Cursor should be at end of "Short" (length 5), not at column 8
+        assert!(buffer.cursor.col <= 5);
+        assert!(buffer.is_cursor_valid());
+    }
 }
