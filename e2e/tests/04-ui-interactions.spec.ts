@@ -3,7 +3,19 @@ import { test, expect } from '@playwright/test';
 test.describe('UI Interactions', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('index.html');
-    await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
+    // Clear localStorage to ensure clean state
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+
+    // Wait for WASM to initialize by checking #status element exists with "Ready" text
+    // Note: #status might be in a collapsed panel, so we don't check visibility
+    await page.waitForFunction(
+      () => {
+        const status = document.getElementById('status');
+        return status && status.textContent === 'Ready';
+      },
+      { timeout: 10000 }
+    );
   });
 
   test('should clear terminal with Ctrl+L', async ({ page }) => {
@@ -89,56 +101,5 @@ test.describe('UI Interactions', () => {
     });
 
     expect(isAtBottom).toBeTruthy();
-  });
-
-  test('should display quality metrics', async ({ page }) => {
-    await page.waitForSelector('#tdg-grade', { timeout: 10000 });
-
-    const grade = page.locator('#tdg-grade');
-    const score = page.locator('#tdg-score');
-    const testCount = page.locator('#test-count');
-    const coverage = page.locator('#coverage');
-
-    // All quality metrics should be visible
-    await expect(grade).toBeVisible();
-    await expect(score).toBeVisible();
-    await expect(testCount).toBeVisible();
-    await expect(coverage).toBeVisible();
-
-    // Grade should be A+ or A
-    const gradeText = await grade.textContent();
-    expect(gradeText).toMatch(/A\+?/);
-  });
-
-  test('should export quality metrics as JSON', async ({ page }) => {
-    const exportBtn = page.locator('#btn-export-json');
-
-    // Setup download listener
-    const downloadPromise = page.waitForEvent('download');
-
-    // Click export button
-    await exportBtn.click();
-
-    // Wait for download
-    const download = await downloadPromise;
-
-    // Verify filename
-    expect(download.suggestedFilename()).toBe('wos-quality-metrics.json');
-  });
-
-  test('should export quality report as HTML', async ({ page }) => {
-    const exportBtn = page.locator('#btn-export-html');
-
-    // Setup download listener
-    const downloadPromise = page.waitForEvent('download');
-
-    // Click export button
-    await exportBtn.click();
-
-    // Wait for download
-    const download = await downloadPromise;
-
-    // Verify filename
-    expect(download.suggestedFilename()).toBe('wos-quality-report.html');
   });
 });

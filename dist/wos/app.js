@@ -795,10 +795,6 @@ class Terminal {
     document.getElementById('btn-save').addEventListener('click', () => this.saveState());
     document.getElementById('btn-load').addEventListener('click', () => this.loadState());
 
-    // Quality metrics export buttons
-    document.getElementById('btn-export-json').addEventListener('click', () => this.exportQualityMetricsJSON());
-    document.getElementById('btn-export-html').addEventListener('click', () => this.exportQualityReportHTML());
-
     // Keep input focused
     this.terminalElement.addEventListener('click', () => {
       this.input.focus();
@@ -879,44 +875,6 @@ class Terminal {
       this.printLine('State loaded from localStorage', 'success');
     } catch (error) {
       this.printLine(`Load error: ${error}`, 'error');
-    }
-  }
-
-  exportQualityMetricsJSON() {
-    if (!this.wos) return;
-
-    try {
-      const metricsJson = this.wos.getQualityMetrics();
-      const blob = new Blob([metricsJson], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'wos-quality-metrics.json';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error exporting quality metrics:', error);
-    }
-  }
-
-  exportQualityReportHTML() {
-    if (!this.wos) return;
-
-    try {
-      const reportHtml = this.wos.exportQualityHtml();
-      const blob = new Blob([reportHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'wos-quality-report.html';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error exporting quality report:', error);
     }
   }
 
@@ -1137,18 +1095,70 @@ ui:
     if (!this.wos) return;
 
     try {
+      // Get basic system info
       const processCount = this.wos.processCount();
       document.getElementById('process-count').textContent = processCount;
 
-      // Update quality metrics
-      const metricsJson = this.wos.getQualityMetrics();
-      const metrics = JSON.parse(metricsJson);
-      document.getElementById('tdg-grade').textContent = metrics.grade || 'A+';
-      document.getElementById('tdg-score').textContent = `${metrics.tdg_score || 99.3}/100`;
-      document.getElementById('test-count').textContent = metrics.test_count || 452;
-      document.getElementById('coverage').textContent = `${metrics.coverage || 85}%`;
+      // Update System Monitor Panel
+      this.updateSystemMonitor(processCount);
     } catch (error) {
       console.error('Error updating system info:', error);
+    }
+  }
+
+  updateSystemMonitor(processCount) {
+    if (!this.wos) return;
+
+    // Track syscall count for rate calculation
+    if (!this.syscallCount) {
+      this.syscallCount = 0;
+      this.lastSyscallTime = Date.now();
+    }
+
+    // Simulate CPU usage based on process activity (0-100%)
+    // In a real OS, this would come from scheduler time slices
+    const cpuUsage = processCount > 0 ? Math.min(5 + (processCount * 8), 100) : 0;
+    document.getElementById('monitor-cpu').innerHTML = `${cpuUsage}<span class="monitor-unit">%</span>`;
+    document.getElementById('monitor-cpu-bar').style.width = `${cpuUsage}%`;
+    document.getElementById('monitor-cpu-info').textContent =
+      processCount > 0 ? `Scheduler: Running (${processCount} proc)` : 'Scheduler: Idle';
+
+    // Memory usage - get from memory panel or simulate
+    const memTotal = 4096; // 4MB total (from memory panel)
+    const memUsed = processCount * 128; // ~128KB per process (simulated)
+    const memPercent = Math.min((memUsed / memTotal) * 100, 100).toFixed(1);
+    document.getElementById('monitor-memory').innerHTML = `${memUsed}<span class="monitor-unit">KB</span>`;
+    document.getElementById('monitor-memory-bar').style.width = `${memPercent}%`;
+    document.getElementById('monitor-memory-info').textContent = `${memUsed} KB / ${memTotal} KB`;
+
+    // Also update the old memory panel for consistency
+    document.getElementById('mem-used').textContent = `${memUsed} KB`;
+    document.getElementById('mem-free').textContent = `${memTotal - memUsed} KB`;
+    document.getElementById('mem-percent').textContent = `${memPercent}%`;
+
+    // Process count
+    const runningProcs = Math.max(processCount - 1, 0); // Exclude init
+    document.getElementById('monitor-processes').textContent = processCount;
+    document.getElementById('monitor-process-info').textContent =
+      `${runningProcs} running${processCount > 0 ? ', 1 init' : ''}`;
+
+    // Syscall activity - track rate
+    const now = Date.now();
+    const timeDelta = (now - this.lastSyscallTime) / 1000; // seconds
+
+    // Increment syscall count (simulated based on activity)
+    if (processCount > 0) {
+      this.syscallCount += processCount * 2; // Simulate 2 syscalls per process per update
+    }
+
+    const syscallRate = timeDelta > 0 ? Math.floor(this.syscallCount / timeDelta) : 0;
+    document.getElementById('monitor-syscalls').textContent = this.syscallCount;
+    document.getElementById('monitor-syscall-info').textContent = `${syscallRate} /sec`;
+
+    // Reset rate calculation every 5 seconds
+    if (timeDelta >= 5) {
+      this.syscallCount = 0;
+      this.lastSyscallTime = now;
     }
   }
 
