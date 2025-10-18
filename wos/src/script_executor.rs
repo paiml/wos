@@ -40,10 +40,11 @@ impl ScriptExecutor {
     pub fn execute(
         script: &Script,
         _vfs: &mut VirtualFileSystem,
-        _variables: &mut HashMap<String, String>,
+        variables: &mut HashMap<String, String>,
     ) -> Result<ExecutionResult, ScriptError> {
         let mut accumulated_output = String::new();
         let mut exit_code = 0;
+        let mut script_vars = HashMap::new(); // Script-local variables
 
         // Process each line in the script
         for line in script.content.lines() {
@@ -59,8 +60,35 @@ impl ScriptExecutor {
                 continue;
             }
 
+            // Check for export VAR=value
+            if let Some(rest) = trimmed.strip_prefix("export ") {
+                if let Some((var_name, var_value)) = rest.split_once('=') {
+                    // Export to shell environment
+                    variables.insert(var_name.trim().to_string(), var_value.trim().to_string());
+                    script_vars.insert(var_name.trim().to_string(), var_value.trim().to_string());
+                    continue;
+                }
+            }
+
+            // Check for variable assignment VAR=value
+            if let Some((var_name, var_value)) = trimmed.split_once('=') {
+                // Only treat as assignment if var_name is valid identifier
+                if var_name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                    && !var_name.is_empty()
+                    && !var_name.contains(' ')
+                {
+                    script_vars.insert(var_name.trim().to_string(), var_value.trim().to_string());
+                    continue;
+                }
+            }
+
+            // Expand variables in the line
+            let expanded_line = Self::expand_variables(trimmed, &script_vars);
+
             // Execute the command using a simple built-in executor
-            let (output, code) = Self::execute_line(trimmed);
+            let (output, code) = Self::execute_line(&expanded_line);
 
             // Accumulate output
             if !output.is_empty() {
@@ -83,6 +111,68 @@ impl ScriptExecutor {
             output: accumulated_output,
             exit_code,
         })
+    }
+
+    /// Expand variables in a line
+    ///
+    /// Supports $VAR and ${VAR} syntax
+    fn expand_variables(line: &str, variables: &HashMap<String, String>) -> String {
+        let mut result = String::new();
+        let mut chars = line.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '$' {
+                // Check for brace syntax ${VAR}
+                if chars.peek() == Some(&'{') {
+                    chars.next(); // consume '{'
+                    let mut var_name = String::new();
+
+                    // Collect variable name until '}'
+                    while let Some(&next_ch) = chars.peek() {
+                        if next_ch == '}' {
+                            chars.next(); // consume '}'
+                            break;
+                        }
+                        var_name.push(next_ch);
+                        chars.next();
+                    }
+
+                    // Expand variable
+                    if let Some(value) = variables.get(&var_name) {
+                        result.push_str(value);
+                    }
+                    // If undefined, expand to empty string (bash behavior)
+                } else {
+                    // Simple $VAR syntax
+                    let mut var_name = String::new();
+
+                    // Collect variable name (alphanumeric and underscore)
+                    while let Some(&next_ch) = chars.peek() {
+                        if next_ch.is_alphanumeric() || next_ch == '_' {
+                            var_name.push(next_ch);
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if !var_name.is_empty() {
+                        // Expand variable
+                        if let Some(value) = variables.get(&var_name) {
+                            result.push_str(value);
+                        }
+                        // If undefined, expand to empty string
+                    } else {
+                        // Literal $ with no variable name
+                        result.push('$');
+                    }
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+
+        result
     }
 
     /// Execute a single line as a command
@@ -361,6 +451,132 @@ mod tests {
         assert_eq!(exec_result.output, "");
         assert_eq!(exec_result.exit_code, 0);
     }
+
+    // WOS-203 Test 1: test_script_variable_assignment
+    #[test]
+    fn test_script_variable_assignment() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nFOO=bar\necho $FOO".to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars);
+        assert!(result.is_ok());
+
+        let exec_result = result.unwrap();
+        assert_eq!(exec_result.output.trim(), "bar");
+        assert_eq!(exec_result.exit_code, 0);
+    }
+
+    // WOS-203 Test 2: test_script_variable_expansion
+    #[test]
+    fn test_script_variable_expansion() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nNAME=world\necho hello $NAME".to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars);
+        assert!(result.is_ok());
+
+        let exec_result = result.unwrap();
+        assert_eq!(exec_result.output.trim(), "hello world");
+    }
+
+    // WOS-203 Test 3: test_script_variable_brace_syntax
+    #[test]
+    fn test_script_variable_brace_syntax() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nVAR=test\necho ${VAR}ing".to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars);
+        assert!(result.is_ok());
+
+        let exec_result = result.unwrap();
+        assert_eq!(exec_result.output.trim(), "testing");
+    }
+
+    // WOS-203 Test 4: test_script_variable_scope_isolation
+    #[test]
+    fn test_script_variable_scope_isolation() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nSCRIPT_VAR=local_value\necho $SCRIPT_VAR".to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut shell_vars = HashMap::new();
+        shell_vars.insert("SCRIPT_VAR".to_string(), "shell_value".to_string());
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut shell_vars);
+        assert!(result.is_ok());
+
+        // Script should use its own local variable, not pollute shell
+        assert_eq!(
+            shell_vars.get("SCRIPT_VAR"),
+            Some(&"shell_value".to_string())
+        );
+    }
+
+    // WOS-203 Test 5: test_script_export_to_environment
+    #[test]
+    fn test_script_export_to_environment() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nexport EXPORTED_VAR=exported_value\necho $EXPORTED_VAR"
+                .to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars);
+        assert!(result.is_ok());
+
+        let exec_result = result.unwrap();
+        assert_eq!(exec_result.output.trim(), "exported_value");
+        // Exported variables should persist in the vars map
+        assert_eq!(
+            vars.get("EXPORTED_VAR"),
+            Some(&"exported_value".to_string())
+        );
+    }
+
+    // WOS-203 Test 6: test_script_undefined_variable_expansion
+    #[test]
+    fn test_script_undefined_variable_expansion() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\necho $UNDEFINED_VAR".to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars);
+        assert!(result.is_ok());
+
+        let exec_result = result.unwrap();
+        // Undefined variables should expand to empty string (bash behavior)
+        assert_eq!(exec_result.output.trim(), "");
+    }
 }
 
 #[cfg(test)]
@@ -411,6 +627,32 @@ mod proptests {
 
             // Same script should produce same result
             prop_assert_eq!(result1, result2);
+        }
+    }
+
+    // WOS-203 Property test: Variable expansion consistency
+    proptest! {
+        #[test]
+        fn proptest_variable_expansion_consistent(
+            var_name in "[A-Z][A-Z0-9_]{0,10}",
+            var_value in "[a-z0-9]{1,20}"
+        ) {
+            let content = format!("#!/bin/bash\n{}={}\necho ${}", var_name, var_value, var_name);
+            let script = Script {
+                path: "/test.sh".to_string(),
+                content,
+                shebang: "#!/bin/bash".to_string(),
+            };
+
+            let mut vfs = VirtualFileSystem::new();
+            let mut vars = HashMap::new();
+            let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars);
+
+            // Variable expansion should always succeed and be deterministic
+            prop_assert!(result.is_ok());
+            if let Ok(exec_result) = result {
+                prop_assert_eq!(exec_result.output.trim(), var_value);
+            }
         }
     }
 }
