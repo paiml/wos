@@ -210,7 +210,7 @@ main {
 .file-manager {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 10px;
   height: 100%;
   overflow-y: auto;
   min-height: 0;
@@ -225,7 +225,7 @@ main {
 
 .file-panel-header {
   background: var(--bg-terminal);
-  padding: 12px 20px;
+  padding: 8px 15px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -731,7 +731,7 @@ footer a:hover {
 
 /* Panel Management */
 .panel-content {
-  padding: 15px;
+  padding: 10px;
 }
 
 .file-panel.collapsed {
