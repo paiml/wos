@@ -7,6 +7,7 @@
 
 mod config;
 mod quality;
+mod script_loader;
 
 pub use config::{
     AccessibilityConfig, ConfigError, Environment, PanelConfig, PanelsConfig,
