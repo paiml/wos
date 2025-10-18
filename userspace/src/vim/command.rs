@@ -519,4 +519,96 @@ mod tests {
 
     // Note: InsertLineBelow and InsertLineAbove are not yet implemented
     // (they're stubs returning Ok(false)), so no execution tests for those yet
+
+    // Additional edge case tests targeting specific mutation survivors
+
+    #[test]
+    fn test_move_down_exact_arithmetic() {
+        // Target: command.rs:105 - verify exact arithmetic (- not / or +)
+        let mut buffer = VimBuffer::new_with_text(
+            BufferId(0),
+            "/test.txt".into(),
+            "line0\nline1\nline2\nline3",
+        );
+        buffer.cursor = CursorPos::new(2, 0); // On line 2 (of 0,1,2,3)
+
+        // Should move to line 3 (line_count=4, so 2 < 4-1 is true)
+        VimCommand::MoveDown.execute(&mut buffer).unwrap();
+        assert_eq!(buffer.cursor.line, 3);
+
+        // Should NOT move (3 < 4-1 is false, already at last line)
+        VimCommand::MoveDown.execute(&mut buffer).unwrap();
+        assert_eq!(buffer.cursor.line, 3); // Still on line 3
+    }
+
+    #[test]
+    fn test_backspace_at_line_0_col_0() {
+        // Target: command.rs:175 - backspace when cursor.line = 0, should not join
+        let mut buffer = create_test_buffer();
+        buffer.cursor = CursorPos::new(0, 0); // At very start
+
+        let result = VimCommand::Backspace.execute(&mut buffer);
+        assert!(result.is_ok());
+        assert!(!result.unwrap()); // No modification
+
+        // Buffer should be unchanged
+        assert_eq!(buffer.lines.len(), 2);
+        assert_eq!(buffer.lines[0], "Hello");
+        assert_eq!(buffer.cursor.line, 0);
+        assert_eq!(buffer.cursor.col, 0);
+    }
+
+    #[test]
+    fn test_delete_line_single_line_buffer() {
+        // Target: command.rs:221 - DeleteLine when line_count = 1
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "OnlyLine");
+        buffer.cursor = CursorPos::new(0, 0);
+
+        VimCommand::DeleteLine.execute(&mut buffer).unwrap();
+
+        // Should clear the line, not delete it (buffer must have at least 1 line)
+        assert_eq!(buffer.lines.len(), 1);
+        assert_eq!(buffer.lines[0], "");
+        assert_eq!(buffer.cursor.line, 0);
+        assert_eq!(buffer.cursor.col, 0);
+    }
+
+    #[test]
+    fn test_delete_line_cursor_past_end_adjustment() {
+        // Target: command.rs:229-230 - cursor adjustment after deletion
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "line0\nline1\nline2");
+        // Position cursor on last line
+        buffer.cursor = CursorPos::new(2, 3);
+
+        VimCommand::DeleteLine.execute(&mut buffer).unwrap();
+
+        // After deleting line 2, buffer has 2 lines (0,1)
+        // Cursor should be adjusted to line 1 (line_count()-1)
+        assert_eq!(buffer.lines.len(), 2);
+        assert_eq!(buffer.cursor.line, 1); // Moved to line 1 (the new last line)
+        assert!(buffer.cursor.col <= buffer.lines[1].len());
+    }
+
+    #[test]
+    fn test_clamp_cursor_at_exact_line_end() {
+        // Target: buffer.rs:154 - clamp_cursor when cursor.col = line_len (not >)
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Short\nMedium");
+
+        // Set cursor to exact end of "Short" (col = 5)
+        buffer.cursor = CursorPos::new(0, 5);
+        assert!(buffer.is_cursor_valid()); // Should be valid
+
+        // Clamp shouldn't change it
+        buffer.clamp_cursor();
+        assert_eq!(buffer.cursor.col, 5); // Still at 5
+
+        // Now set cursor past end (col = 6)
+        buffer.cursor.col = 6;
+        assert!(!buffer.is_cursor_valid()); // Invalid
+
+        // Clamp should fix it
+        buffer.clamp_cursor();
+        assert_eq!(buffer.cursor.col, 5); // Clamped to 5
+    }
 }
