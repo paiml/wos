@@ -1812,4 +1812,148 @@ mod tests {
         assert!(result.contains("vim"));
         assert!(result.contains("Modal text editor"));
     }
+
+    // Command dispatch and output validation tests for mutation testing
+
+    #[test]
+    fn test_cmd_pwd_returns_correct_path() {
+        let wos = WosWasm::new();
+        let output = wos.cmd_pwd();
+
+        // pwd must return "/" followed by newline (not empty string or "xyzzy")
+        assert_eq!(output, "/\n");
+        assert!(!output.is_empty());
+        assert_ne!(output, String::new());
+        assert_ne!(output, "xyzzy");
+    }
+
+    #[test]
+    fn test_cmd_touch_success() {
+        let mut wos = WosWasm::new();
+        let output = wos.cmd_touch(vec!["testfile.txt".to_string()]);
+
+        // Touch should return empty string on success (not "xyzzy")
+        assert_eq!(output, String::new());
+        assert!(output.is_empty());
+        assert_ne!(output, "xyzzy");
+    }
+
+    #[test]
+    fn test_cmd_touch_missing_arg() {
+        let mut wos = WosWasm::new();
+        let output = wos.cmd_touch(vec![]);
+
+        // Touch with no args should return error message
+        assert!(output.contains("missing file operand"));
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    fn test_cmd_mkdir_success() {
+        let mut wos = WosWasm::new();
+        let output = wos.cmd_mkdir(vec!["testdir".to_string()]);
+
+        // Mkdir should return empty string on success (not "xyzzy")
+        assert_eq!(output, String::new());
+        assert!(output.is_empty());
+        assert_ne!(output, "xyzzy");
+    }
+
+    #[test]
+    fn test_cmd_mkdir_missing_arg() {
+        let mut wos = WosWasm::new();
+        let output = wos.cmd_mkdir(vec![]);
+
+        // Mkdir with no args should return error message
+        assert!(output.contains("missing operand"));
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    fn test_cmd_rm_success() {
+        let mut wos = WosWasm::new();
+
+        // First create a file
+        wos.cmd_touch(vec!["removeme.txt".to_string()]);
+
+        // Then remove it
+        let output = wos.cmd_rm(vec!["removeme.txt".to_string()]);
+
+        // Rm should return empty string on success (not "xyzzy")
+        assert_eq!(output, String::new());
+        assert!(output.is_empty());
+        assert_ne!(output, "xyzzy");
+    }
+
+    #[test]
+    fn test_cmd_rm_missing_arg() {
+        let mut wos = WosWasm::new();
+        let output = wos.cmd_rm(vec![]);
+
+        // Rm with no args should return error message
+        assert!(output.contains("missing operand"));
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    fn test_cmd_rm_nonexistent_file() {
+        let mut wos = WosWasm::new();
+        let output = wos.cmd_rm(vec!["doesnotexist.txt".to_string()]);
+
+        // Rm of non-existent file should return error
+        assert!(output.contains("cannot remove"));
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    fn test_execute_single_command_pwd() {
+        let mut wos = WosWasm::new();
+        let (output, exit_code) = wos.execute_single_command("pwd", &[], "");
+
+        // Verify pwd command is dispatched and returns correct path
+        assert_eq!(output, "/\n");
+        assert_eq!(exit_code, 0);
+        assert_ne!(output, String::new());
+        assert_ne!(output, "xyzzy");
+    }
+
+    #[test]
+    fn test_execute_single_command_touch() {
+        let mut wos = WosWasm::new();
+        let (output, exit_code) =
+            wos.execute_single_command("touch", &["file.txt".to_string()], "");
+
+        // Verify touch command is dispatched
+        assert_eq!(output, String::new());
+        assert_eq!(exit_code, 0);
+        assert_ne!(output, "xyzzy");
+    }
+
+    #[test]
+    fn test_execute_single_command_mkdir() {
+        let mut wos = WosWasm::new();
+        let (output, exit_code) = wos.execute_single_command("mkdir", &["dir".to_string()], "");
+
+        // Verify mkdir command is dispatched
+        assert_eq!(output, String::new());
+        assert_eq!(exit_code, 0);
+        assert_ne!(output, "xyzzy");
+    }
+
+    #[test]
+    fn test_execute_single_command_rm() {
+        let mut wos = WosWasm::new();
+
+        // Create file first
+        wos.execute_single_command("touch", &["deleteme.txt".to_string()], "");
+
+        // Then delete it
+        let (output, exit_code) =
+            wos.execute_single_command("rm", &["deleteme.txt".to_string()], "");
+
+        // Verify rm command is dispatched
+        assert_eq!(output, String::new());
+        assert_eq!(exit_code, 0);
+        assert_ne!(output, "xyzzy");
+    }
 }

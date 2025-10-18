@@ -304,10 +304,28 @@ The +2.41pp improvement from Round 1 to Round 3 shows that behavioral tests are 
 - ⚠️ Still 3.00pp below 90% target
 - 🎯 Need ~23 more caught mutants to reach 90%
 
-**Path to 90%**:
-1. Add 5 more vim edge case tests (targeting the 9 remaining vim mutants) → +9 mutants
-2. Add E2E command validation (pwd, mkdir, rm, touch return correct values) → +8 mutants
-3. Add quote handling edge case tests → +6 mutants
-**Estimated result**: ~89.97% (just below target)
+**Round 4 Progress**:
+- ✅ Added 5 vim edge case tests targeting specific mutants
+- ✅ Improved from 87.00% to 87.27%
+- ⏱️ Incremental gain: +0.27pp (+2 mutants caught)
+- ⚠️ Diminishing returns suggest targeting other hotspots
 
-The remaining 3pp gap requires targeting the most impactful mutation hotspots systematically.
+**Round 5 Results**:
+- ✅ Added 12 unit tests for cmd_pwd, cmd_mkdir, cmd_rm, cmd_touch
+- ✅ Improved from 87.27% to 88.85%
+- 🎯 Incremental gain: +1.58pp (+12 mutants caught)
+- ✅ **All 12 targeted command dispatch mutants were caught!**
+
+**Success Breakdown**:
+- Tests verified exact output values (not String::new(), not "xyzzy")
+- Tests verified command dispatch (caught "delete match arm" mutants)
+- 677 caught, 85 missed (down from 97 missed in Round 4)
+- Total improvement from R1 to R5: +4.26pp
+
+**Path to 90%**:
+1. ✅ Round 5: Add command dispatch tests → achieved +12 mutants caught
+2. Add quote handling edge case tests → targeting +6 mutants
+3. Add variable parsing edge case tests → targeting +5 mutants
+**Estimated result**: ~90.29% (target exceeded)
+
+The remaining 1.15pp gap (9 mutants) can be closed with targeted tests for quote handling and variable parsing edge cases.
