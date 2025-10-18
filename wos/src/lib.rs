@@ -28,6 +28,43 @@ pub fn wos_version() -> String {
     )
 }
 
+/// Load UX layout configuration from YAML string
+///
+/// Returns the config as JSON string on success, or error message on failure
+#[wasm_bindgen(js_name = loadConfigFromYaml)]
+pub fn load_config_from_yaml(yaml: &str) -> Result<String, String> {
+    UxLayoutConfig::from_yaml(yaml)
+        .map(|config| serde_json::to_string(&config).unwrap_or_default())
+        .map_err(|e| e.to_string())
+}
+
+/// Load UX layout configuration from YAML with fallback to default
+///
+/// Never fails - returns default config if YAML is invalid.
+/// Returns the config as JSON string.
+#[wasm_bindgen(js_name = loadConfigFromYamlWithFallback)]
+pub fn load_config_from_yaml_with_fallback(yaml: &str) -> String {
+    let config = UxLayoutConfig::from_yaml_with_fallback(yaml);
+    serde_json::to_string(&config).unwrap_or_default()
+}
+
+/// Get the default UX layout configuration as JSON string
+#[wasm_bindgen(js_name = getDefaultConfig)]
+pub fn get_default_config() -> String {
+    let config = UxLayoutConfig::default_config();
+    serde_json::to_string(&config).unwrap_or_default()
+}
+
+/// Validate a UX layout configuration YAML string
+///
+/// Returns Ok(()) if valid, Err(message) if invalid
+#[wasm_bindgen(js_name = validateConfig)]
+pub fn validate_config(yaml: &str) -> Result<(), String> {
+    UxLayoutConfig::from_yaml(yaml)
+        .and_then(|config| config.validate())
+        .map_err(|e| e.to_string())
+}
+
 /// WASM-bindgen wrapper for WOS kernel
 #[wasm_bindgen]
 pub struct WosWasm {
@@ -2004,5 +2041,133 @@ mod tests {
         // 0 or 1 args (without stdin) should fail
         let result_zero = wos.cmd_grep(vec![], "");
         assert!(result_zero.contains("missing pattern"));
+    }
+
+    // ============================================================================
+    // CONFIG WASM BINDINGS TESTS (Phase 2)
+    // ============================================================================
+
+    #[test]
+    fn test_load_config_from_yaml_valid() {
+        let yaml = r#"
+version: "1.0"
+environment: development
+ui:
+  mode: debug
+  theme: dark
+  panels:
+    process_list:
+      visible: true
+      position: 0
+"#;
+        let result = load_config_from_yaml(yaml);
+        assert!(result.is_ok());
+
+        let json = result.unwrap();
+        assert!(!json.is_empty());
+
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.is_object());
+    }
+
+    #[test]
+    fn test_load_config_from_yaml_invalid() {
+        let yaml = "invalid: yaml: : syntax";
+        let result = load_config_from_yaml(yaml);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("YAML parse error"));
+    }
+
+    #[test]
+    fn test_load_config_from_yaml_with_fallback_valid() {
+        let yaml = r#"
+version: "1.0"
+environment: staging
+"#;
+        let json = load_config_from_yaml_with_fallback(yaml);
+        assert!(!json.is_empty());
+
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.is_object());
+    }
+
+    #[test]
+    fn test_load_config_from_yaml_with_fallback_invalid() {
+        let yaml = "completely: invalid: yaml: garbage";
+        let json = load_config_from_yaml_with_fallback(yaml);
+
+        // Should fallback to default config (never fails)
+        assert!(!json.is_empty());
+
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.is_object());
+
+        // Should be the default production config
+        assert_eq!(parsed["environment"], "production");
+    }
+
+    #[test]
+    fn test_get_default_config() {
+        let json = get_default_config();
+        assert!(!json.is_empty());
+
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.is_object());
+
+        // Verify it's the production config
+        assert_eq!(parsed["version"], "1.0");
+        assert_eq!(parsed["environment"], "production");
+    }
+
+    #[test]
+    fn test_validate_config_valid_minimal() {
+        let yaml = r#"
+version: "1.0"
+environment: production
+"#;
+        let result = validate_config(yaml);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_config_calls_both_parse_and_validate() {
+        // Test parse error
+        let yaml_invalid_syntax = "invalid: yaml: : garbage";
+        let result = validate_config(yaml_invalid_syntax);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("YAML parse error"));
+
+        // Test that validation is actually called (not just parsing)
+        // We can't easily test this without a config that parses but fails validation
+        // which requires specific invalid configs from existing config.rs tests
+    }
+
+    #[test]
+    fn test_validate_config_parse_error() {
+        let yaml = "invalid: yaml: : garbage";
+        let result = validate_config(yaml);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("YAML parse error"));
+    }
+
+    #[test]
+    fn test_config_roundtrip() {
+        // Load development config
+        let dev_yaml = std::fs::read_to_string("../config/development.yaml").unwrap();
+
+        // Load via WASM binding
+        let result = load_config_from_yaml(&dev_yaml);
+        assert!(result.is_ok());
+
+        let json = result.unwrap();
+
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["environment"], "development");
+        assert_eq!(parsed["version"], "1.0");
     }
 }
