@@ -196,8 +196,8 @@ coverage-summary:
 	@echo ""
 	@if [ -f "target/coverage/lcov.info" ]; then \
 		echo "🦀 Rust Coverage:"; \
-		grep -E "^LF:|^LH:" target/coverage/lcov.info | head -2 | \
-		awk 'BEGIN {lines=0; hit=0} /^LF:/ {lines+=$$2} /^LH:/ {hit+=$$2} END {printf "   Lines: %d/%d (%.2f%%)\n", hit, lines, (hit/lines)*100}'; \
+		grep -E "^LF:|^LH:" target/coverage/lcov.info | \
+		awk -F: 'BEGIN {lines=0; hit=0} /^LF/ {lines+=$$2} /^LH/ {hit+=$$2} END {if (lines > 0) printf "   Lines: %d/%d (%.2f%%)\n", hit, lines, (hit/lines)*100; else print "   No data"}'; \
 	else \
 		echo "⚠️  No Rust coverage data found. Run 'make coverage' first."; \
 	fi
