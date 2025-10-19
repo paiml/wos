@@ -25,19 +25,32 @@ function main() {
 
   const results = JSON.parse(fs.readFileSync(RESULTS_FILE, 'utf8'));
 
+  // Recursively collect all specs from nested suites
+  function collectSpecs(suite) {
+    const specs = [];
+    if (suite.specs && suite.specs.length > 0) {
+      specs.push(...suite.specs);
+    }
+    if (suite.suites && suite.suites.length > 0) {
+      for (const nestedSuite of suite.suites) {
+        specs.push(...collectSpecs(nestedSuite));
+      }
+    }
+    return specs;
+  }
+
   // Calculate statistics
-  const stats = results.suites.reduce((acc, suite) => {
-    suite.specs.forEach(spec => {
-      acc.total++;
-      if (spec.ok) {
-        acc.passed++;
-      } else {
-        acc.failed++;
-      }
-      if (spec.tests[0]?.status === 'skipped') {
-        acc.skipped++;
-      }
-    });
+  const allSpecs = results.suites.flatMap(collectSpecs);
+  const stats = allSpecs.reduce((acc, spec) => {
+    acc.total++;
+    if (spec.ok) {
+      acc.passed++;
+    } else {
+      acc.failed++;
+    }
+    if (spec.tests[0]?.status === 'skipped') {
+      acc.skipped++;
+    }
     return acc;
   }, { total: 0, passed: 0, failed: 0, skipped: 0 });
 
@@ -53,8 +66,9 @@ function main() {
   // List test suites
   console.log('Test Suites:');
   results.suites.forEach(suite => {
-    const suitePassed = suite.specs.filter(s => s.ok).length;
-    const suiteTotal = suite.specs.length;
+    const suiteSpecs = collectSpecs(suite);
+    const suitePassed = suiteSpecs.filter(s => s.ok).length;
+    const suiteTotal = suiteSpecs.length;
     const suiteName = path.basename(suite.file);
     console.log(`  ${suitePassed === suiteTotal ? '✅' : '❌'} ${suiteName}: ${suitePassed}/${suiteTotal} passed`);
   });
@@ -70,11 +84,14 @@ function main() {
     timestamp: new Date().toISOString(),
     stats,
     passRate: parseFloat(passRate),
-    suites: results.suites.map(suite => ({
-      file: path.basename(suite.file),
-      passed: suite.specs.filter(s => s.ok).length,
-      total: suite.specs.length
-    }))
+    suites: results.suites.map(suite => {
+      const suiteSpecs = collectSpecs(suite);
+      return {
+        file: path.basename(suite.file),
+        passed: suiteSpecs.filter(s => s.ok).length,
+        total: suiteSpecs.length
+      };
+    })
   };
 
   const summaryPath = path.join(COVERAGE_DIR, 'e2e-summary.json');
