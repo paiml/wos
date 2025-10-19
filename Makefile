@@ -141,9 +141,13 @@ coverage:
 	@echo "📊 Comprehensive Coverage Analysis (Rust + Frontend + E2E)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
+	@echo "🗑️  Cleaning old coverage data..."
+	@rm -rf target/coverage
+	@rm -f e2e/test-results.json
+	@mkdir -p target/coverage
+	@echo ""
 	@echo "🦀 Running Rust coverage..."
 	@which cargo-tarpaulin > /dev/null 2>&1 || (echo "📦 Installing cargo-tarpaulin..." && cargo install cargo-tarpaulin --locked)
-	@mkdir -p target/coverage
 	@cargo tarpaulin --workspace --out Html --out Lcov --output-dir target/coverage --timeout 300 --exclude-files 'wos/*' 'dist/*'
 	@echo ""
 	@echo "🌐 Running E2E test coverage..."
@@ -218,12 +222,18 @@ coverage-summary:
 
 coverage-e2e:
 	@echo "🌐 Running E2E test coverage..."
+	@echo "🗑️  Cleaning old E2E coverage data..."
+	@rm -f e2e/test-results.json
+	@rm -f target/coverage/e2e-summary.json
+	@mkdir -p target/coverage
 	@cd e2e && npm run test:coverage
 	@cd e2e && npm run coverage:summary
 	@echo "✓ E2E coverage complete"
 
 coverage-rust:
 	@echo "🦀 Running Rust coverage..."
+	@echo "🗑️  Cleaning old Rust coverage data..."
+	@rm -f target/coverage/lcov.info target/coverage/tarpaulin-report.html target/coverage/cobertura.xml
 	@which cargo-tarpaulin > /dev/null 2>&1 || (echo "📦 Installing cargo-tarpaulin..." && cargo install cargo-tarpaulin --locked)
 	@mkdir -p target/coverage
 	@cargo tarpaulin --workspace --out Html --out Lcov --output-dir target/coverage --timeout 300 --exclude-files 'wos/*' 'dist/*'
