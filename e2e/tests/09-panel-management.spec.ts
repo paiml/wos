@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Panel Management', () => {
   test.beforeEach(async ({ page }) => {
     // Clear localStorage before each test
-    await page.goto('http://localhost:8000/dist/wos/');
+    await page.goto('/');
     await page.evaluate(() => localStorage.clear());
     await page.reload();
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });

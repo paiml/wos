@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Vim Editor', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('http://localhost:8000/dist/wos/');
+    await page.goto('/');
     await page.waitForSelector('#terminal-input', { timeout: 10000 });
     await page.waitForFunction(() => {
       const statusText = document.getElementById('status')?.textContent || '';

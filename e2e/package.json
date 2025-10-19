@@ -11,7 +11,7 @@
     "test:chromium": "playwright test --project=chromium",
     "test:firefox": "playwright test --project=firefox",
     "test:webkit": "playwright test --project=webkit",
-    "test:coverage": "playwright test --project=chromium --reporter=json > test-results.json",
+    "test:coverage": "playwright test",
     "coverage:summary": "node scripts/coverage-summary.js",
     "report": "playwright show-report",
     "codegen": "playwright codegen http://localhost:8000/dist/wos/"
