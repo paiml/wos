@@ -1185,10 +1185,21 @@ ui:
     const vim = new VimEditor(fileName, content, (newContent) => {
       // Save callback - write file back to WASM filesystem
       try {
-        // Use echo with redirection to write file
-        const escapedContent = newContent.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
-        this.wos.executeCommand(`echo "${escapedContent}" > ${fileName}`);
-        this.printLine(`File saved: ${fileName}`, 'success');
+        // Write file using echo with double quotes
+        // Must escape: backslashes, dollar signs, double quotes, backticks
+        // This is because echo "..." interprets these characters
+        // We want the LITERAL content written to the file
+        const escapedContent = newContent
+          .replace(/\\/g, '\\\\')   // Escape backslashes first (\ -> \\)
+          .replace(/\$/g, '\\$')    // Escape dollar signs ($ -> \$)
+          .replace(/"/g, '\\"')     // Escape double quotes (" -> \")
+          .replace(/`/g, '\\`')     // Escape backticks (` -> \`)
+          .replace(/\n/g, '\\n');   // Convert newlines to \n for echo
+
+        // Normalize path to absolute (add leading / if missing)
+        const normalizedPath = fileName.startsWith('/') ? fileName : `/${fileName}`;
+        this.wos.executeCommand(`echo "${escapedContent}" > ${normalizedPath}`);
+        this.printLine(`File saved: ${normalizedPath}`, 'success');
       } catch (error) {
         this.printLine(`Error saving file: ${error}`, 'error');
       }

@@ -576,15 +576,32 @@ impl WosWasm {
         args: &[String],
         stdin: &str, // Pipe input from previous command
     ) -> (String, i32) {
-        // Check if command is an executable script (./script.sh or ../script.sh)
-        let output = if cmd_name.starts_with("./") || cmd_name.starts_with("../") {
-            // Convert relative path to absolute path
-            // For now, we're at root (/), so ./script.sh -> /script.sh
+        // Check if command is an executable script (./script.sh, ../script.sh, or /script.sh)
+        let output = if cmd_name.starts_with("./")
+            || cmd_name.starts_with("../")
+            || cmd_name.starts_with("/")
+        {
+            // Normalize path to absolute path
+            // Current working directory is always / (see cmd_pwd)
             let abs_path = if let Some(rel_path) = cmd_name.strip_prefix("./") {
-                format!("/{}", rel_path)
+                // ./script.sh -> /script.sh
+                // Ensure leading slash
+                if rel_path.starts_with('/') {
+                    rel_path.to_string()
+                } else {
+                    format!("/{}", rel_path)
+                }
             } else if let Some(rel_path) = cmd_name.strip_prefix("../") {
-                // For ../, we'd need to go up one directory, but since we're at /, just use /
-                format!("/{}", rel_path)
+                // ../script.sh -> /script.sh (we're at root, so .. is still root)
+                // Ensure leading slash
+                if rel_path.starts_with('/') {
+                    rel_path.to_string()
+                } else {
+                    format!("/{}", rel_path)
+                }
+            } else if cmd_name.starts_with("/") {
+                // Already absolute path
+                cmd_name.to_string()
             } else {
                 cmd_name.to_string()
             };
@@ -607,6 +624,7 @@ impl WosWasm {
                 "vim" => self.cmd_vim(args.to_vec()),
                 "bash" => self.cmd_bash(args.to_vec()),
                 "source" => self.cmd_source(args.to_vec()),
+                "unset" => self.cmd_unset(args.to_vec()),
                 "version" => wos_version(),
                 "state" => self.cmd_state(),
                 "reset" => {
@@ -695,7 +713,13 @@ impl WosWasm {
     }
 
     fn cmd_echo(&self, args: Vec<String>) -> String {
-        args.join(" ")
+        // echo with no arguments outputs an empty line (newline)
+        // echo with arguments outputs the arguments joined by spaces
+        if args.is_empty() {
+            String::new()
+        } else {
+            args.join(" ")
+        }
     }
 
     fn cmd_state(&self) -> String {
@@ -886,8 +910,15 @@ impl WosWasm {
 
         let script_path = &args[0];
 
+        // Normalize path to absolute (add leading / if missing)
+        let normalized_path = if script_path.starts_with('/') {
+            script_path.to_string()
+        } else {
+            format!("/{}", script_path)
+        };
+
         // Use ScriptLoader to load the script
-        let script = match script_loader::ScriptLoader::load(&self.state.vfs, script_path) {
+        let script = match script_loader::ScriptLoader::load(&self.state.vfs, &normalized_path) {
             Ok(script) => script,
             Err(err) => {
                 return format!("{}", err);
@@ -920,8 +951,15 @@ impl WosWasm {
 
         let script_path = &args[0];
 
+        // Normalize path to absolute (add leading / if missing)
+        let normalized_path = if script_path.starts_with('/') {
+            script_path.to_string()
+        } else {
+            format!("/{}", script_path)
+        };
+
         // Use ScriptLoader to load the script
-        let script = match script_loader::ScriptLoader::load(&self.state.vfs, script_path) {
+        let script = match script_loader::ScriptLoader::load(&self.state.vfs, &normalized_path) {
             Ok(script) => script,
             Err(err) => {
                 return format!("{}", err);
@@ -945,6 +983,21 @@ impl WosWasm {
                 format!("{}", err)
             }
         }
+    }
+
+    fn cmd_unset(&mut self, args: Vec<String>) -> String {
+        // Check if variable name provided
+        if args.is_empty() {
+            return "unset: missing variable name\nUsage: unset VAR".to_string();
+        }
+
+        // Remove each variable from environment
+        for var_name in args {
+            self.variables.remove(&var_name);
+        }
+
+        // unset produces no output
+        String::new()
     }
 
     /// Get current kernel state as JSON

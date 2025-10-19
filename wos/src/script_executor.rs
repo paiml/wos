@@ -70,6 +70,15 @@ impl ScriptExecutor {
                 }
             }
 
+            // Check for unset VAR
+            if let Some(rest) = trimmed.strip_prefix("unset ") {
+                let var_name = rest.trim();
+                // Remove from both script-local and shell environment
+                script_vars.remove(var_name);
+                variables.remove(var_name);
+                continue;
+            }
+
             // Check for variable assignment VAR=value
             if let Some((var_name, var_value)) = trimmed.split_once('=') {
                 // Only treat as assignment if var_name is valid identifier
@@ -159,6 +168,15 @@ impl ScriptExecutor {
                     script_vars.insert(var_name.trim().to_string(), var_value.trim().to_string());
                     continue;
                 }
+            }
+
+            // Check for unset VAR
+            if let Some(rest) = trimmed.strip_prefix("unset ") {
+                let var_name = rest.trim();
+                // Remove from both script-local and shell environment
+                script_vars.remove(var_name);
+                variables.remove(var_name);
+                continue;
             }
 
             // Check for variable assignment VAR=value
@@ -276,17 +294,15 @@ impl ScriptExecutor {
     ///
     /// Returns (output, exit_code)
     fn execute_line(line: &str) -> (String, i32) {
-        // Parse command and args
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.is_empty() {
+        // Parse command and args using proper shell parser that respects quotes
+        let (cmd, args) = wos_shared::parser::parse_command(line);
+
+        if cmd.is_empty() {
             return (String::new(), 0);
         }
 
-        let cmd = parts[0];
-        let args = &parts[1..];
-
         // Simple command implementations for testing
-        match cmd {
+        match cmd.as_str() {
             "echo" => {
                 let output = args.join(" ");
                 (output, 0)

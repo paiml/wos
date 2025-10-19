@@ -143,9 +143,12 @@ test.describe('Shell Scripts E2E', () => {
 
     outputText = await output.textContent();
     // The last echo $TESTVAR should be empty since bash runs in a subshell
-    const lines = outputText.split('\n');
-    const lastEchoLine = lines[lines.length - 2]; // Get second to last line (last is prompt)
-    expect(lastEchoLine.trim()).toBe('$');
+    // The output should contain the first "sourced value" but after unset, it should be empty
+    // Check that the output ends with the unset variable (empty echo output)
+    const lines = outputText.split('\n').filter(line => line.trim() !== '');
+    const lastCommand = lines[lines.length - 1];
+    // Last command should be "echo $TESTVAR" with no output following it
+    expect(lastCommand).toContain('echo $TESTVAR');
   });
 
   test('should execute script with ./script.sh syntax', async ({ page }) => {
