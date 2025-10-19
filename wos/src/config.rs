@@ -231,7 +231,7 @@ impl From<serde_yaml::Error> for ConfigError {
 
 /// Default configuration embedded in binary (educational/development config)
 /// Shows all panels by default for learning and E2E testing
-/// Process List and Memory Map are collapsed by default to fit 1080p viewport
+/// Filesystem and System Monitor Detailed collapsed by default to fit 1080p viewport
 pub const DEFAULT_CONFIG_YAML: &str = r#"version: "1.0"
 environment: development
 ui:
@@ -240,11 +240,11 @@ ui:
   panels:
     process_list:
       visible: true
-      collapsed: true
+      collapsed: false
       position: 0
     memory_map:
       visible: true
-      collapsed: true
+      collapsed: false
       position: 1
     syscall_trace:
       visible: true
@@ -252,12 +252,16 @@ ui:
       position: 2
     filesystem:
       visible: true
-      collapsed: false
+      collapsed: true
       position: 3
     system_monitor:
       visible: true
       collapsed: false
       position: 4
+    system_monitor_detailed:
+      visible: true
+      collapsed: true
+      position: 5
   terminal:
     history_size: 1000
     font_size: 14
@@ -763,8 +767,8 @@ environment: staging
     fn test_from_yaml_with_fallback_invalid() {
         let yaml = "invalid: yaml: {";
         let config = UxLayoutConfig::from_yaml_with_fallback(yaml);
-        // Should fall back to default (production minimal)
-        assert_eq!(config.environment, Environment::Production);
+        // Should fall back to default (development debug)
+        assert_eq!(config.environment, Environment::Development);
         assert!(config.ui.is_some());
     }
 
@@ -772,11 +776,11 @@ environment: staging
     fn test_default_config() {
         let config = UxLayoutConfig::default_config();
         assert_eq!(config.version, "1.0");
-        assert_eq!(config.environment, Environment::Production);
+        assert_eq!(config.environment, Environment::Development);
         assert!(config.ui.is_some());
 
         let ui = config.ui.unwrap();
-        assert_eq!(ui.mode, UiMode::Minimal);
+        assert_eq!(ui.mode, UiMode::Debug);
         assert_eq!(ui.theme, Theme::Auto);
         assert!(ui.panels.filesystem.visible);
     }
