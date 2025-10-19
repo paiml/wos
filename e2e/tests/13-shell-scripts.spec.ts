@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Shell Scripts E2E', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('index.html');
     await page.waitForSelector('#terminal-input', { timeout: 10000 });
     await page.waitForFunction(() => {
       const statusText = document.getElementById('status')?.textContent || '';
