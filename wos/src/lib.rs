@@ -2250,8 +2250,8 @@ environment: staging
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed.is_object());
 
-        // Should be the default production config
-        assert_eq!(parsed["environment"], "production");
+        // Should be the default development config
+        assert_eq!(parsed["environment"], "development");
     }
 
     #[test]
@@ -2263,9 +2263,9 @@ environment: staging
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed.is_object());
 
-        // Verify it's the production config
+        // Verify it's the development config
         assert_eq!(parsed["version"], "1.0");
-        assert_eq!(parsed["environment"], "production");
+        assert_eq!(parsed["environment"], "development");
     }
 
     #[test]

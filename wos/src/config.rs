@@ -229,30 +229,35 @@ impl From<serde_yaml::Error> for ConfigError {
     }
 }
 
-/// Default configuration embedded in binary (production minimal config)
+/// Default configuration embedded in binary (educational/development config)
+/// Shows all panels by default for learning and E2E testing
+/// Process List and Memory Map are collapsed by default to fit 1080p viewport
 pub const DEFAULT_CONFIG_YAML: &str = r#"version: "1.0"
-environment: production
+environment: development
 ui:
-  mode: minimal
+  mode: debug
   theme: auto
   panels:
     process_list:
-      visible: false
+      visible: true
+      collapsed: true
       position: 0
     memory_map:
-      visible: false
-      position: 0
+      visible: true
+      collapsed: true
+      position: 1
     syscall_trace:
-      visible: false
-      position: 0
+      visible: true
+      collapsed: false
+      position: 2
     filesystem:
       visible: true
       collapsed: false
-      position: 0
+      position: 3
     system_monitor:
       visible: true
       collapsed: false
-      position: 1
+      position: 4
   terminal:
     history_size: 1000
     font_size: 14
