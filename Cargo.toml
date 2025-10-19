@@ -40,6 +40,8 @@ proptest = "1.4"
 
 # NOTE: tree-sitter for syntax highlighting will be added in future
 # Currently blocked by WASM compilation issues with C dependencies
+# NOTE: bashrs (bash parser/linter) cannot compile to WASM (uses tokio, file I/O)
+# We use bashrs CLI for static analysis of shell scripts in quality gates
 
 [profile.release]
 opt-level = 3

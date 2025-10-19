@@ -1,8 +1,26 @@
-.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-all
+.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-all cleanup-processes check-memory
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
 WASM_TARGET := target/wasm32-unknown-unknown/release/wos.wasm
+
+# ============================================================================
+# Process and Resource Management
+# ============================================================================
+
+cleanup-processes:
+	@echo "🧹 Cleaning up runaway processes..."
+	@bash scripts/cleanup-runaway-processes.sh
+
+check-memory:
+	@MEM_USED=$$(free | grep Mem | awk '{printf "%.0f", ($$3/$$2)*100}'); \
+	SWAP_USED=$$(free | grep Swap | awk '{if ($$2 > 0) printf "%.0f", ($$3/$$2)*100; else print "0"}'); \
+	echo "💾 Memory: $${MEM_USED}% used, Swap: $${SWAP_USED}% used"; \
+	if [ $$MEM_USED -gt 85 ] || [ $$SWAP_USED -gt 95 ]; then \
+		echo "⚠️  WARNING: High memory usage detected!"; \
+		echo "   Run 'make cleanup-processes' to clean up runaway processes"; \
+		exit 1; \
+	fi
 
 help:
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -43,6 +61,8 @@ help:
 	@echo "  make quality-complete Complete quality validation (~5min)"
 	@echo "  make fmt              Format code"
 	@echo "  make clippy           Run clippy lints"
+	@echo "  make lint-scripts     Lint shell scripts with bashrs"
+	@echo "  make lint-all         Run all linters (Rust + Frontend + Scripts)"
 	@echo "  make pmat-complexity  Check complexity (max 10)"
 	@echo "  make pmat-satd        Check for SATD (zero tolerance)"
 	@echo "  make pmat-entropy     Analyze code entropy"
@@ -59,6 +79,8 @@ help:
 	@echo "  make hooks-install    Install pre-commit hooks"
 	@echo "  make serve            Start local HTTP server (port 8000)"
 	@echo "  make clean            Clean build artifacts"
+	@echo "  make cleanup-processes Kill runaway test/build processes"
+	@echo "  make check-memory     Verify system memory availability"
 	@echo ""
 
 # ============================================================================
@@ -320,7 +342,7 @@ quality-complete: quality test coverage
 	@echo "✅ Complete quality gate passed (~5min)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-mutants:
+mutants: check-memory
 	@echo "🧬 Running mutation tests (this may take 10-15 minutes)..."
 	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants --locked)
 	@cargo mutants --workspace --output mutants-report.json
@@ -505,7 +527,7 @@ e2e-install:
 	@cd e2e && npx playwright install
 	@echo "✓ E2E dependencies installed"
 
-e2e:
+e2e: check-memory
 	@echo "🌐 Running E2E tests..."
 	@cd e2e && npm test
 	@echo "✓ E2E tests complete"
@@ -647,7 +669,22 @@ lint-frontend-check:
 	@cd dist/wos && deno task fmt:check
 	@echo "✓ Frontend formatting OK"
 
-lint-all: clippy lint-frontend
+lint-scripts:
+	@echo "🔍 Linting shell scripts with bashrs..."
+	@which bashrs > /dev/null 2>&1 || (echo "❌ bashrs not found. Install: https://github.com/paiml/bashrs" && exit 1)
+	@FOUND_ERRORS=0; \
+	for script in $$(find scripts -name "*.sh" 2>/dev/null); do \
+		echo "  Checking $$script..."; \
+		bashrs lint "$$script" || FOUND_ERRORS=1; \
+	done; \
+	if [ $$FOUND_ERRORS -eq 1 ]; then \
+		echo "❌ Shell script linting failed"; \
+		exit 1; \
+	else \
+		echo "✓ Shell script linting complete"; \
+	fi
+
+lint-all: clippy lint-frontend lint-scripts
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "✅ All linting passed (Rust + Frontend)"
+	@echo "✅ All linting passed (Rust + Frontend + Shell Scripts)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

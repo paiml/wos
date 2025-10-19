@@ -247,7 +247,8 @@ test.describe('Vim Editor', () => {
     // Check terminal shows success message
     await page.waitForTimeout(200);
     const terminalOutput = await page.locator('#terminal-output').textContent();
-    expect(terminalOutput).toContain('File saved: test.txt');
+    // Path is normalized to absolute, so expect /test.txt
+    expect(terminalOutput).toContain('File saved: /test.txt');
   });
 
   test('should navigate with arrow keys', async ({ page }) => {
