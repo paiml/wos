@@ -401,7 +401,7 @@ hooks-install:
 
 serve:
 	@echo "🌐 Starting HTTP server on http://localhost:8000"
-	@cd dist/wos && python3 -m http.server 8000
+	@cd dist && ruchy serve wos --port 8000
 
 clean:
 	@echo "🧹 Cleaning build artifacts..."
