@@ -75,7 +75,7 @@ export default defineConfig({
   /* Run your local dev server before starting the tests */
   webServer: {
     command: 'ruchy serve dist --port 8001',
-    url: 'http://localhost:8001',
+    url: 'http://localhost:8001/wos/index.html',
     reuseExistingServer: !process.env.CI,
     cwd: '..',
     timeout: 120 * 1000,
