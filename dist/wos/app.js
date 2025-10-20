@@ -1002,7 +1002,11 @@ class Terminal {
   }
 
   printWelcome() {
-    // No startup banner - user requested removal
+    this.printLine('WOS - WebAssembly Operating System', 'success');
+    this.printLine('Educational microkernel v0.1.0', 'output');
+    this.printLine('', 'output');
+    this.printLine('Type "help" for available commands', 'output');
+    this.printLine('', 'output');
   }
 
   printLine(text, className = 'output') {
