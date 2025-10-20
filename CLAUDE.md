@@ -444,6 +444,69 @@ wasm-objdump -h target/wasm32-unknown-unknown/release/wos.wasm
 wasm-objdump -x target/wasm32-unknown-unknown/release/wos.wasm | grep wasi
 ```
 
+### Browser Tracing System
+
+WOS includes a comprehensive tracing system for debugging initialization and runtime issues. The tracing system is **zero-cost when disabled** (default) and can be enabled via URL parameters or localStorage.
+
+**Quick Start**:
+```bash
+# Enable tracing via URL (temporary, for debugging)
+http://127.0.0.1:8000/?trace=DEBUG&categories=INIT,WASM,CONFIG
+
+# Enable tracing via localStorage (persistent across reloads)
+# In browser console:
+localStorage.setItem('wos-trace-level', 'DEBUG');
+localStorage.setItem('wos-trace-categories', 'INIT,WASM,CONFIG');
+
+# Disable tracing
+localStorage.removeItem('wos-trace-level');
+localStorage.removeItem('wos-trace-categories');
+
+# Or via console:
+window.tracer.clear();
+```
+
+**Trace Levels**:
+- `NONE` - Disabled (default, zero overhead)
+- `ERROR` - Only critical errors
+- `WARN` - Warnings and errors
+- `INFO` - Important lifecycle events
+- `DEBUG` - Detailed execution flow
+- `TRACE` - Verbose diagnostic output
+
+**Trace Categories**:
+- `INIT` - Application initialization
+- `WASM` - WebAssembly module loading and operations
+- `CONFIG` - Configuration management
+- `PANEL` - Panel management and layout
+- `TERMINAL` - Terminal operations
+- `VIM` - Vim editor operations
+- `PROCESS` - Process management
+- `MEMORY` - Memory operations
+- `SYSCALL` - System calls
+- `FILE` - File operations
+- `EVENT` - Event handling
+- `RENDER` - UI rendering
+
+**Example Output**:
+```
+[0.21ms] [WASM] [INFO] Calling init()
+[8.17ms] [WASM] [INFO] init() completed in 7.90ms
+[8.21ms] [CONFIG] [DEBUG] ConfigManager constructor called
+[8.41ms] [CONFIG] [DEBUG] ConfigManager initialized {version: 0.1.0, ...}
+[10.49ms] [INIT] [INFO] Status set to Ready
+```
+
+**Console API**:
+```javascript
+// Access tracer from console
+window.tracer.setLevel('DEBUG');
+window.tracer.setCategories(['INIT', 'WASM']);
+window.tracer.info('INIT', 'Custom trace message', {data: 'optional'});
+```
+
+**Full Documentation**: See `docs/specifications/tracing-spec.md` for complete implementation details and integration examples.
+
 ## Browser Interface
 
 The HTML terminal interface provides:

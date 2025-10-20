@@ -217,6 +217,42 @@ All commits must pass:
 - ✅ Unit tests (277 tests)
 - ✅ Fast quality gate (<30s)
 
+### Browser Tracing System
+
+WOS includes a comprehensive tracing system for debugging initialization and runtime issues. The tracing system is **zero-cost when disabled** (default) and can be enabled via URL parameters or localStorage.
+
+**Quick Start**:
+```bash
+# Enable tracing via URL (temporary, for debugging)
+http://localhost:8000/dist/wos/?trace=DEBUG&categories=INIT,WASM,CONFIG
+
+# Or in E2E tests
+await page.goto('index.html?trace=DEBUG&categories=INIT,WASM,CONFIG');
+```
+
+**Trace Levels**: NONE (default), ERROR, WARN, INFO, DEBUG, TRACE
+
+**Trace Categories**: INIT, WASM, CONFIG, PANEL, TERMINAL, EDITOR, SHELL, FILESYSTEM, MONITOR, IPC
+
+**Example Output**:
+```
+[10.29ms] [INIT] [INFO] Application initialization started
+[12.45ms] [WASM] [INFO] Calling init()
+[185.67ms] [WASM] [INFO] init() completed in 173.22ms
+[187.12ms] [CONFIG] [DEBUG] Loading configuration
+[189.45ms] [INIT] [INFO] Initialization complete in 179.16ms
+```
+
+**Console API**:
+```javascript
+// Enable tracing from browser console
+window.tracer.setLevel('DEBUG');
+window.tracer.enableCategory('INIT');
+window.tracer.disableCategory('WASM');
+```
+
+See [Tracing Specification](docs/specifications/tracing-spec.md) for complete details.
+
 ### Makefile Commands
 
 ```bash
