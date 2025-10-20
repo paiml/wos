@@ -2,8 +2,18 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Panel Management', () => {
   test.beforeEach(async ({ page }) => {
+    // Enable tracing for debugging
+    await page.goto('index.html?trace=DEBUG&categories=INIT,WASM,CONFIG');
+
+    // Set up console listener to capture trace output
+    page.on('console', msg => {
+      const text = msg.text();
+      if (text.includes('[INIT]') || text.includes('[WASM]') || text.includes('[CONFIG]')) {
+        console.log(text);
+      }
+    });
+
     // Clear localStorage before each test
-    await page.goto('index.html');
     await page.evaluate(() => localStorage.clear());
     await page.reload();
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });

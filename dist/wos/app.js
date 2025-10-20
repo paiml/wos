@@ -9,42 +9,185 @@ import init, {
   loadConfigFromYamlWithFallback
 } from './wos.js';
 
-class ConfigManager {
+// Tracing System - for debugging and performance analysis
+const TraceLevel = {
+  NONE: 0,
+  ERROR: 1,
+  WARN: 2,
+  INFO: 3,
+  DEBUG: 4,
+  TRACE: 5
+};
+
+const TraceCategory = {
+  INIT: 'INIT',
+  WASM: 'WASM',
+  CONFIG: 'CONFIG',
+  PANEL: 'PANEL',
+  TERMINAL: 'TERMINAL',
+  VIM: 'VIM',
+  PROCESS: 'PROCESS',
+  MEMORY: 'MEMORY',
+  SYSCALL: 'SYSCALL',
+  FILE: 'FILE',
+  EVENT: 'EVENT',
+  RENDER: 'RENDER'
+};
+
+class Tracer {
   constructor() {
-    this.config = null;
+    this.level = TraceLevel.NONE;
+    this.enabledCategories = new Set();
+    this.startTime = performance.now();
     this.loadConfig();
   }
 
   loadConfig() {
+    // Load from URL parameters first (highest priority)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('trace')) {
+      const traceLevelStr = urlParams.get('trace').toUpperCase();
+      this.level = TraceLevel[traceLevelStr] || TraceLevel.NONE;
+    } else {
+      // Fall back to localStorage
+      const savedLevel = localStorage.getItem('wos-trace-level');
+      if (savedLevel) {
+        this.level = TraceLevel[savedLevel] || TraceLevel.NONE;
+      }
+    }
+
+    // Load categories from URL parameters
+    if (urlParams.has('categories')) {
+      const categories = urlParams.get('categories').split(',');
+      categories.forEach(cat => this.enabledCategories.add(cat.toUpperCase()));
+    } else {
+      // Fall back to localStorage
+      const savedCategories = localStorage.getItem('wos-trace-categories');
+      if (savedCategories) {
+        const categories = savedCategories.split(',');
+        categories.forEach(cat => this.enabledCategories.add(cat.toUpperCase()));
+      }
+    }
+  }
+
+  shouldTrace(level, category) {
+    if (this.level < level) return false;
+    if (this.enabledCategories.size > 0 && !this.enabledCategories.has(category)) return false;
+    return true;
+  }
+
+  log(level, category, message, data = null) {
+    if (!this.shouldTrace(level, category)) return;
+
+    const timestamp = (performance.now() - this.startTime).toFixed(2);
+    const levelName = Object.keys(TraceLevel).find(k => TraceLevel[k] === level);
+    const prefix = `[${timestamp}ms] [${category}] [${levelName}]`;
+
+    if (data) {
+      console.log(prefix, message, data);
+    } else {
+      console.log(prefix, message);
+    }
+  }
+
+  error(category, message, data) { this.log(TraceLevel.ERROR, category, message, data); }
+  warn(category, message, data) { this.log(TraceLevel.WARN, category, message, data); }
+  info(category, message, data) { this.log(TraceLevel.INFO, category, message, data); }
+  debug(category, message, data) { this.log(TraceLevel.DEBUG, category, message, data); }
+  trace(category, message, data) { this.log(TraceLevel.TRACE, category, message, data); }
+
+  setLevel(level) {
+    this.level = TraceLevel[level] || TraceLevel.NONE;
+    localStorage.setItem('wos-trace-level', level);
+  }
+
+  setCategories(categories) {
+    this.enabledCategories.clear();
+    categories.forEach(cat => this.enabledCategories.add(cat.toUpperCase()));
+    localStorage.setItem('wos-trace-categories', categories.join(','));
+  }
+
+  clear() {
+    this.level = TraceLevel.NONE;
+    this.enabledCategories.clear();
+    localStorage.removeItem('wos-trace-level');
+    localStorage.removeItem('wos-trace-categories');
+  }
+}
+
+// Global tracer instance
+const tracer = new Tracer();
+window.tracer = tracer; // Expose for console access
+
+class ConfigManager {
+  constructor() {
+    tracer.debug('CONFIG', 'ConfigManager constructor called');
+    this.config = null;
+    this.loadConfig();
+    tracer.debug('CONFIG', 'ConfigManager initialized', this.config);
+  }
+
+  loadConfig() {
+    tracer.debug('CONFIG', 'Loading configuration');
     const savedConfig = localStorage.getItem('wos-config');
     if (savedConfig) {
+      tracer.debug('CONFIG', 'Found saved config in localStorage');
       try {
-        this.config = JSON.parse(loadConfigFromYamlWithFallback(savedConfig));
+        // Don't call WASM functions - just parse JSON directly
+        this.config = JSON.parse(savedConfig);
+        tracer.info('CONFIG', 'Loaded saved configuration');
       } catch (error) {
+        tracer.error('CONFIG', 'Error loading saved config, using default', error);
         console.error('Error loading saved config, using default:', error);
         this.loadDefaultConfig();
       }
     } else {
+      tracer.debug('CONFIG', 'No saved config, using default');
       this.loadDefaultConfig();
     }
     this.applyConfig();
   }
 
   loadDefaultConfig() {
-    const defaultConfigJson = getDefaultConfig();
-    this.config = JSON.parse(defaultConfigJson);
+    tracer.debug('CONFIG', 'Loading default configuration');
+    // Don't call WASM functions before init() - use hardcoded default
+    this.config = {
+      version: "0.1.0",
+      environment: "browser",
+      ui: {
+        theme: "dark",
+        mode: "interactive",
+        panels: {
+          terminal: { visible: true, collapsed: false },
+          process_list: { visible: true, collapsed: false },
+          memory_map: { visible: true, collapsed: false },
+          system_call_trace: { visible: true, collapsed: false },
+          files: { visible: true, collapsed: false },
+          system_info: { visible: true, collapsed: false },
+          system_monitor: { visible: true, collapsed: false }
+        }
+      }
+    };
+    tracer.info('CONFIG', 'Default configuration loaded');
   }
 
   saveConfig(yamlConfig) {
+    tracer.debug('CONFIG', 'Saving configuration');
     localStorage.setItem('wos-config', yamlConfig);
     this.config = JSON.parse(loadConfigFromYamlWithFallback(yamlConfig));
     this.applyConfig();
+    tracer.info('CONFIG', 'Configuration saved');
   }
 
   applyConfig() {
-    if (!this.config || !this.config.ui) return;
+    tracer.debug('CONFIG', 'Applying configuration');
+    if (!this.config || !this.config.ui) {
+      tracer.warn('CONFIG', 'Cannot apply config - config or ui is null');
+      return;
+    }
 
     const theme = this.config.ui.theme || 'auto';
+    tracer.debug('CONFIG', `Applying theme: ${theme}`);
     if (theme === 'dark') {
       document.body.classList.add('theme-dark');
       document.body.classList.remove('theme-light');
@@ -56,6 +199,7 @@ class ConfigManager {
       document.body.classList.toggle('theme-dark', prefersDark);
       document.body.classList.toggle('theme-light', !prefersDark);
     }
+    tracer.debug('CONFIG', 'Configuration applied');
   }
 
   getConfig() {
@@ -779,6 +923,18 @@ class Terminal {
   }
 
   setupEventListeners() {
+    tracer.debug('TERMINAL', 'Setting up event listeners');
+
+    // Validate required elements exist
+    if (!this.input) {
+      tracer.error('TERMINAL', 'Input element not found');
+      throw new Error('Terminal input element (#terminal-input) not found');
+    }
+    if (!this.terminalElement) {
+      tracer.error('TERMINAL', 'Terminal element not found');
+      throw new Error('Terminal element (#terminal) not found');
+    }
+
     // Enter key - execute command
     this.input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -815,17 +971,34 @@ class Terminal {
       }
     });
 
-    // Button controls
-    document.getElementById('btn-clear').addEventListener('click', () => this.clear());
-    document.getElementById('btn-reset').addEventListener('click', () => this.reset());
-    document.getElementById('btn-save').addEventListener('click', () => this.saveState());
-    document.getElementById('btn-load').addEventListener('click', () => this.loadState());
-    document.getElementById('btn-benchmark').addEventListener('click', () => this.runBenchmark());
+    // Button controls - with null checks
+    const btnClear = document.getElementById('btn-clear');
+    const btnReset = document.getElementById('btn-reset');
+    const btnSave = document.getElementById('btn-save');
+    const btnLoad = document.getElementById('btn-load');
+    const btnBenchmark = document.getElementById('btn-benchmark');
+
+    if (!btnClear) tracer.warn('TERMINAL', 'Button not found: btn-clear');
+    else btnClear.addEventListener('click', () => this.clear());
+
+    if (!btnReset) tracer.warn('TERMINAL', 'Button not found: btn-reset');
+    else btnReset.addEventListener('click', () => this.reset());
+
+    if (!btnSave) tracer.warn('TERMINAL', 'Button not found: btn-save');
+    else btnSave.addEventListener('click', () => this.saveState());
+
+    if (!btnLoad) tracer.warn('TERMINAL', 'Button not found: btn-load');
+    else btnLoad.addEventListener('click', () => this.loadState());
+
+    if (!btnBenchmark) tracer.warn('TERMINAL', 'Button not found: btn-benchmark');
+    else btnBenchmark.addEventListener('click', () => this.runBenchmark());
 
     // Keep input focused
     this.terminalElement.addEventListener('click', () => {
       this.input.focus();
     });
+
+    tracer.debug('TERMINAL', 'Event listeners set up successfully');
   }
 
   printWelcome() {
@@ -1431,46 +1604,89 @@ ui:
 
 // Initialize application
 async function initApp() {
+  tracer.info('INIT', 'Application initialization started');
   const statusElement = document.getElementById('status');
   const versionElement = document.getElementById('version');
 
   try {
+    tracer.debug('INIT', 'Setting status to Loading WASM...');
     statusElement.innerHTML = '<span class="loading"></span> Loading WASM...';
 
     // Initialize WASM module
+    tracer.info('WASM', 'Calling init()');
+    const initStart = performance.now();
     await init();
+    const initDuration = performance.now() - initStart;
+    tracer.info('WASM', `init() completed in ${initDuration.toFixed(2)}ms`);
 
     // Create ConfigManager AFTER WASM is initialized
+    tracer.debug('INIT', 'Creating ConfigManager');
     const configManager = new ConfigManager();
+
+    tracer.debug('INIT', 'Creating PanelManager');
     const panelManager = new PanelManager(configManager);
+
+    tracer.debug('INIT', 'Creating Terminal');
     const terminal = new Terminal(configManager);
 
     // Expose terminal instance to window for testing and monitoring
+    tracer.debug('INIT', 'Exposing terminal instance to window');
     window.terminalInstance = terminal;
 
     // Create WOS instance
+    tracer.debug('WASM', 'Creating WosWasm instance');
     const wos = new WosWasm();
+    tracer.info('WASM', 'WosWasm instance created');
 
+    tracer.debug('INIT', 'Connecting terminal to WOS');
     terminal.setWOS(wos);
 
+    tracer.debug('INIT', 'Setting status to Ready');
     statusElement.textContent = 'Ready';
     statusElement.className = '';
+    tracer.info('INIT', 'Status set to Ready');
 
     // Get and display version
+    tracer.debug('WASM', 'Getting WOS version');
     const version = wos_version();
     versionElement.textContent = version;
+    tracer.info('INIT', `WOS version: ${version}`);
 
     // No startup banner - user requested removal
+    tracer.info('INIT', 'Application initialization completed successfully');
   } catch (error) {
+    tracer.error('INIT', 'Initialization failed', error);
     console.error('Initialization error:', error);
     statusElement.textContent = 'Error';
     statusElement.className = 'error';
-    terminal.printLine(`Failed to initialize WASM: ${error}`, 'error');
-    terminal.printLine('', 'output');
-    terminal.printLine('This may happen if:', 'output');
-    terminal.printLine('- WASM files are not present', 'output');
-    terminal.printLine('- WASM is not supported in your browser', 'output');
-    terminal.printLine('- Files are being served from file:// instead of http://', 'output');
+
+    // Check if terminal exists before trying to use it
+    if (typeof terminal !== 'undefined' && terminal) {
+      terminal.printLine(`Failed to initialize WASM: ${error}`, 'error');
+      terminal.printLine('', 'output');
+      terminal.printLine('This may happen if:', 'output');
+      terminal.printLine('- WASM files are not present', 'output');
+      terminal.printLine('- WASM is not supported in your browser', 'output');
+      terminal.printLine('- Files are being served from file:// instead of http://', 'output');
+    } else {
+      // Terminal doesn't exist, show error in page
+      tracer.error('INIT', 'Terminal not created, cannot display error message');
+      const terminalOutput = document.getElementById('terminal-output');
+      if (terminalOutput) {
+        const errorMsg = document.createElement('div');
+        errorMsg.className = 'error-message';
+        errorMsg.innerHTML = `
+          <p>Failed to initialize WASM: ${error}</p>
+          <p>This may happen if:</p>
+          <ul>
+            <li>WASM files are not present</li>
+            <li>WASM is not supported in your browser</li>
+            <li>Files are being served from file:// instead of http://</li>
+          </ul>
+        `;
+        terminalOutput.appendChild(errorMsg);
+      }
+    }
   }
 }
 
