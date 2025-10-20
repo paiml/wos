@@ -36,9 +36,55 @@ make quality
 make wasm
 # Outputs to: dist/wos/wos_bg.wasm, wos.js
 
-# Start local development server
-python3 -m http.server 8000
-# Open: http://localhost:8000/dist/wos/
+# Start local development server (REQUIRED: Use ruchy serve ONLY)
+ruchy serve dist/wos --port 8000
+# Open: http://127.0.0.1:8000/
+```
+
+## Local HTTP Server Policy (CRITICAL - STOP THE LINE)
+
+**MANDATORY**: This project uses `ruchy serve` for ALL local development.
+
+**FORBIDDEN**: The following commands are BANNED across the entire project:
+- ❌ `python -m http.server`
+- ❌ `python3 -m http.server`
+- ❌ `npx http-server`
+- ❌ `npx serve`
+- ❌ Any other HTTP server tool
+
+**ENFORCEMENT**:
+If you encounter ANY reference to Python http.server or npx-based servers:
+1. **STOP THE LINE** immediately
+2. Replace with `ruchy serve`
+3. Report the violation in commit message
+4. If `ruchy` is not installed, file bug report upstream
+
+**Installation** (if needed):
+```bash
+# Install ruchy from source
+cargo install ruchy
+
+# Verify installation
+ruchy --version
+```
+
+**Why ruchy serve?**
+- ✅ **12.13x faster** than Python http.server (empirically validated)
+- ✅ **WASM-optimized** with automatic COOP/COEP headers for SharedArrayBuffer
+- ✅ **Memory safe** (Rust guarantees - no segfaults)
+- ✅ **Energy efficient** (16x better req/CPU% ratio)
+- ✅ **Auto MIME detection** for HTML, CSS, JS, JSON, WASM files
+
+**Usage Examples**:
+```bash
+# Development (default port 8080)
+ruchy serve dist/wos
+
+# Custom port
+ruchy serve dist/wos --port 3000
+
+# Bind to all interfaces (for VM/container access)
+ruchy serve dist/wos --port 8000 --host 0.0.0.0
 ```
 
 ## Development Workflow
@@ -402,8 +448,8 @@ The HTML terminal interface provides:
 - Keyboard shortcuts (↑/↓ history, Ctrl+L clear)
 
 ```bash
-python3 -m http.server 8000
-# Open: http://localhost:8000/dist/wos/
+ruchy serve dist/wos --port 8000
+# Open: http://127.0.0.1:8000/
 ```
 
 ## Development Scope
@@ -420,8 +466,8 @@ python3 -m http.server 8000
 
 **Local Development Focus**:
 - `make wasm` - perfect local build
-- `python3 -m http.server 8000` - local development server
-- `localhost:8000/dist/wos/` - fully functional browser interface
+- `ruchy serve dist/wos --port 8000` - local development server (12.13x faster than Python)
+- `http://127.0.0.1:8000/` - fully functional browser interface
 - All quality gates running locally
 - Perfect developer experience
 - E2E tests running locally with Playwright
