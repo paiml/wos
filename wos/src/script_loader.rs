@@ -21,6 +21,31 @@ impl ScriptLoader {
     /// * `Ok(Script)` - Loaded and validated script
     /// * `Err(ScriptError)` - If file not found, invalid shebang, or read error
     pub fn load(vfs: &VirtualFileSystem, path: &str) -> Result<Script, ScriptError> {
+        Self::load_with_validation(vfs, path, true)
+    }
+
+    /// Load a script from the VFS without shebang validation
+    ///
+    /// Used for `bash script.sh` and `source script.sh` where shebang is optional.
+    /// Shebang validation is only required for `./script.sh` execution.
+    ///
+    /// # Arguments
+    /// * `vfs` - Virtual file system to read from
+    /// * `path` - Path to the script file (relative or absolute)
+    ///
+    /// # Returns
+    /// * `Ok(Script)` - Loaded script (shebang optional)
+    /// * `Err(ScriptError)` - If file not found or read error
+    pub fn load_no_validation(vfs: &VirtualFileSystem, path: &str) -> Result<Script, ScriptError> {
+        Self::load_with_validation(vfs, path, false)
+    }
+
+    /// Internal load function with optional shebang validation
+    fn load_with_validation(
+        vfs: &VirtualFileSystem,
+        path: &str,
+        validate_shebang: bool,
+    ) -> Result<Script, ScriptError> {
         // Read file content from VFS
         let content =
             vfs.read_file(&PathBuf::from(path))
@@ -31,11 +56,18 @@ impl ScriptLoader {
         // Convert Vec<u8> to String
         let content_str = String::from_utf8_lossy(&content).to_string();
 
-        // Validate shebang
-        Self::validate_shebang(&content_str)?;
+        // Validate shebang if required (only for ./ execution)
+        if validate_shebang {
+            Self::validate_shebang(&content_str)?;
+        }
 
-        // Extract shebang (first line)
-        let shebang = content_str.lines().next().unwrap_or("").to_string();
+        // Extract shebang (first line if it looks like a shebang)
+        let shebang = content_str
+            .lines()
+            .next()
+            .filter(|line| line.starts_with("#!"))
+            .unwrap_or("")
+            .to_string();
 
         Ok(Script {
             path: path.to_string(),

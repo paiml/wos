@@ -917,8 +917,11 @@ impl WosWasm {
             format!("/{}", script_path)
         };
 
-        // Use ScriptLoader to load the script
-        let script = match script_loader::ScriptLoader::load(&self.state.vfs, &normalized_path) {
+        // Use ScriptLoader to load the script (no shebang validation for bash)
+        let script = match script_loader::ScriptLoader::load_no_validation(
+            &self.state.vfs,
+            &normalized_path,
+        ) {
             Ok(script) => script,
             Err(err) => {
                 return format!("{}", err);
@@ -958,8 +961,11 @@ impl WosWasm {
             format!("/{}", script_path)
         };
 
-        // Use ScriptLoader to load the script
-        let script = match script_loader::ScriptLoader::load(&self.state.vfs, &normalized_path) {
+        // Use ScriptLoader to load the script (no shebang validation for source)
+        let script = match script_loader::ScriptLoader::load_no_validation(
+            &self.state.vfs,
+            &normalized_path,
+        ) {
             Ok(script) => script,
             Err(err) => {
                 return format!("{}", err);
@@ -2350,24 +2356,24 @@ environment: production
     }
 
     #[test]
-    fn test_bash_command_invalid_shebang() {
+    fn test_bash_command_no_shebang() {
         let mut wos = WosWasm::new();
 
-        // Create script with invalid shebang
-        let script_content = "#!/usr/bin/python\nprint('hello')";
+        // Create script without shebang (should work with bash command)
+        let script_content = "echo hello";
         wos.state
             .vfs
             .create_file(
-                std::path::PathBuf::from("/invalid.sh"),
+                std::path::PathBuf::from("/noshebang.sh"),
                 script_content.as_bytes().to_vec(),
             )
             .unwrap();
 
-        // Execute bash command
-        let output = wos.execute_command("bash /invalid.sh");
+        // Execute bash command - should work without shebang
+        let output = wos.execute_command("bash /noshebang.sh");
 
-        // Should return shebang error
-        assert!(output.contains("Invalid shebang") || output.contains("only #!/bin/bash"));
+        // Should execute successfully
+        assert!(output.contains("hello"));
     }
 
     #[test]
@@ -2518,24 +2524,25 @@ environment: production
     }
 
     #[test]
-    fn test_source_command_invalid_shebang() {
+    fn test_source_command_no_shebang() {
         let mut wos = WosWasm::new();
 
-        // Create script with invalid shebang
-        let script_content = "#!/bin/python\nprint('test')";
+        // Create script without shebang (should work with source command)
+        let script_content = "MYVAR=test123";
         wos.state
             .vfs
             .create_file(
-                std::path::PathBuf::from("/invalid.sh"),
+                std::path::PathBuf::from("/setvar.sh"),
                 script_content.as_bytes().to_vec(),
             )
             .unwrap();
 
-        // Execute source command
-        let output = wos.execute_command("source /invalid.sh");
+        // Execute source command - should work without shebang
+        wos.execute_command("source /setvar.sh");
 
-        // Should return shebang error
-        assert!(output.contains("unsupported shebang") || output.contains("invalid shebang"));
+        // Variable should persist in shell (source behavior)
+        let output = wos.execute_command("echo $MYVAR");
+        assert!(output.contains("test123"));
     }
 
     // WOS-206: ./script.sh executable script tests

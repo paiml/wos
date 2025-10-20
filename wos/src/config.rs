@@ -236,7 +236,7 @@ pub const DEFAULT_CONFIG_YAML: &str = r#"version: "1.0"
 environment: development
 ui:
   mode: debug
-  theme: auto
+  theme: dark
   panels:
     process_list:
       visible: true
@@ -244,11 +244,11 @@ ui:
       position: 0
     memory_map:
       visible: true
-      collapsed: false
+      collapsed: true
       position: 1
     syscall_trace:
       visible: true
-      collapsed: false
+      collapsed: true
       position: 2
     filesystem:
       visible: true
@@ -256,11 +256,11 @@ ui:
       position: 3
     system_monitor:
       visible: true
-      collapsed: false
+      collapsed: true
       position: 4
     system_monitor_detailed:
       visible: true
-      collapsed: true
+      collapsed: false
       position: 5
   terminal:
     history_size: 1000
@@ -409,11 +409,11 @@ ui:
       position: 0
     memory_map:
       visible: true
-      collapsed: false
+      collapsed: true
       position: 1
     syscall_trace:
       visible: true
-      collapsed: false
+      collapsed: true
       position: 2
     filesystem:
       visible: true
@@ -781,7 +781,7 @@ environment: staging
 
         let ui = config.ui.unwrap();
         assert_eq!(ui.mode, UiMode::Debug);
-        assert_eq!(ui.theme, Theme::Auto);
+        assert_eq!(ui.theme, Theme::Dark);
         assert!(ui.panels.filesystem.visible);
     }
 
