@@ -119,6 +119,137 @@ class Tracer {
 const tracer = new Tracer();
 window.tracer = tracer; // Expose for console access
 
+// Monaco Editor Integration
+let monacoEditor = null;
+let currentEditingFile = null;
+let currentWosInstance = null;  // Store wos instance for save functionality
+
+function initMonacoEditor(callback) {
+  tracer.debug('MONACO', 'initMonacoEditor called');
+
+  if (typeof window.require === 'undefined') {
+    tracer.error('MONACO', 'RequireJS not available');
+    if (callback) callback(new Error('RequireJS not available'));
+    return;
+  }
+
+  window.require(['vs/editor/editor.main'], function(monaco) {
+    tracer.info('MONACO', 'Monaco editor loaded successfully');
+    window.monaco = monaco;
+    if (callback) callback(null);
+  }, function(err) {
+    tracer.error('MONACO', 'Failed to load Monaco editor', err);
+    if (callback) callback(err);
+  });
+}
+
+function getLanguageFromFilename(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const languageMap = {
+    'rs': 'rust',
+    'sh': 'shell',
+    'bash': 'shell',
+    'md': 'markdown',
+    'yaml': 'yaml',
+    'yml': 'yaml',
+    'json': 'json',
+    'js': 'javascript',
+    'ts': 'typescript',
+    'html': 'html',
+    'css': 'css',
+    'txt': 'plaintext',
+  };
+  return languageMap[ext] || 'plaintext';
+}
+
+function openMonacoEditor(filename, content, wosInstance) {
+  tracer.info('MONACO', 'Opening Monaco editor for file: ' + filename);
+
+  const container = document.getElementById('monaco-editor-container');
+  if (!container) {
+    tracer.error('MONACO', 'Monaco editor container not found');
+    return;
+  }
+
+  // Store wos instance globally for save functionality
+  currentWosInstance = wosInstance;
+
+  initMonacoEditor(function(err) {
+    if (err) {
+      tracer.error('MONACO', 'Failed to initialize Monaco editor', err);
+      return;
+    }
+
+    if (!monacoEditor) {
+      monacoEditor = window.monaco.editor.create(container, {
+        value: content,
+        language: getLanguageFromFilename(filename),
+        theme: 'vs-dark',
+        automaticLayout: true,
+        minimap: { enabled: true },
+        fontSize: 16,
+        lineNumbers: 'on',
+        scrollBeyondLastLine: false,
+        wordWrap: 'on',
+        accessibilitySupport: 'on',
+        ariaLabel: 'Editing file: ' + filename,
+        multiCursorModifier: 'ctrlCmd',
+        quickSuggestions: true,
+        suggestOnTriggerCharacters: true,
+      });
+
+      window.monacoEditor = monacoEditor;
+
+      // Add Escape key handler to close editor - uses currentWosInstance
+      monacoEditor.addCommand(window.monaco.KeyCode.Escape, function() {
+        closeMonacoEditor(true);
+      });
+
+      tracer.debug('MONACO', 'Monaco editor instance created with Escape key handler');
+    } else {
+      monacoEditor.setValue(content);
+      window.monaco.editor.setModelLanguage(monacoEditor.getModel(), getLanguageFromFilename(filename));
+      tracer.debug('MONACO', 'Monaco editor updated with new content');
+    }
+
+    currentEditingFile = filename;
+    container.style.display = 'block';
+    monacoEditor.focus();
+    tracer.info('MONACO', 'Monaco editor opened and focused');
+  });
+}
+
+function closeMonacoEditor(save) {
+  tracer.info('MONACO', 'Closing Monaco editor, save=' + save);
+
+  const container = document.getElementById('monaco-editor-container');
+  if (!container) {
+    tracer.error('MONACO', 'Monaco editor container not found');
+    return;
+  }
+
+  if (save && monacoEditor && currentEditingFile && currentWosInstance) {
+    const content = monacoEditor.getValue();
+    try {
+      // Write file using echo command with proper escaping
+      const escapedContent = content.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
+      currentWosInstance.executeCommand(`echo "${escapedContent}" > ${currentEditingFile}`);
+      tracer.info('MONACO', 'File saved: ' + currentEditingFile);
+    } catch (err) {
+      tracer.error('MONACO', 'Failed to save file', err);
+    }
+  }
+
+  container.style.display = 'none';
+  currentEditingFile = null;
+
+  const terminalInput = document.getElementById('terminal-input');
+  if (terminalInput) {
+    terminalInput.focus();
+  }
+  tracer.debug('MONACO', 'Monaco editor closed, focus returned to terminal');
+}
+
 class ConfigManager {
   constructor() {
     tracer.debug('CONFIG', 'ConfigManager constructor called');
@@ -1280,6 +1411,34 @@ class Terminal {
       return;
     }
 
+    // Handle edit command (Monaco editor)
+    if (cmd.startsWith('edit ') || cmd === 'edit') {
+      const fileName = cmd.split(' ')[1];
+      if (!fileName) {
+        this.printLine('Usage: edit <filename>', 'error');
+        return;
+      }
+
+      if (this.wos) {
+        try {
+          // Try to read the file using executeCommand
+          const result = this.wos.executeCommand(`cat ${fileName}`);
+          // Check if the result is an error message (contains "No such file")
+          if (result && result.includes('No such file')) {
+            openMonacoEditor(fileName, '', this.wos);
+          } else {
+            openMonacoEditor(fileName, result || '', this.wos);
+          }
+        } catch (error) {
+          // File doesn't exist or other error - open with empty content
+          openMonacoEditor(fileName, '', this.wos);
+        }
+      } else {
+        this.printLine('WASM not initialized', 'error');
+      }
+      return;
+    }
+
     // Execute via WASM if available
     if (this.wos) {
       try {
@@ -1626,6 +1785,10 @@ async function initApp() {
     const version = wos_version();
     versionElement.textContent = version;
     tracer.info('INIT', `WOS version: ${version}`);
+
+    // Initialize Monaco editor asynchronously in the background
+    tracer.debug('MONACO', 'Starting Monaco editor initialization');
+    initMonacoEditor();
 
     // No startup banner - user requested removal
     tracer.info('INIT', 'Application initialization completed successfully');

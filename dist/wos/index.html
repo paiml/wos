@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WOS - WebAssembly Operating System</title>
     <link rel="stylesheet" href="style.css">
+
+    <!-- Monaco Editor CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/editor/editor.main.css">
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+    <script>
+      require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs' } });
+    </script>
   </head>
   <body>
     <div class="container">
@@ -248,6 +255,9 @@
 
     <!-- Hidden file input for upload -->
     <input type="file" id="file-upload-input" style="display: none;" multiple />
+
+    <!-- Monaco Editor Container -->
+    <div id="monaco-editor-container" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; background: #1e1e1e;" role="application" aria-label="Text Editor"></div>
 
     <!-- Vim Editor Modal -->
     <div id="vim-modal" class="vim-modal hidden">

@@ -859,3 +859,25 @@ footer a:hover {
   color: var(--text-secondary);
   font-size: 11px;
 }
+
+
+/* Monaco Editor Container */
+#monaco-editor-container {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* High-contrast theme support */
+@media (prefers-contrast: high) {
+  #monaco-editor-container {
+    /* Monaco will auto-detect high-contrast preference */
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  #monaco-editor-container * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
