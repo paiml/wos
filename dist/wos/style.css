@@ -661,10 +661,14 @@ footer a:hover {
   background: var(--bg-secondary);
 }
 
+.system-monitor-panel .panel-content {
+  padding: 4px;
+}
+
 .system-monitor-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
+  gap: 4px;
   padding: 0;
   /* Deterministic constraint: Grid must not exceed parent panel-content */
   max-height: 100%;
@@ -675,7 +679,7 @@ footer a:hover {
   background: var(--bg-terminal);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 6px;
+  padding: 3px;
   transition: all 0.3s ease;
   /* Deterministic sizing: Reduce size to fit within panel constraints */
   min-height: 0;
@@ -691,17 +695,17 @@ footer a:hover {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-secondary);
-  margin-bottom: 2px;
+  margin-bottom: 1px;
   font-weight: 600;
 }
 
 .monitor-value {
   font-family: var(--font-mono);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--accent);
   line-height: 1;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .monitor-unit {
