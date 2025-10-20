@@ -903,6 +903,370 @@ phases:
         complexity_target: 8
         coverage_target: 85
 
+  # PHASE 10: Enhanced Integrated Learning Environment (ILE) - NEW
+  # Based on docs/specifications/wos-enhanced-features-spec.md v2.0
+  - id: phase-10
+    name: "Enhanced Integrated Learning Environment"
+    goal: "Transform browser interface into research-backed pedagogical workspace"
+    priority: high
+    duration: 4_weeks
+    cycles: 20
+    spec_reference: "docs/specifications/wos-enhanced-features-spec.md"
+    pedagogical_foundation: "Constructivist learning theory + HCI best practices"
+    tickets:
+      - id: WOS-300
+        title: "Monaco editor integration for accessibility"
+        priority: high
+        cycle: 1-2
+        time_estimate: 8_hours
+        spec_ref: "Section 4.6.1 (Default Editor: Monaco)"
+        requirements:
+          - "Integrate Monaco editor (VS Code engine) as default"
+          - "Syntax highlighting: Rust, Bash, Markdown, YAML"
+          - "IntelliSense context-aware autocomplete"
+          - "Multi-cursor editing (Ctrl+D / Cmd+D)"
+          - "Minimap for large files"
+          - "Command palette (Ctrl+Shift+P)"
+          - "WCAG 2.1 AA accessibility compliance"
+        tests:
+          - "test_monaco_editor_loads"
+          - "test_monaco_syntax_highlighting"
+          - "test_monaco_intellisense"
+          - "test_monaco_multicursor"
+          - "test_monaco_accessibility"
+          - "e2e_monaco_edit_file"
+        acceptance:
+          - "Monaco editor replaces basic vim as default"
+          - "Full keyboard navigation works"
+          - "Screen reader compatible"
+          - "E2E tests passing"
+        complexity_target: 15
+        coverage_target: 85
+
+      - id: WOS-301
+        title: "Visual System Monitor panel (Mieruka)"
+        priority: critical
+        cycle: 3-5
+        time_estimate: 12_hours
+        spec_ref: "Section 4.3 (Visual System Monitor)"
+        toyota_principle: "Visual Control (Mieruka) - making the invisible visible"
+        requirements:
+          - "Live process table (100ms updates)"
+          - "Memory view with graphical bars"
+          - "File system tree view (collapsible)"
+          - "Click-to-inspect interactions"
+          - "Color-coded state visualization"
+          - "Hover tooltips for details"
+        tests:
+          - "test_process_table_rendering"
+          - "test_process_table_live_updates"
+          - "test_memory_view_bars"
+          - "test_filesystem_tree"
+          - "test_click_to_inspect"
+          - "e2e_visual_monitor_interactions"
+        acceptance:
+          - "All 3 views (process, memory, filesystem) functional"
+          - "Real-time updates at 100ms intervals"
+          - "Interactive features work"
+          - "E2E tests passing"
+        complexity_target: 20
+        coverage_target: 85
+
+      - id: WOS-302
+        title: "Time-travel debugger UI controls"
+        priority: high
+        cycle: 6-8
+        time_estimate: 12_hours
+        spec_ref: "Section 4.4 (Time-Travel Debugger Controls)"
+        cognitive_science_basis: "Omniscient debugging for observation-driven learning"
+        requirements:
+          - "Scrubbable timeline slider"
+          - "Event log with filtering"
+          - "State inspector panel"
+          - "Keyboard navigation (arrow keys)"
+          - "Playback controls (play/pause/step)"
+          - "Diff highlighting between states"
+        tests:
+          - "test_timeline_slider"
+          - "test_event_log_filtering"
+          - "test_state_inspector"
+          - "test_keyboard_navigation"
+          - "test_playback_controls"
+          - "e2e_timetravel_workflow"
+        acceptance:
+          - "Timeline scrubbing works smoothly"
+          - "Event log filters correctly"
+          - "State inspector shows full process state"
+          - "E2E tests passing"
+        complexity_target: 20
+        coverage_target: 85
+
+      - id: WOS-303
+        title: "Learning Objectives & Test Status panel"
+        priority: high
+        cycle: 9-11
+        time_estimate: 12_hours
+        spec_ref: "Section 4.5 (Learning Objectives & Test Status)"
+        gamification_research: "Mastery-based progression without extrinsic rewards"
+        requirements:
+          - "Phase tracker with progress bars"
+          - "Task list per phase"
+          - "Integrated test runner"
+          - "Progressive hint system"
+          - "Lock/unlock mechanics"
+          - "Time estimates based on velocity"
+        tests:
+          - "test_phase_tracker_rendering"
+          - "test_task_list_expand_collapse"
+          - "test_integrated_test_runner"
+          - "test_progressive_hints"
+          - "test_lock_unlock_phases"
+          - "e2e_learning_objectives_workflow"
+        acceptance:
+          - "All 3 components (tracker, tasks, runner) functional"
+          - "Tests run on-demand from UI"
+          - "Hints reveal progressively"
+          - "E2E tests passing"
+        complexity_target: 20
+        coverage_target: 85
+
+      - id: WOS-304
+        title: "Interactive tutorial (first-run experience)"
+        priority: high
+        cycle: 12-13
+        time_estimate: 8_hours
+        spec_ref: "Section 4.7.1 (Interactive Tutorial)"
+        ux_research: "Interactive onboarding reduces abandonment (Nielsen, Harrison)"
+        requirements:
+          - "5-minute guided walkthrough"
+          - "6-step tutorial (welcome, terminal, monitor, debugger, tests, completion)"
+          - "Highlight UI elements with glowing borders"
+          - "Skip tutorial option"
+          - "Retake tutorial from help menu"
+          - "localStorage persistence of tutorial state"
+        tests:
+          - "test_tutorial_step_navigation"
+          - "test_tutorial_highlights"
+          - "test_tutorial_skip"
+          - "test_tutorial_retake"
+          - "e2e_tutorial_complete_workflow"
+        acceptance:
+          - "All 6 steps functional"
+          - "Tutorial state persists"
+          - "Skip and retake work"
+          - "E2E tests passing"
+        complexity_target: 15
+        coverage_target: 85
+
+      - id: WOS-305
+        title: "Contextual help system"
+        priority: medium
+        cycle: 14-15
+        time_estimate: 6_hours
+        spec_ref: "Section 4.7.2 (Contextual Help System)"
+        requirements:
+          - "help <command> detailed documentation"
+          - "Tooltip hover hints (ARIA compliant)"
+          - "Video demonstrations (15-30 second screencasts)"
+          - "Full-text search across documentation"
+          - "Side panel for help content"
+        tests:
+          - "test_help_command_documentation"
+          - "test_tooltip_hints"
+          - "test_help_search"
+          - "e2e_help_system_usage"
+        acceptance:
+          - "Help command shows detailed docs"
+          - "Tooltips appear on hover"
+          - "Search works across all docs"
+          - "E2E tests passing"
+        complexity_target: 12
+        coverage_target: 85
+
+      - id: WOS-306
+        title: "Progressive disclosure UI layout"
+        priority: high
+        cycle: 16
+        time_estimate: 4_hours
+        spec_ref: "Section 4.1 (Progressive Disclosure Design Principle)"
+        cognitive_load_theory: "Graduated reveal prevents information overload"
+        requirements:
+          - "Default state: Terminal + Learning Objectives expanded"
+          - "Visual Monitor + Time-Travel panels collapsed initially"
+          - "Tab-based navigation for collapsed panels"
+          - "User preference persistence"
+          - "Smooth animations (respects prefers-reduced-motion)"
+        tests:
+          - "test_initial_layout_defaults"
+          - "test_panel_collapse_expand"
+          - "test_layout_preference_persistence"
+          - "test_reduced_motion_support"
+          - "e2e_progressive_disclosure"
+        acceptance:
+          - "Initial layout reduces cognitive load"
+          - "All panels accessible via tabs"
+          - "Preferences persist across sessions"
+          - "E2E tests passing"
+        complexity_target: 10
+        coverage_target: 85
+
+      - id: WOS-307
+        title: "Responsive design (multi-device support)"
+        priority: high
+        cycle: 17-18
+        time_estimate: 8_hours
+        spec_ref: "Section 4.8 (Responsive Design and Accessibility)"
+        requirements:
+          - "Desktop (≥1280px): Full 4-panel layout"
+          - "Laptop (1024-1279px): 3-panel layout"
+          - "Tablet (768-1023px): 2-panel swipeable"
+          - "Mobile (≤767px): Single panel with tab navigation"
+          - "CSS Grid + Flexbox responsive"
+          - "Touch-friendly hit targets (44×44px minimum)"
+        tests:
+          - "test_desktop_layout"
+          - "test_laptop_layout"
+          - "test_tablet_layout"
+          - "test_mobile_layout"
+          - "test_touch_targets"
+          - "e2e_responsive_all_sizes"
+        acceptance:
+          - "All 4 layouts functional"
+          - "Touch targets meet WCAG guidelines"
+          - "E2E tests pass on all sizes"
+        complexity_target: 18
+        coverage_target: 85
+
+      - id: WOS-308
+        title: "WCAG 2.1 Level AA accessibility compliance"
+        priority: critical
+        cycle: 19
+        time_estimate: 6_hours
+        spec_ref: "Section 4.8 (Accessibility Compliance)"
+        requirements:
+          - "Contrast ratios: 4.5:1 text, 3:1 UI components"
+          - "Keyboard-only navigation (no mouse required)"
+          - "ARIA labels for all interactive elements"
+          - "Screen reader testing (NVDA, JAWS)"
+          - "Focus indicators visible"
+          - "Skip links for navigation"
+        tests:
+          - "test_contrast_ratios"
+          - "test_keyboard_only_navigation"
+          - "test_aria_labels"
+          - "test_focus_indicators"
+          - "axe_automated_accessibility_scan"
+        acceptance:
+          - "axe DevTools scan: 0 violations"
+          - "Keyboard navigation complete"
+          - "Screen reader compatible"
+          - "WCAG 2.1 AA certified"
+        complexity_target: 10
+        coverage_target: 95
+
+      - id: WOS-309
+        title: "E2E tests for enhanced ILE features"
+        priority: critical
+        cycle: 20
+        time_estimate: 8_hours
+        spec_ref: "Section 2.2 (Seven-Layer Testing Pyramid)"
+        testing_methodology: "100% MC/DC coverage for ILE workflows"
+        requirements:
+          - "E2E test: Monaco editor workflow"
+          - "E2E test: Visual monitor interactions"
+          - "E2E test: Time-travel debugging"
+          - "E2E test: Learning objectives panel"
+          - "E2E test: Tutorial completion"
+          - "E2E test: Help system usage"
+          - "E2E test: Responsive layout transitions"
+          - "E2E test: Accessibility keyboard navigation"
+        tests:
+          - "e2e/tests/20-monaco-editor.spec.ts"
+          - "e2e/tests/21-visual-monitor.spec.ts"
+          - "e2e/tests/22-timetravel-debugger.spec.ts"
+          - "e2e/tests/23-learning-objectives.spec.ts"
+          - "e2e/tests/24-tutorial.spec.ts"
+          - "e2e/tests/25-help-system.spec.ts"
+          - "e2e/tests/26-responsive-layout.spec.ts"
+          - "e2e/tests/27-accessibility.spec.ts"
+        acceptance:
+          - "All ILE features have E2E coverage"
+          - "100% MC/DC coverage for critical paths"
+          - "Cross-browser tests passing (5 browsers)"
+          - "All E2E tests passing"
+        complexity_target: 15
+        coverage_target: 100
+        mutation_target: 95
+
+    quality_requirements:
+      unit_test_coverage: "≥85%"
+      e2e_test_coverage: "100% MC/DC"
+      wcag_compliance: "Level AA"
+      accessibility_audit: "axe DevTools: 0 violations"
+      performance: "<100ms interaction response"
+      complexity_max: 20
+
+    success_metrics:
+      primary:
+        - "Monaco editor fully functional with IntelliSense"
+        - "Visual System Monitor provides real-time observability"
+        - "Time-travel debugging enables retrospective analysis"
+        - "Learning Objectives panel tracks progress"
+        - "Interactive tutorial completes in 5 minutes"
+        - "WCAG 2.1 AA accessibility certified"
+      secondary:
+        - "Progressive disclosure reduces cognitive load"
+        - "Responsive design works across all devices"
+        - "Contextual help system aids discovery"
+      stretch:
+        - "Video demonstrations for all features"
+        - "Community-contributed tutorial content"
+        - "Multi-language i18n support"
+
+    deliverables:
+      - "dist/wos/monaco-editor.js - Monaco integration"
+      - "dist/wos/visual-monitor.js - System Monitor panel"
+      - "dist/wos/timetravel-ui.js - Debugger controls"
+      - "dist/wos/learning-panel.js - Objectives & Tests"
+      - "dist/wos/tutorial.js - Interactive tutorial"
+      - "dist/wos/help-system.js - Contextual help"
+      - "dist/wos/responsive.css - Multi-device layouts"
+      - "e2e/tests/20-27-*.spec.ts - E2E test suites"
+      - "Unit tests: ≥60 tests across all components"
+      - "E2E tests: ≥40 tests for ILE workflows"
+
+    integration_points:
+      - "Monaco Editor API - syntax highlighting and IntelliSense"
+      - "KernelHistory (kernel/src/trace.rs) - time-travel data"
+      - "TDG metrics (wos/src/quality.rs) - learning objectives data"
+      - "VirtualFileSystem - file tree visualization"
+      - "Process table (kernel/src/state.rs) - visual monitor data"
+
+    risks_and_mitigation:
+      risk_1:
+        description: "Monaco editor bundle size (>2MB uncompressed)"
+        impact: "High"
+        mitigation: "Lazy load Monaco only when editing; use lightweight viewer for readonly"
+      risk_2:
+        description: "Real-time updates (100ms) may cause performance issues"
+        impact: "Medium"
+        mitigation: "Use requestAnimationFrame throttling; virtual scrolling for large lists"
+      risk_3:
+        description: "WCAG compliance requires significant testing"
+        impact: "Medium"
+        mitigation: "Use automated axe scans early; manual testing with real screen readers"
+      risk_4:
+        description: "Responsive design complexity across 4 breakpoints"
+        impact: "Medium"
+        mitigation: "Mobile-first CSS; extensive visual regression testing"
+
+    pedagogical_impact:
+      cognitive_load_reduction: "Progressive disclosure + visual control"
+      constructivist_learning: "Hands-on experimentation with immediate feedback"
+      metacognitive_awareness: "Learning objectives panel + real-time quality metrics"
+      accessibility: "WCAG 2.1 AA ensures inclusive learning environment"
+      time_savings: "Interactive tutorial reduces onboarding from hours to 5 minutes"
+
 # Future phases (post-MVP)
 future_phases:
   - id: phase-7

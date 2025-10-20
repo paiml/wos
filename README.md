@@ -386,7 +386,7 @@ MIT License - see LICENSE file for details
 - **Development History**: [PROGRESS.md](PROGRESS.md) - Complete development timeline and metrics
 - **Architecture Decisions**: [CLAUDE.md](CLAUDE.md) - Design rationale and technical choices
 
-### Architecture & Design Specifications (132KB)
+### Architecture & Design Specifications (229KB)
 - **WOS Specification v1.0** (44KB): [Project Specification](docs/specifications/wos-spec-v1.md)
   - Complete project vision and goals
   - Implementation phases and development workflow
@@ -404,6 +404,16 @@ MIT License - see LICENSE file for details
   - Toyota Production System principles for OS development
   - Technical Debt Grading (TDG) integration
   - Pre-implementation enhancement recommendations
+
+- **Enhanced Features v2.0** (97KB): [Enhanced UI/UX Specification](docs/specifications/wos-enhanced-features-spec.md)
+  - Research-backed Integrated Learning Environment (ILE) design
+  - Monaco editor integration for accessibility
+  - Visual System Monitor (Toyota Mieruka principle)
+  - Time-travel debugging UI controls
+  - Progressive disclosure for cognitive load reduction
+  - WCAG 2.1 Level AA accessibility compliance
+  - Constructivist learning theory integration
+  - 4-week implementation roadmap (Phase 10)
 
 ### Testing Strategy Documentation (186KB)
 - **Main Guide** (88KB): [Testing Strategy & Architecture](docs/specifications/testing-implementation-strategy-architecture.md)
