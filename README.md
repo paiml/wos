@@ -2,7 +2,7 @@
 
 [![TDG Grade](https://img.shields.io/badge/TDG%20Grade-A%2B%20(99.3%2F100)-brightgreen)](PROGRESS.md)
 [![Test Coverage](https://img.shields.io/badge/Coverage-85%25%2B-brightgreen)](PROGRESS.md)
-[![Tests](https://img.shields.io/badge/Tests-452%20unit%20%7C%20147%20E2E-brightgreen)](PROGRESS.md)
+[![Tests](https://img.shields.io/badge/Tests-546%20unit%20%7C%20211%20E2E-brightgreen)](PROGRESS.md)
 [![Quality Gates](https://img.shields.io/badge/Quality%20Gates-6%2F6%20passing-brightgreen)](Makefile)
 
 An educational microkernel operating system written in pure Rust that compiles to WebAssembly. WOS demonstrates OS concepts (processes, memory management, file systems, IPC) in a safe, testable environment that runs directly in your browser.
@@ -171,18 +171,19 @@ WOS follows extreme Test-Driven Development (TDD):
 ### Test Coverage
 
 - **94.11%** Rust backend coverage
-- **22,320** total tests
+- **23,376** total tests (546 unit + 22,000 property + 211 E2E scenarios + 107 canary + 411 mutation + 101 other)
 - **98.5%** mutation score (411 mutants)
 
 ### Test Types
 
-1. **Unit Tests**: 277 Rust + 43 Frontend = 320 tests
+1. **Unit Tests**: 546 Rust + Frontend tests
 2. **Property Tests**: 42 Rust + 22 Frontend = 64 properties generating 22,000+ test cases
 3. **Integration Tests**: Syscall pipelines, fork/wait workflows
-4. **E2E Tests**: 29 cross-browser tests (Chromium, Firefox, WebKit)
-5. **Fuzz Tests**: 4 targets for crash resistance
-6. **Mutation Tests**: 411 mutants with 98.5% detection rate
-7. **Benchmarks**: 26 Rust + 39 Frontend = 65 performance benchmarks
+4. **E2E Tests**: 211 test scenarios across 5 browsers (Chromium, Firefox, WebKit, Mobile Chrome, Mobile Safari) = 1,055 total tests
+5. **Canary Tests**: 107 SQLite-inspired critical workflow tests
+6. **Fuzz Tests**: 4 targets for crash resistance
+7. **Mutation Tests**: 411 mutants with 98.5% detection rate
+8. **Benchmarks**: 26 Rust + 39 Frontend = 65 performance benchmarks
 
 ### Quality Metrics (TDG)
 
