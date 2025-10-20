@@ -1379,58 +1379,29 @@ class Terminal {
   }
 
   setTheme(theme) {
-    if (!this.configManager) {
-      this.printLine('Config manager not available', 'error');
-      return;
+    try {
+      if (!this.configManager) {
+        this.printLine('Config manager not available', 'error');
+        return;
+      }
+
+      // Update theme in config and save to localStorage
+      const config = this.configManager.getConfig();
+      if (!config || !config.ui) {
+        this.printLine('Configuration error', 'error');
+        return;
+      }
+
+      config.ui.theme = theme;
+      localStorage.setItem('wos-config', JSON.stringify(config));
+
+      // Apply the theme to the DOM
+      this.configManager.applyConfig();
+
+      this.printLine(`Theme set to: ${theme}`, 'success');
+    } catch (error) {
+      this.printLine(`Error setting theme: ${error.message}`, 'error');
     }
-
-    const config = this.configManager.getConfig();
-    if (!config || !config.ui) {
-      this.printLine('Configuration error', 'error');
-      return;
-    }
-
-    config.ui.theme = theme;
-
-    const yamlConfig = `version: "${config.version}"
-environment: ${config.environment}
-ui:
-  mode: ${config.ui.mode}
-  theme: ${theme}
-  panels:
-    process_list:
-      visible: ${config.ui.panels.process_list.visible}
-      collapsed: ${config.ui.panels.process_list.collapsed}
-      position: ${config.ui.panels.process_list.position}
-    memory_map:
-      visible: ${config.ui.panels.memory_map.visible}
-      collapsed: ${config.ui.panels.memory_map.collapsed}
-      position: ${config.ui.panels.memory_map.position}
-    syscall_trace:
-      visible: ${config.ui.panels.syscall_trace.visible}
-    filesystem:
-      visible: ${config.ui.panels.filesystem.visible}
-      collapsed: ${config.ui.panels.filesystem.collapsed}
-      position: ${config.ui.panels.filesystem.position}
-    system_monitor:
-      visible: ${config.ui.panels.system_monitor.visible}
-      collapsed: ${config.ui.panels.system_monitor.collapsed}
-      position: ${config.ui.panels.system_monitor.position}
-  terminal:
-    history_size: ${config.ui.terminal?.history_size || 1000}
-    font_size: ${config.ui.terminal?.font_size || 14}
-    show_line_numbers: ${config.ui.terminal?.show_line_numbers || false}
-  progressive_disclosure:
-    auto_collapse_timeout_sec: ${config.ui.progressive_disclosure?.auto_collapse_timeout_sec || 60}
-    show_tooltips: ${config.ui.progressive_disclosure?.show_tooltips || false}
-  accessibility:
-    screen_reader: ${config.ui.accessibility?.screen_reader || false}
-    high_contrast: ${config.ui.accessibility?.high_contrast || false}
-    keyboard_navigation: ${config.ui.accessibility?.keyboard_navigation || true}
-`;
-
-    this.configManager.saveConfig(yamlConfig);
-    this.printLine(`Theme set to: ${theme}`, 'success');
   }
 
   updateSystemInfo() {
