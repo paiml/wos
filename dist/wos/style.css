@@ -206,14 +206,15 @@ main {
   color: var(--bg-terminal);
 }
 
-/* File Manager */
+/* File Manager - Mathematical Layout */
 .file-manager {
   display: flex;
   flex-direction: column;
   gap: 10px;
   height: 100%;
-  overflow-y: auto;
   min-height: 0;
+  /* Remove overflow-y: auto to prevent scrolling */
+  /* Panels will size themselves mathematically */
 }
 
 .file-panel {
@@ -221,6 +222,11 @@ main {
   border-radius: 8px;
   border: 1px solid var(--border);
   overflow: hidden;
+  /* Mathematical sizing: Each panel gets equal flex space */
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .file-panel-header {
@@ -230,6 +236,8 @@ main {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--border);
+  /* Fixed height - won't shrink */
+  flex-shrink: 0;
 }
 
 .file-panel-header h3 {
@@ -268,11 +276,20 @@ main {
   display: block;
 }
 
+/* Collapse button icon rotation animation */
+.btn-collapse svg {
+  transition: transform 0.3s ease;
+  transform: rotate(0deg);
+}
+
+.collapsed .btn-collapse svg {
+  transform: rotate(180deg);
+}
+
 /* File Browser */
 .file-browser {
   padding: 15px;
-  max-height: 300px;
-  overflow-y: auto;
+  /* No max-height - parent panel-content controls scrolling */
   font-family: var(--font-mono);
   font-size: 13px;
 }
@@ -647,16 +664,21 @@ footer a:hover {
 .system-monitor-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 6px;
   padding: 0;
+  /* Deterministic constraint: Grid must not exceed parent panel-content */
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .monitor-card {
   background: var(--bg-terminal);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 10px;
+  padding: 6px;
   transition: all 0.3s ease;
+  /* Deterministic sizing: Reduce size to fit within panel constraints */
+  min-height: 0;
 }
 
 .monitor-card:hover {
@@ -665,25 +687,25 @@ footer a:hover {
 }
 
 .monitor-label {
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-secondary);
-  margin-bottom: 5px;
+  margin-bottom: 2px;
   font-weight: 600;
 }
 
 .monitor-value {
   font-family: var(--font-mono);
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--accent);
-  line-height: 1.2;
-  margin-bottom: 5px;
+  line-height: 1;
+  margin-bottom: 2px;
 }
 
 .monitor-unit {
-  font-size: 16px;
+  font-size: 14px;
   color: var(--text-secondary);
   margin-left: 4px;
   font-weight: 400;
@@ -691,11 +713,11 @@ footer a:hover {
 
 .monitor-bar {
   width: 100%;
-  height: 6px;
+  height: 4px;
   background: var(--bg-primary);
-  border-radius: 3px;
+  border-radius: 2px;
   overflow: hidden;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .monitor-bar-fill {
@@ -729,9 +751,14 @@ footer a:hover {
   }
 }
 
-/* Panel Management */
+/* Panel Management - Mathematical Layout */
 .panel-content {
   padding: 10px;
+  /* Flex to fill available space after header */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Content scrolls within mathematically calculated space */
 }
 
 .file-panel.collapsed {
