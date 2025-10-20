@@ -127,10 +127,17 @@ For each ticket in `roadmap.yaml`:
 3. **Implement (GREEN)** - minimal code to pass tests
 4. **REFACTOR** - optimize, document, clean up
 5. **Verify quality gates** - format, clippy, tests, coverage
-6. **Commit** with format: `[WOS-XXX] Brief description`
-7. **Push to main**: `git push origin main`
+6. **Update documentation** - REQUIRED before commit:
+   - Update `roadmap.yaml` with ticket status and completion date
+   - OR update `CHANGELOG.md` with feature/fix details
+   - OR update `docs/ui-roadmap.yaml` for UI changes
+   - Document code line references for traceability
+7. **Commit** with format: `[WOS-XXX] Brief description`
+8. **Push to main**: `git push origin main`
 
 **IMPORTANT**: Always walk off main - no branching per project guidelines.
+
+**DOCUMENTATION ENFORCEMENT**: Pre-commit hooks will remind you to update roadmap/changelog if you modify source code without updating documentation. This prevents undocumented changes and ensures traceability.
 
 ### Quality Requirements
 
