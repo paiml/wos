@@ -336,6 +336,70 @@ fn detect_operator(
     }
 }
 
+/// Handle escape sequence in command string
+/// Returns true if escape was handled (and chars should continue)
+fn handle_escape_sequence(
+    ch: char,
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    current: &mut String,
+    in_single_quote: bool,
+) -> bool {
+    if ch == '\\' && !in_single_quote {
+        current.push(ch);
+        if let Some(next_ch) = chars.next() {
+            current.push(next_ch);
+        }
+        return true;
+    }
+    false
+}
+
+/// Complete current command and add to results
+fn complete_command(
+    current: &mut String,
+    result: &mut Vec<(String, Option<Operator>)>,
+    operator: Option<Operator>,
+) {
+    let cmd = current.trim().to_string();
+    if !cmd.is_empty() || operator.is_some() {
+        result.push((cmd, operator));
+    }
+    current.clear();
+}
+
+/// Process a character in operator splitting
+/// Returns true if character was handled (quote or escape)
+fn process_split_char(
+    ch: char,
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    current: &mut String,
+    in_single: &mut bool,
+    in_double: &mut bool,
+    result: &mut Vec<(String, Option<Operator>)>,
+) -> bool {
+    // Check for quote state change
+    let (new_single, new_double) = update_quote_state(ch, *in_single, *in_double);
+    if new_single != *in_single || new_double != *in_double {
+        *in_single = new_single;
+        *in_double = new_double;
+        current.push(ch);
+        return true;
+    }
+
+    // Check for escape sequence
+    if handle_escape_sequence(ch, chars, current, *in_single) {
+        return true;
+    }
+
+    // Check for operator
+    if let Some(op) = detect_operator(chars, ch, *in_single, *in_double) {
+        complete_command(current, result, Some(op));
+        return true;
+    }
+
+    false
+}
+
 /// Split command line by operators, respecting quotes
 ///
 /// Returns vector of (command_string, next_operator)
@@ -347,37 +411,22 @@ fn split_by_operators(input: &str) -> Vec<(String, Option<Operator>)> {
     let mut in_double_quote = false;
 
     while let Some(ch) = chars.next() {
-        // Update quote state
-        let (new_single, new_double) = update_quote_state(ch, in_single_quote, in_double_quote);
-        if new_single != in_single_quote || new_double != in_double_quote {
-            in_single_quote = new_single;
-            in_double_quote = new_double;
-            current.push(ch);
-            continue;
-        }
+        let handled = process_split_char(
+            ch,
+            &mut chars,
+            &mut current,
+            &mut in_single_quote,
+            &mut in_double_quote,
+            &mut result,
+        );
 
-        // Handle escape sequences (not in single quotes)
-        if ch == '\\' && !in_single_quote {
-            current.push(ch);
-            if let Some(next_ch) = chars.next() {
-                current.push(next_ch);
-            }
-            continue;
-        }
-
-        // Detect and handle operators
-        if let Some(op) = detect_operator(&mut chars, ch, in_single_quote, in_double_quote) {
-            result.push((current.trim().to_string(), Some(op)));
-            current.clear();
-        } else {
+        if !handled {
             current.push(ch);
         }
     }
 
     // Add final command (no operator after it)
-    if !current.trim().is_empty() {
-        result.push((current.trim().to_string(), None));
-    }
+    complete_command(&mut current, &mut result, None);
 
     result
 }
