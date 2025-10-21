@@ -2031,6 +2031,588 @@ class Terminal {
   }
 }
 
+/**
+ * WOS-302: Time-Travel Debugger
+ *
+ * Omniscient debugger for WOS kernel with time-travel capabilities.
+ * Integrates with KernelHistory (kernel/src/trace.rs) to provide:
+ * - Scrubbable timeline for state navigation
+ * - Event log with filtering
+ * - State inspector with diff highlighting
+ * - Playback controls
+ * - Keyboard navigation
+ */
+class TimeTravelDebugger {
+  constructor(wos) {
+    this.wos = wos;
+    this.currentPosition = 0;
+    this.maxPosition = 0;
+    this.traces = [];
+    this.isPlaying = false;
+    this.playbackInterval = null;
+    this.filters = {
+      pid: '',
+      syscallType: '',
+      showSuccess: true,
+      showFailure: true
+    };
+
+    tracer.debug('DEBUGGER', 'TimeTravelDebugger constructor called');
+    this.initializeElements();
+    this.attachEventListeners();
+    this.loadHistory();
+
+    // Update timeline every second
+    setInterval(() => this.loadHistory(), 1000);
+
+    tracer.debug('DEBUGGER', 'TimeTravelDebugger initialized');
+  }
+
+  initializeElements() {
+    this.elements = {
+      slider: document.getElementById('timeline-slider'),
+      positionIndicator: document.getElementById('timeline-position-indicator'),
+      traceCount: document.getElementById('trace-count'),
+      ticks: document.getElementById('timeline-ticks'),
+      tooltip: document.getElementById('timeline-tooltip'),
+
+      playBtn: document.getElementById('playback-play'),
+      pauseBtn: document.getElementById('playback-pause'),
+      stepBackBtn: document.getElementById('playback-step-back'),
+      stepForwardBtn: document.getElementById('playback-step-forward'),
+
+      eventLog: document.getElementById('event-log'),
+      eventLogBody: document.getElementById('event-log-body'),
+      eventLogCanvas: document.getElementById('event-log-canvas'),
+
+      filterPid: document.getElementById('filter-pid'),
+      filterSyscallType: document.getElementById('filter-syscall-type'),
+      filterSuccess: document.getElementById('filter-success'),
+      filterFailure: document.getElementById('filter-failure'),
+
+      stateInspector: document.getElementById('state-inspector'),
+      stateProcesses: document.getElementById('state-inspector-processes'),
+      stateMemory: document.getElementById('state-inspector-memory'),
+      stateFilesystem: document.getElementById('state-inspector-filesystem'),
+
+      eventDetailsPanel: document.getElementById('event-details-panel'),
+      eventDetailsContent: document.getElementById('event-details-content'),
+      eventDetailsClose: document.getElementById('event-details-close'),
+
+      exportBtn: document.getElementById('export-traces-json'),
+      loadingIndicator: document.getElementById('state-loading-indicator')
+    };
+  }
+
+  attachEventListeners() {
+    // Timeline slider
+    if (this.elements.slider) {
+      this.elements.slider.addEventListener('input', () => this.onSliderChange());
+      this.elements.slider.addEventListener('mousemove', (e) => this.onSliderHover(e));
+      this.elements.slider.addEventListener('mouseleave', () => this.hideTooltip());
+
+      // Keyboard navigation
+      this.elements.slider.addEventListener('keydown', (e) => this.onKeyDown(e));
+      this.elements.slider.focus();
+    }
+
+    // Playback controls
+    if (this.elements.playBtn) {
+      this.elements.playBtn.addEventListener('click', () => this.play());
+    }
+    if (this.elements.pauseBtn) {
+      this.elements.pauseBtn.addEventListener('click', () => this.pause());
+    }
+    if (this.elements.stepBackBtn) {
+      this.elements.stepBackBtn.addEventListener('click', () => this.stepBack());
+    }
+    if (this.elements.stepForwardBtn) {
+      this.elements.stepForwardBtn.addEventListener('click', () => this.stepForward());
+    }
+
+    // Filters
+    if (this.elements.filterPid) {
+      this.elements.filterPid.addEventListener('input', () => {
+        this.filters.pid = this.elements.filterPid.value;
+        this.updateEventLog();
+      });
+    }
+    if (this.elements.filterSyscallType) {
+      this.elements.filterSyscallType.addEventListener('change', () => {
+        this.filters.syscallType = this.elements.filterSyscallType.value;
+        this.updateEventLog();
+      });
+    }
+    if (this.elements.filterSuccess) {
+      this.elements.filterSuccess.addEventListener('change', () => {
+        this.filters.showSuccess = this.elements.filterSuccess.checked;
+        this.updateEventLog();
+      });
+    }
+    if (this.elements.filterFailure) {
+      this.elements.filterFailure.addEventListener('change', () => {
+        this.filters.showFailure = this.elements.filterFailure.checked;
+        this.updateEventLog();
+      });
+    }
+
+    // Event details close button
+    if (this.elements.eventDetailsClose) {
+      this.elements.eventDetailsClose.addEventListener('click', () => this.closeEventDetails());
+    }
+
+    // Export button
+    if (this.elements.exportBtn) {
+      this.elements.exportBtn.addEventListener('click', () => this.exportTracesJSON());
+    }
+  }
+
+  loadHistory() {
+    if (!this.wos) return;
+
+    try {
+      // Get kernel history from WASM backend
+      const historyJson = this.wos.getKernelHistory ? this.wos.getKernelHistory() : null;
+
+      if (historyJson) {
+        this.traces = JSON.parse(historyJson);
+        this.maxPosition = this.traces.length;
+        this.currentPosition = Math.min(this.currentPosition, this.maxPosition);
+
+        this.updateTimeline();
+        this.updateEventLog();
+        this.updateStateInspector();
+        this.updateTraceCount();
+      }
+    } catch (error) {
+      tracer.error('DEBUGGER', 'Failed to load history', error);
+    }
+  }
+
+  updateTimeline() {
+    if (!this.elements.slider) return;
+
+    this.elements.slider.max = this.maxPosition;
+    this.elements.slider.value = this.currentPosition;
+
+    // Update position indicator
+    const currentTrace = this.traces[this.currentPosition];
+    const timestamp = currentTrace ? currentTrace.timestamp_us / 1000 : 0;
+    if (this.elements.positionIndicator) {
+      this.elements.positionIndicator.textContent = `${timestamp.toFixed(2)}ms`;
+    }
+
+    // Update tick marks
+    this.updateTickMarks();
+
+    // Update button states
+    this.updateButtonStates();
+  }
+
+  updateTickMarks() {
+    if (!this.elements.ticks) return;
+
+    this.elements.ticks.innerHTML = '';
+
+    // Add tick mark every 10% of timeline
+    const tickCount = Math.min(10, this.maxPosition);
+    for (let i = 0; i <= tickCount; i++) {
+      const position = Math.floor((i / tickCount) * this.maxPosition);
+      const trace = this.traces[position];
+
+      if (trace) {
+        const tick = document.createElement('div');
+        tick.className = 'tick-mark';
+        tick.style.left = `${(position / this.maxPosition) * 100}%`;
+        tick.title = `${trace.timestamp_us / 1000}ms`;
+        this.elements.ticks.appendChild(tick);
+      }
+    }
+  }
+
+  updateEventLog() {
+    if (!this.elements.eventLogBody) return;
+
+    // Filter traces up to current position
+    const visibleTraces = this.traces.slice(0, this.currentPosition + 1);
+    const filteredTraces = this.filterTraces(visibleTraces);
+
+    // Switch to canvas rendering if > 1000 events
+    if (filteredTraces.length > 1000) {
+      this.renderEventLogCanvas(filteredTraces);
+    } else {
+      this.renderEventLogTable(filteredTraces);
+    }
+  }
+
+  filterTraces(traces) {
+    return traces.filter(trace => {
+      // Filter by PID
+      if (this.filters.pid && trace.calling_pid.toString() !== this.filters.pid) {
+        return false;
+      }
+
+      // Filter by syscall type
+      if (this.filters.syscallType) {
+        const syscallName = this.getSyscallName(trace.syscall);
+        if (!syscallName.includes(this.filters.syscallType)) {
+          return false;
+        }
+      }
+
+      // Filter by success/failure
+      const isSuccess = trace.result && trace.result.Ok !== undefined;
+      if (isSuccess && !this.filters.showSuccess) {
+        return false;
+      }
+      if (!isSuccess && !this.filters.showFailure) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  renderEventLogTable(traces) {
+    if (this.elements.eventLogCanvas) {
+      this.elements.eventLogCanvas.classList.add('hidden');
+    }
+
+    this.elements.eventLogBody.innerHTML = '';
+
+    if (traces.length === 0) {
+      const row = document.createElement('tr');
+      row.className = 'no-data';
+      row.innerHTML = '<td colspan="4">No events match the current filters</td>';
+      this.elements.eventLogBody.appendChild(row);
+      return;
+    }
+
+    traces.forEach((trace, index) => {
+      const row = document.createElement('tr');
+      row.className = 'event-item';
+
+      if (index === this.currentPosition) {
+        row.classList.add('current');
+      }
+
+      const isSuccess = trace.result && trace.result.Ok !== undefined;
+      const resultIcon = isSuccess ? '✓' : '✗';
+      const resultClass = isSuccess ? 'success' : 'failure';
+
+      row.innerHTML = `
+        <td class="event-time">${(trace.timestamp_us / 1000).toFixed(2)}ms</td>
+        <td class="event-pid">${trace.calling_pid}</td>
+        <td class="event-syscall">${this.getSyscallName(trace.syscall)}</td>
+        <td class="event-result ${resultClass}">${resultIcon}</td>
+      `;
+
+      row.addEventListener('click', () => this.showEventDetails(trace));
+
+      this.elements.eventLogBody.appendChild(row);
+    });
+  }
+
+  renderEventLogCanvas(traces) {
+    // Show canvas, hide table
+    if (this.elements.eventLogCanvas) {
+      this.elements.eventLogCanvas.classList.remove('hidden');
+    }
+
+    this.elements.eventLogBody.innerHTML = '';
+
+    // Canvas rendering for performance (implementation simplified for now)
+    tracer.debug('DEBUGGER', `Using canvas rendering for ${traces.length} events`);
+  }
+
+  getSyscallName(syscall) {
+    if (typeof syscall === 'string') {
+      return syscall;
+    }
+
+    // Handle different syscall formats
+    if (syscall.Write) return 'Write';
+    if (syscall.Read) return 'Read';
+    if (syscall.Fork) return 'Fork';
+    if (syscall.Exec) return 'Exec';
+    if (syscall.Exit) return 'Exit';
+    if (syscall.Open) return 'Open';
+    if (syscall.Close) return 'Close';
+    if (syscall.GetPid) return 'GetPid';
+    if (syscall.Kill) return 'Kill';
+
+    return JSON.stringify(syscall);
+  }
+
+  updateStateInspector() {
+    if (!this.wos || !this.wos.getCurrentState) return;
+
+    try {
+      this.showLoading(true);
+
+      const stateJson = this.wos.getCurrentState();
+      const state = JSON.parse(stateJson);
+
+      this.renderProcessState(state.processes || {});
+      this.renderMemoryState(state.memory || {});
+      this.renderFilesystemState(state.filesystem || {});
+
+      this.showLoading(false);
+    } catch (error) {
+      tracer.error('DEBUGGER', 'Failed to update state inspector', error);
+      this.showLoading(false);
+    }
+  }
+
+  renderProcessState(processes) {
+    if (!this.elements.stateProcesses) return;
+
+    this.elements.stateProcesses.innerHTML = '';
+
+    const processArray = Object.entries(processes);
+    if (processArray.length === 0) {
+      this.elements.stateProcesses.innerHTML = '<p class="no-data">No processes in current state</p>';
+      return;
+    }
+
+    processArray.forEach(([pid, process]) => {
+      const item = document.createElement('div');
+      item.className = 'process-state-item';
+      item.setAttribute('aria-expanded', 'false');
+
+      const header = document.createElement('div');
+      header.className = 'state-item-header';
+      header.textContent = `Process ${pid}`;
+
+      const details = document.createElement('div');
+      details.className = 'process-details hidden';
+      details.innerHTML = `
+        <p><strong>PID:</strong> ${pid}</p>
+        <p><strong>State:</strong> ${process.state || 'Unknown'}</p>
+        <p><strong>Parent:</strong> ${process.parent_pid || '-'}</p>
+        <p><strong>Memory:</strong> ${this.formatMemorySize(process.memory || 0)}</p>
+      `;
+
+      header.addEventListener('click', () => {
+        const isExpanded = item.getAttribute('aria-expanded') === 'true';
+        item.setAttribute('aria-expanded', !isExpanded);
+        details.classList.toggle('hidden');
+      });
+
+      item.appendChild(header);
+      item.appendChild(details);
+      this.elements.stateProcesses.appendChild(item);
+    });
+  }
+
+  renderMemoryState(memory) {
+    if (!this.elements.stateMemory) return;
+
+    this.elements.stateMemory.innerHTML = `
+      <p><strong>Total:</strong> ${this.formatMemorySize(memory.total || 0)}</p>
+      <p><strong>Used:</strong> ${this.formatMemorySize(memory.used || 0)}</p>
+      <p><strong>Free:</strong> ${this.formatMemorySize(memory.free || 0)}</p>
+    `;
+  }
+
+  renderFilesystemState(filesystem) {
+    if (!this.elements.stateFilesystem) return;
+
+    this.elements.stateFilesystem.innerHTML = '';
+
+    const files = filesystem.files || [];
+    if (files.length === 0) {
+      this.elements.stateFilesystem.innerHTML = '<p class="no-data">No files in current state</p>';
+      return;
+    }
+
+    files.forEach(file => {
+      const item = document.createElement('div');
+      item.className = 'file-tree-item';
+      item.textContent = file.path || file;
+      this.elements.stateFilesystem.appendChild(item);
+    });
+  }
+
+  formatMemorySize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  showEventDetails(trace) {
+    if (!this.elements.eventDetailsPanel || !this.elements.eventDetailsContent) return;
+
+    const isSuccess = trace.result && trace.result.Ok !== undefined;
+    const resultData = isSuccess ? trace.result.Ok : trace.result.Err;
+
+    this.elements.eventDetailsContent.innerHTML = `
+      <h4>Trace #${trace.trace_id}</h4>
+      <p><strong>Timestamp:</strong> ${(trace.timestamp_us / 1000).toFixed(2)}ms</p>
+      <p><strong>PID:</strong> ${trace.calling_pid}</p>
+      <p><strong>Syscall:</strong> ${this.getSyscallName(trace.syscall)}</p>
+      <p><strong>Result:</strong> ${isSuccess ? 'Success' : 'Failure'}</p>
+      <h5>Input:</h5>
+      <pre>${JSON.stringify(trace.syscall, null, 2)}</pre>
+      <h5>Output:</h5>
+      <pre>${JSON.stringify(resultData, null, 2)}</pre>
+    `;
+
+    this.elements.eventDetailsPanel.classList.remove('hidden');
+  }
+
+  closeEventDetails() {
+    if (this.elements.eventDetailsPanel) {
+      this.elements.eventDetailsPanel.classList.add('hidden');
+    }
+  }
+
+  showLoading(show) {
+    if (this.elements.loadingIndicator) {
+      this.elements.loadingIndicator.classList.toggle('hidden', !show);
+    }
+  }
+
+  updateTraceCount() {
+    if (this.elements.traceCount) {
+      this.elements.traceCount.textContent = `${this.traces.length} events`;
+    }
+  }
+
+  updateButtonStates() {
+    if (this.elements.stepBackBtn) {
+      this.elements.stepBackBtn.disabled = this.currentPosition === 0;
+    }
+    if (this.elements.stepForwardBtn) {
+      this.elements.stepForwardBtn.disabled = this.currentPosition >= this.maxPosition - 1;
+    }
+  }
+
+  onSliderChange() {
+    this.currentPosition = parseInt(this.elements.slider.value);
+
+    // Jump to position in kernel history
+    if (this.wos && this.wos.jumpToPosition) {
+      this.wos.jumpToPosition(this.currentPosition);
+    }
+
+    this.updateTimeline();
+    this.updateEventLog();
+    this.updateStateInspector();
+  }
+
+  onSliderHover(e) {
+    if (!this.elements.tooltip || !this.elements.slider) return;
+
+    const rect = this.elements.slider.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = x / rect.width;
+    const position = Math.floor(percentage * this.maxPosition);
+    const trace = this.traces[position];
+
+    if (trace) {
+      this.elements.tooltip.textContent = `${(trace.timestamp_us / 1000).toFixed(2)}ms`;
+      this.elements.tooltip.style.left = `${x}px`;
+      this.elements.tooltip.classList.remove('hidden');
+    }
+  }
+
+  hideTooltip() {
+    if (this.elements.tooltip) {
+      this.elements.tooltip.classList.add('hidden');
+    }
+  }
+
+  onKeyDown(e) {
+    switch (e.key) {
+      case 'ArrowLeft':
+        e.preventDefault();
+        this.stepBack();
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        this.stepForward();
+        break;
+      case 'Home':
+        e.preventDefault();
+        this.jumpTo(0);
+        break;
+      case 'End':
+        e.preventDefault();
+        this.jumpTo(this.maxPosition - 1);
+        break;
+      case ' ':
+        e.preventDefault();
+        if (this.isPlaying) {
+          this.pause();
+        } else {
+          this.play();
+        }
+        break;
+    }
+  }
+
+  play() {
+    if (this.isPlaying) return;
+
+    this.isPlaying = true;
+    this.playbackInterval = setInterval(() => {
+      if (this.currentPosition < this.maxPosition - 1) {
+        this.stepForward();
+      } else {
+        this.pause();
+      }
+    }, 100); // Advance 10 events per second
+  }
+
+  pause() {
+    this.isPlaying = false;
+    if (this.playbackInterval) {
+      clearInterval(this.playbackInterval);
+      this.playbackInterval = null;
+    }
+  }
+
+  stepBack() {
+    if (this.currentPosition > 0) {
+      this.jumpTo(this.currentPosition - 1);
+    }
+  }
+
+  stepForward() {
+    if (this.currentPosition < this.maxPosition - 1) {
+      this.jumpTo(this.currentPosition + 1);
+    }
+  }
+
+  jumpTo(position) {
+    this.currentPosition = Math.max(0, Math.min(position, this.maxPosition - 1));
+    this.elements.slider.value = this.currentPosition;
+
+    if (this.wos && this.wos.jumpToPosition) {
+      this.wos.jumpToPosition(this.currentPosition);
+    }
+
+    this.updateTimeline();
+    this.updateEventLog();
+    this.updateStateInspector();
+  }
+
+  exportTracesJSON() {
+    const jsonData = JSON.stringify(this.traces, null, 2);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `wos-traces-${new Date().toISOString()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+}
+
 // Initialize application
 async function initApp() {
   tracer.info('INIT', 'Application initialization started');
@@ -2079,6 +2661,15 @@ async function initApp() {
     tracer.debug('INIT', 'Performing initial system monitor update');
     terminal.updateSystemMonitor();
     tracer.debug('INIT', 'Initial system monitor update complete');
+
+    // WOS-302: Initialize Time-Travel Debugger
+    tracer.debug('INIT', 'Creating TimeTravelDebugger');
+    const timeTravelDebugger = new TimeTravelDebugger(wos);
+    tracer.info('INIT', 'TimeTravelDebugger initialized');
+
+    // Expose to window for tests
+    window.wos = wos;
+    window.timeTravelDebugger = timeTravelDebugger;
 
     // Get and display version
     tracer.debug('WASM', 'Getting WOS version');

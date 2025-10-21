@@ -17,7 +17,7 @@ pub use config::{
 pub use quality::{BuildStatus, QualityMetrics};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
-use wos_kernel::{dispatch_syscall, KernelState, SystemCall};
+use wos_kernel::{dispatch_syscall, KernelHistory, KernelState, SystemCall};
 
 /// Get WOS version
 #[wasm_bindgen]
@@ -73,6 +73,7 @@ pub struct WosWasm {
     state: KernelState,
     variables: HashMap<String, String>,
     last_exit_code: i32,
+    history: KernelHistory,
 }
 
 impl Default for WosWasm {
@@ -86,10 +87,14 @@ impl WosWasm {
     /// Create a new WOS instance
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
+        let state = KernelState::with_init();
+        let history = KernelHistory::new(state.clone());
+
         Self {
-            state: KernelState::with_init(),
+            state,
             variables: HashMap::new(),
             last_exit_code: 0,
+            history,
         }
     }
 
@@ -1059,6 +1064,44 @@ impl WosWasm {
     pub fn export_quality_sarif(&self) -> String {
         let metrics = QualityMetrics::new();
         metrics.to_sarif()
+    }
+
+    /// WOS-302: Get kernel history as JSON for time-travel debugger
+    ///
+    /// Returns array of SystemCallTrace entries with timestamps
+    #[wasm_bindgen(js_name = getKernelHistory)]
+    pub fn get_kernel_history(&self) -> String {
+        // Export traces as JSON
+        match self.history.export_traces_json() {
+            Ok(json) => json,
+            Err(_) => String::from("[]"), // Return empty array on error
+        }
+    }
+
+    /// WOS-302: Get current kernel state as JSON for state inspector
+    ///
+    /// Returns full kernel state including processes, memory, filesystem
+    #[wasm_bindgen(js_name = getCurrentState)]
+    pub fn get_current_state(&self) -> String {
+        match serde_json::to_string(&self.state) {
+            Ok(json) => json,
+            Err(_) => String::from("{}"), // Return empty object on error
+        }
+    }
+
+    /// WOS-302: Jump to specific position in kernel history
+    ///
+    /// Restores kernel state to the specified history position
+    #[wasm_bindgen(js_name = jumpToPosition)]
+    pub fn jump_to_position(&mut self, position: usize) -> Result<(), String> {
+        // Jump to position in history
+        if !self.history.jump_to(position) {
+            return Err(String::from("Invalid position"));
+        }
+
+        // Restore state from history at new position
+        self.state = self.history.current_state().clone();
+        Ok(())
     }
 }
 

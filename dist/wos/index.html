@@ -285,6 +285,174 @@
               </div>
             </div>
           </div>
+
+          <!-- WOS-302: Time-Travel Debugger Panel -->
+          <div id="panel-time-travel-debugger" class="file-panel debugger-panel" data-panel="time_travel_debugger">
+            <div class="file-panel-header">
+              <h3>Time-Travel Debugger</h3>
+              <div class="file-controls">
+                <button id="export-traces-json" class="btn-icon" title="Export trace history as JSON">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                  </svg>
+                </button>
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M7 14l5-5 5 5z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="panel-content">
+              <!-- Timeline Slider Section -->
+              <div class="debugger-section timeline-section">
+                <div class="timeline-header">
+                  <div class="timeline-title">Timeline</div>
+                  <div id="timeline-position-indicator" class="timeline-position">0ms</div>
+                  <div id="trace-count" class="trace-count">0 events</div>
+                </div>
+                <div class="timeline-container">
+                  <input
+                    type="range"
+                    id="timeline-slider"
+                    class="timeline-slider"
+                    min="0"
+                    max="0"
+                    value="0"
+                    aria-label="Timeline position"
+                  />
+                  <div id="timeline-ticks" class="timeline-ticks"></div>
+                  <div id="timeline-tooltip" class="timeline-tooltip hidden">0ms</div>
+                </div>
+
+                <!-- Playback Controls -->
+                <div class="playback-controls">
+                  <button id="playback-step-back" class="playback-btn" title="Step backward (Left Arrow)" aria-label="Step backward">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                      <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
+                    </svg>
+                  </button>
+                  <button id="playback-pause" class="playback-btn" title="Pause playback (Space)" aria-label="Pause">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                    </svg>
+                  </button>
+                  <button id="playback-play" class="playback-btn" title="Play through history (Space)" aria-label="Play">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                  </button>
+                  <button id="playback-step-forward" class="playback-btn" title="Step forward (Right Arrow)" aria-label="Step forward">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                      <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Event Log Section -->
+              <div class="debugger-section event-log-section">
+                <div class="event-log-header">
+                  <div class="event-log-title">Event Log</div>
+                  <div class="event-log-filters">
+                    <input
+                      type="text"
+                      id="filter-pid"
+                      class="filter-input"
+                      placeholder="Filter by PID"
+                      aria-label="Filter by process ID"
+                    />
+                    <select id="filter-syscall-type" class="filter-select" aria-label="Filter by syscall type">
+                      <option value="">All Syscalls</option>
+                      <option value="Fork">Fork</option>
+                      <option value="Exec">Exec</option>
+                      <option value="Exit">Exit</option>
+                      <option value="Read">Read</option>
+                      <option value="Write">Write</option>
+                      <option value="Open">Open</option>
+                      <option value="Close">Close</option>
+                      <option value="GetPid">GetPid</option>
+                      <option value="Kill">Kill</option>
+                    </select>
+                    <label class="filter-checkbox">
+                      <input type="checkbox" id="filter-success" checked />
+                      Success
+                    </label>
+                    <label class="filter-checkbox">
+                      <input type="checkbox" id="filter-failure" checked />
+                      Failure
+                    </label>
+                  </div>
+                </div>
+                <div id="event-log" class="event-log virtual-scroll" tabindex="0" role="log">
+                  <table class="event-log-table">
+                    <thead id="event-log-headers">
+                      <tr>
+                        <th>Time</th>
+                        <th>PID</th>
+                        <th>Syscall</th>
+                        <th>Result</th>
+                      </tr>
+                    </thead>
+                    <tbody id="event-log-body">
+                      <tr class="no-data">
+                        <td colspan="4">No events recorded yet. Run commands to generate history.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <canvas id="event-log-canvas" class="event-log-canvas hidden"></canvas>
+                </div>
+              </div>
+
+              <!-- State Inspector Section -->
+              <div class="debugger-section state-inspector-section">
+                <div class="state-inspector-header">
+                  <div class="state-inspector-title">State Inspector</div>
+                  <div id="state-loading-indicator" class="loading-indicator hidden">Loading...</div>
+                </div>
+                <div id="state-inspector" class="state-inspector" tabindex="0" role="region" aria-label="Kernel state inspector">
+                  <!-- Process State Subsection -->
+                  <div class="state-subsection">
+                    <div class="state-subsection-header">Processes</div>
+                    <div id="state-inspector-processes" class="state-subsection-content">
+                      <p class="no-data">No process state available</p>
+                    </div>
+                  </div>
+
+                  <!-- Memory State Subsection -->
+                  <div class="state-subsection">
+                    <div class="state-subsection-header">Memory</div>
+                    <div id="state-inspector-memory" class="state-subsection-content">
+                      <p class="no-data">No memory state available</p>
+                    </div>
+                  </div>
+
+                  <!-- Filesystem State Subsection -->
+                  <div class="state-subsection">
+                    <div class="state-subsection-header">Filesystem</div>
+                    <div id="state-inspector-filesystem" class="state-subsection-content">
+                      <p class="no-data">No filesystem state available</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Event Details Panel (appears when event is clicked) -->
+              <div id="event-details-panel" class="event-details-panel hidden">
+                <div class="event-details-header">
+                  <div class="event-details-title">Event Details</div>
+                  <button id="event-details-close" class="btn-icon" title="Close details">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                  </button>
+                </div>
+                <div id="event-details-content" class="event-details-content">
+                  <p class="no-data">Select an event to view details</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </main>
     </div>

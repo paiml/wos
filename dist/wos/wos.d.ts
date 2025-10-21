@@ -52,6 +52,24 @@ export class WosWasm {
    */
   executeSyscall(syscall_json: string, calling_pid: number): string;
   /**
+   * WOS-302: Jump to specific position in kernel history
+   *
+   * Restores kernel state to the specified history position
+   */
+  jumpToPosition(position: number): void;
+  /**
+   * WOS-302: Get current kernel state as JSON for state inspector
+   *
+   * Returns full kernel state including processes, memory, filesystem
+   */
+  getCurrentState(): string;
+  /**
+   * WOS-302: Get kernel history as JSON for time-travel debugger
+   *
+   * Returns array of SystemCallTrace entries with timestamps
+   */
+  getKernelHistory(): string;
+  /**
    * Export quality report as HTML
    */
   exportQualityHtml(): string;
@@ -100,8 +118,11 @@ export interface InitOutput {
   readonly woswasm_exportQualityHtml: (a: number, b: number) => void;
   readonly woswasm_exportQualityMarkdown: (a: number, b: number) => void;
   readonly woswasm_exportQualitySarif: (a: number, b: number) => void;
+  readonly woswasm_getCurrentState: (a: number, b: number) => void;
+  readonly woswasm_getKernelHistory: (a: number, b: number) => void;
   readonly woswasm_getQualityMetrics: (a: number, b: number) => void;
   readonly woswasm_getState: (a: number, b: number) => void;
+  readonly woswasm_jumpToPosition: (a: number, b: number, c: number) => void;
   readonly woswasm_new: () => number;
   readonly woswasm_processCount: (a: number) => number;
   readonly woswasm_reset: (a: number) => void;
