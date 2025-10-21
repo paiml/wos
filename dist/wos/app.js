@@ -1592,6 +1592,11 @@ class Terminal {
   updateSystemMonitor(processCount) {
     if (!this.wos) return;
 
+    // Get process count from WOS if not provided
+    if (processCount === undefined || processCount === null) {
+      processCount = this.wos.processCount ? this.wos.processCount() : 0;
+    }
+
     // Track syscall count for rate calculation
     if (!this.syscallCount) {
       this.syscallCount = 0;
@@ -1685,34 +1690,50 @@ class Terminal {
     try {
       // Get process list using ps command
       const result = this.wos.executeCommand('ps');
-      if (!result || !result.stdout) return;
+      if (!result || typeof result !== 'string') return;
 
       const tbody = document.getElementById('process-table-body');
       if (!tbody) return;
 
       // Parse ps output to get process information
-      // Expected format: PID STATE PARENT COMMAND
-      const lines = result.stdout.trim().split('\n');
+      // Expected format (tab-separated): PID\tSTATE\tPARENT
+      const lines = result.trim().split('\n');
       const processes = [];
 
-      // Skip header line if present
-      const startIdx = lines[0]?.includes('PID') ? 1 : 0;
+      // Skip header lines (PID STATE PARENT, separator line)
+      let startIdx = 0;
+      for (let i = 0; i < Math.min(3, lines.length); i++) {
+        if (lines[i]?.includes('PID') || lines[i]?.includes('---')) {
+          startIdx = i + 1;
+        }
+      }
 
       for (let i = startIdx; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (!line) continue;
+        if (!line || line.includes('No processes')) continue;
 
-        const parts = line.split(/\s+/);
-        if (parts.length >= 4) {
-          processes.push({
-            pid: parts[0],
-            state: parts[1] || 'Ready',
-            parent: parts[2] || '-',
-            command: parts.slice(3).join(' ') || 'init',
-            // Simulated data for now
-            cpuTime: `${(Math.random() * 5).toFixed(2)}ms`,
-            memory: `${Math.floor(128 + Math.random() * 128)}KB`
-          });
+        // Split by tabs and whitespace
+        const parts = line.split(/\t+/);
+        if (parts.length >= 2) {
+          // Extract PID, STATE, and PARENT
+          const pid = parts[0]?.trim();
+          const state = parts[1]?.trim() || 'Ready';
+          const parent = parts[2]?.trim() || '-';
+
+          // Determine command based on PID (1 is init, others unknown)
+          const command = pid === '1' ? 'init' : 'process';
+
+          if (pid) {
+            processes.push({
+              pid,
+              state,
+              parent,
+              command,
+              // Simulated data for now
+              cpuTime: `${(Math.random() * 5).toFixed(2)}ms`,
+              memory: `${Math.floor(128 + Math.random() * 128)}KB`
+            });
+          }
         }
       }
 
@@ -1859,6 +1880,87 @@ class Terminal {
     tracer.debug('VISUAL_MONITOR', `Highlighted memory regions for process ${pid}`);
   }
 
+  // WOS-301: Update filesystem list from WOS filesystem
+  updateFilesystemList() {
+    if (!this.wos) return;
+
+    try {
+      // Get file list using ls command
+      const result = this.wos.executeCommand('ls -la /');
+      if (!result || typeof result !== 'string') return;
+
+      const fileList = document.getElementById('file-list');
+      if (!fileList) return;
+
+      // Parse ls output to get file information
+      const lines = result.trim().split('\n');
+      const files = [];
+
+      // Skip header lines (., .., etc.)
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || line === '.' || line === '..') continue;
+
+        // Simple parsing - just extract filename from end of line
+        const parts = line.split(/\s+/);
+        if (parts.length > 0) {
+          const fileName = parts[parts.length - 1];
+          if (fileName && fileName !== '.' && fileName !== '..') {
+            files.push({
+              name: fileName,
+              isDirectory: line.startsWith('d'),
+              size: parts.length > 4 ? parts[4] : '0'
+            });
+          }
+        }
+      }
+
+      // Clear existing file list
+      fileList.innerHTML = '';
+
+      if (files.length === 0) {
+        return;
+      }
+
+      // Add file items
+      files.forEach(file => {
+        const item = document.createElement('div');
+        item.className = file.isDirectory ? 'file-item dir' : 'file-item';
+
+        // Use appropriate icon
+        const iconPath = file.isDirectory
+          ? 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z'
+          : 'M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z';
+
+        item.innerHTML = `
+          <div class="file-item-name">
+            <svg class="file-item-icon ${file.isDirectory ? 'dir-icon' : 'file-icon'}" viewBox="0 0 24 24" fill="currentColor">
+              <path d="${iconPath}"/>
+            </svg>
+            <span>${file.name}</span>
+          </div>
+          <span class="file-item-size">${file.size}</span>
+        `;
+
+        // Add click handler
+        item.addEventListener('click', () => {
+          // Remove selection from other items
+          fileList.querySelectorAll('.file-item').forEach(f => f.classList.remove('selected'));
+          item.classList.add('selected');
+
+          // If it's a file, could open in editor
+          if (!file.isDirectory) {
+            // Could trigger cat command or open in vim
+          }
+        });
+
+        fileList.appendChild(item);
+      });
+    } catch (error) {
+      tracer.error('VISUAL_MONITOR', 'Failed to update filesystem list', error);
+    }
+  }
+
   openVim(fileName) {
     if (!this.wos) {
       this.printLine('WASM not initialized - cannot open vim', 'error');
@@ -1910,25 +2012,22 @@ class Terminal {
     this.fileManager = new FileManager(wos);
     this.updateSystemInfo();
 
-    // Start automatic polling for system monitor and process list updates
+    // Start automatic polling for system monitor and process list updates (WOS-301: 100ms updates)
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
     }
     this.updateInterval = setInterval(() => {
       this.updateSystemInfo();
-      this.refreshProcessList();
-    }, 1000); // Update every second
+      this.updateSystemMonitor(); // Update process table and memory view
+      this.updateFilesystemList(); // Update file list from WOS filesystem
+    }, 100); // Update every 100ms for real-time monitoring
   }
 
   refreshProcessList() {
     if (!this.wos) return;
 
-    // This would normally call the WASM to get actual process data
-    // For now, trigger the process panel refresh button click programmatically
-    const refreshButton = document.querySelector('#panel-process-list .btn-refresh-panel');
-    if (refreshButton) {
-      refreshButton.click();
-    }
+    // Directly update the process table instead of clicking refresh button
+    this.updateProcessTable();
   }
 }
 
