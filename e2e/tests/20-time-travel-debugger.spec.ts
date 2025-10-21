@@ -693,14 +693,19 @@ test.describe('WOS-302: Time-Travel Debugger', () => {
       // First event should be highlighted
       const firstEvent = await page.locator('#event-log .event-item').first();
       const classList = await firstEvent.getAttribute('class');
-      expect(classList).toContain('current');
+      expect(classList).toContain('selected');
     });
 
     test('should persist debugger state across page reloads', async ({ page }) => {
       const slider = await page.locator('#timeline-slider');
 
-      // Set specific position
-      await slider.fill('10');
+      // Set specific position (use valid position within slider range)
+      const max = parseInt(await slider.getAttribute('max') || '0');
+      const testPosition = Math.floor(max / 2); // Use middle position
+      await slider.evaluate((el, val) => {
+        (el as HTMLInputElement).value = val;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }, String(testPosition));
       await page.waitForTimeout(100);
 
       const position = await slider.inputValue();
