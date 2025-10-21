@@ -2566,6 +2566,11 @@ class TimeTravelDebugger {
         this.maxPosition = this.traces.length;
         this.currentPosition = Math.min(this.currentPosition, this.maxPosition);
 
+        // Sync WASM position with debugger position
+        if (this.wos && this.wos.jumpToPosition) {
+          this.wos.jumpToPosition(this.currentPosition);
+        }
+
         this.updateTimeline();
         this.updateEventLog();
         this.updateStateInspector();
@@ -2741,8 +2746,9 @@ class TimeTravelDebugger {
       const state = JSON.parse(stateJson);
 
       // Store previous state for diff highlighting
+      // Use deep copy to avoid reference issues
       const prevState = this.previousState;
-      this.previousState = state;
+      this.previousState = JSON.parse(JSON.stringify(state));
 
       this.renderProcessState(state.processes || {}, prevState?.processes);
       this.renderMemoryState(state.memory || {}, prevState?.memory);
