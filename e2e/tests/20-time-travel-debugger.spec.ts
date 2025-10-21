@@ -445,6 +445,14 @@ test.describe('WOS-302: Time-Travel Debugger', () => {
       const slider = await page.locator('#timeline-slider');
       await slider.focus();
 
+      // Go to middle first (can't step back from position 0)
+      const max = parseInt(await slider.getAttribute('max') || '100');
+      await slider.evaluate((el, val) => {
+        (el as HTMLInputElement).value = val;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }, String(Math.floor(max / 2)));
+      await page.waitForTimeout(50);
+
       const initialPosition = await slider.inputValue();
 
       await page.keyboard.press('ArrowLeft');

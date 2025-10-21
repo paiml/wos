@@ -2579,7 +2579,7 @@ class TimeTravelDebugger {
   updateTimeline() {
     if (!this.elements.slider) return;
 
-    this.elements.slider.max = this.maxPosition;
+    this.elements.slider.max = Math.max(0, this.maxPosition - 1);
     this.elements.slider.value = this.currentPosition;
 
     // Update position indicator
@@ -2680,7 +2680,7 @@ class TimeTravelDebugger {
       row.className = 'event-item';
 
       if (index === this.currentPosition) {
-        row.classList.add('current');
+        row.classList.add('selected');
       }
 
       const isSuccess = trace.result && trace.result.Ok !== undefined;
@@ -2926,7 +2926,7 @@ class TimeTravelDebugger {
         break;
       case 'End':
         e.preventDefault();
-        this.jumpTo(this.maxPosition - 1);
+        this.jumpTo(this.maxPosition);
         break;
       case ' ':
         e.preventDefault();
