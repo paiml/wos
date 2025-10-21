@@ -295,7 +295,8 @@ class ConfigManager {
           system_call_trace: { visible: true, collapsed: false },
           files: { visible: true, collapsed: false },
           system_info: { visible: true, collapsed: false },
-          system_monitor: { visible: true, collapsed: false }
+          system_monitor: { visible: true, collapsed: false },
+          time_travel_debugger: { visible: true, collapsed: false }
         }
       }
     };
@@ -2448,8 +2449,8 @@ class TimeTravelDebugger {
     this.attachEventListeners();
     this.loadHistory();
 
-    // Update timeline every second
-    setInterval(() => this.loadHistory(), 1000);
+    // Update timeline every 100ms for responsive debugging
+    setInterval(() => this.loadHistory(), 100);
 
     tracer.debug('DEBUGGER', 'TimeTravelDebugger initialized');
   }
