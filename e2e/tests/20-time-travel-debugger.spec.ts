@@ -36,6 +36,26 @@ test.describe('WOS-302: Time-Travel Debugger', () => {
     await page.fill('#terminal-input', 'echo "test2"');
     await page.press('#terminal-input', 'Enter');
     await page.waitForTimeout(100);
+
+    // Ensure time-travel debugger panel is visible
+    // Check if panel exists
+    const panel = await page.locator('#panel-time-travel-debugger');
+    await expect(panel).toBeVisible();
+
+    // Check if panel is collapsed (parent .file-panel has .collapsed class)
+    const isCollapsed = await panel.evaluate((el) => {
+      return el.classList.contains('collapsed');
+    });
+
+    // If collapsed, click the expand button
+    if (isCollapsed) {
+      const expandButton = await page.locator('#panel-time-travel-debugger .btn-collapse');
+      await expandButton.click();
+      await page.waitForTimeout(300); // Wait for animation
+    }
+
+    // Wait for timeline slider to be visible
+    await page.waitForSelector('#timeline-slider', { state: 'visible', timeout: 5000 });
   });
 
   test.describe('Timeline Slider', () => {
