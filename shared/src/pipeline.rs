@@ -188,6 +188,45 @@ fn handle_stdin_redirect(chars: &mut std::iter::Peekable<std::str::Chars>) -> Op
     }
 }
 
+/// Toggle quote state based on character
+/// Returns (new_in_single, new_in_double)
+fn toggle_quote_state(ch: char, in_single: bool, in_double: bool) -> (bool, bool) {
+    match ch {
+        '\'' if !in_double => (!in_single, in_double),
+        '"' if !in_single => (in_single, !in_double),
+        _ => (in_single, in_double),
+    }
+}
+
+/// Check if currently inside any quotes
+fn in_quotes(in_single: bool, in_double: bool) -> bool {
+    in_single || in_double
+}
+
+/// Process redirection character (> or <) and extract redirection
+/// Returns (should_push_to_command, optional_redirection)
+fn process_redirection_char(
+    ch: char,
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    in_quoted: bool,
+) -> (bool, Option<Redirection>) {
+    if in_quoted {
+        return (true, None); // In quotes, treat as regular char
+    }
+
+    match ch {
+        '>' => {
+            let is_append = chars.peek() == Some(&'>');
+            if is_append {
+                chars.next(); // consume second >
+            }
+            (false, handle_stdout_redirect(chars, is_append))
+        }
+        '<' => (false, handle_stdin_redirect(chars)),
+        _ => (true, None),
+    }
+}
+
 /// Extract redirection operators from a command string
 ///
 /// Returns (command_without_redirects, vec_of_redirections)
@@ -199,33 +238,26 @@ fn extract_redirections(input: &str) -> (String, Vec<Redirection>) {
     let mut in_double_quote = false;
 
     while let Some(ch) = chars.next() {
-        match ch {
-            '\'' if !in_double_quote => {
-                in_single_quote = !in_single_quote;
-                command.push(ch);
-            }
-            '"' if !in_single_quote => {
-                in_double_quote = !in_double_quote;
-                command.push(ch);
-            }
-            '>' if !in_single_quote && !in_double_quote => {
-                // Check for >> (append) vs > (overwrite)
-                let is_append = chars.peek() == Some(&'>');
-                if is_append {
-                    chars.next(); // consume second >
-                }
-                if let Some(redir) = handle_stdout_redirect(&mut chars, is_append) {
-                    redirections.push(redir);
-                }
-            }
-            '<' if !in_single_quote && !in_double_quote => {
-                if let Some(redir) = handle_stdin_redirect(&mut chars) {
-                    redirections.push(redir);
-                }
-            }
-            _ => {
-                command.push(ch);
-            }
+        // Update quote state
+        let (new_single, new_double) = toggle_quote_state(ch, in_single_quote, in_double_quote);
+        let quote_changed = new_single != in_single_quote || new_double != in_double_quote;
+
+        if quote_changed {
+            in_single_quote = new_single;
+            in_double_quote = new_double;
+            command.push(ch);
+            continue;
+        }
+
+        // Process redirections or regular characters
+        let (should_push, redir) =
+            process_redirection_char(ch, &mut chars, in_quotes(in_single_quote, in_double_quote));
+
+        if should_push {
+            command.push(ch);
+        }
+        if let Some(r) = redir {
+            redirections.push(r);
         }
     }
 
