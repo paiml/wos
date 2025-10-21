@@ -2564,12 +2564,14 @@ class TimeTravelDebugger {
       if (historyJson) {
         this.traces = JSON.parse(historyJson);
         this.maxPosition = this.traces.length;
-        this.currentPosition = Math.min(this.currentPosition, this.maxPosition);
+        // Initialize to end of history (most recent state)
+        this.currentPosition = this.maxPosition;
 
         this.updateTimeline();
         this.updateEventLog();
         this.updateStateInspector();
         this.updateTraceCount();
+        this.updateButtonStates();
       }
     } catch (error) {
       tracer.error('DEBUGGER', 'Failed to load history', error);
