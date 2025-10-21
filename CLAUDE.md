@@ -575,6 +575,30 @@ Installs git pre-commit hook:
 - `cargo clippy --all-features`
 - `cargo nextest run --lib`
 - PMAT complexity analysis
+- **bashrs**: Lints bash scripts and Makefiles for quality and best practices
+
+**bashrs Integration**:
+bashrs lints all bash scripts and Makefiles in the project:
+- ✅ Checks shell script syntax and common pitfalls
+- ✅ Validates Makefile syntax and conventions
+- ✅ Enforces bash best practices (proper quoting, error handling, etc.)
+- ✅ Detects shellcheck violations
+
+**Installation** (if needed):
+```bash
+# Install bashrs from source
+cargo install bashrs
+
+# Verify installation
+bashrs --version
+```
+
+**Bug Reports & Feature Requests**:
+If you encounter bugs or need features in bashrs:
+1. Open an issue at: https://github.com/paiml/bashrs
+2. Include: bashrs version, OS, reproduction steps, expected vs actual behavior
+3. Tag with appropriate labels: `bug`, `enhancement`, `documentation`
+4. Link to the issue in your commit message when working around bashrs limitations
 
 Slow checks (mutation, full coverage, E2E) run manually or in CI.
 

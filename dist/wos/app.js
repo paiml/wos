@@ -3375,6 +3375,11 @@ class InteractiveTutorial {
       setTimeout(() => {
         this.show();
       }, 500);
+    } else {
+      // Tutorial already completed, show help button
+      if (this.helpButton) {
+        this.helpButton.classList.remove('hidden');
+      }
     }
   }
 
@@ -3645,6 +3650,17 @@ class InteractiveTutorial {
       }
     });
 
+    // WOS-304: Listen for terminal commands to auto-advance tutorial
+    const terminalInput = document.getElementById('terminal-input');
+    if (terminalInput) {
+      terminalInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && this.isActive) {
+          const command = terminalInput.value.trim();
+          this.handleTerminalCommand(command);
+        }
+      });
+    }
+
     // Keyboard navigation
     this.overlay.addEventListener('keydown', (e) => {
       if (!this.isActive) return;
@@ -3667,6 +3683,22 @@ class InteractiveTutorial {
           break;
       }
     });
+  }
+
+  /**
+   * Handle terminal command during tutorial
+   */
+  handleTerminalCommand(command) {
+    const currentStep = this.steps[this.currentStepIndex];
+
+    // Auto-advance on correct commands
+    if (currentStep === 'terminal' && command === 'ls') {
+      tracer.debug('TUTORIAL', 'User typed ls, auto-advancing from terminal step');
+      setTimeout(() => this.nextStep(), 500);
+    } else if (currentStep === 'monitor' && command === 'ps') {
+      tracer.debug('TUTORIAL', 'User typed ps, auto-advancing from monitor step');
+      setTimeout(() => this.nextStep(), 500);
+    }
   }
 }
 

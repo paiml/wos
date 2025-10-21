@@ -385,6 +385,18 @@ hooks-install:
 		'echo "🔒 Running pre-commit quality gates..."' \
 		'echo ""' \
 		'' \
+		'# bashrs: Lint bash scripts and Makefile' \
+		'if command -v bashrs > /dev/null 2>&1; then' \
+		'  echo "🔍 Running bashrs linter..."' \
+		'  bashrs lint Makefile || { echo "❌ Makefile linting failed"; exit 1; }' \
+		'  find . -name "*.sh" -type f -exec bashrs lint {} + || { echo "❌ Shell script linting failed"; exit 1; }' \
+		'  echo "✅ bashrs checks passed"' \
+		'else' \
+		'  echo "⚠️  bashrs not found, skipping bash/Makefile linting"' \
+		'  echo "   Install with: cargo install bashrs"' \
+		'fi' \
+		'echo ""' \
+		'' \
 		'# Fast quality checks (<30s)' \
 		'make quality' \
 		'' \
