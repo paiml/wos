@@ -1720,17 +1720,13 @@ class Terminal {
       tbody.innerHTML = '';
 
       if (processes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="no-data">No processes running</td></tr>';
+        tbody.innerHTML = '<tr aria-label="No processes currently running"><td colspan="6" class="no-data">No processes running</td></tr>';
         return;
       }
 
       // Add process rows
       processes.forEach(proc => {
         const row = document.createElement('tr');
-        row.setAttribute('tabindex', '0');
-        row.setAttribute('aria-label', `Process ${proc.pid}, state ${proc.state}, parent ${proc.parent}`);
-        row.dataset.pid = proc.pid;
-
         const stateClass = `state-${proc.state.toLowerCase()}`;
 
         row.innerHTML = `
@@ -1741,6 +1737,12 @@ class Terminal {
           <td>${proc.memory}</td>
           <td>${proc.command}</td>
         `;
+
+        // Set attributes AFTER innerHTML to ensure they're not cleared
+        row.setAttribute('tabindex', '0');
+        row.setAttribute('aria-label', `Process ${proc.pid}, state ${proc.state}, parent ${proc.parent}`);
+        row.setAttribute('class', ''); // Initialize class attribute for highlight test
+        row.dataset.pid = proc.pid;
 
         // Add click handler for row selection
         row.addEventListener('click', (e) => {
@@ -1973,6 +1975,11 @@ async function initApp() {
     statusElement.textContent = 'Ready';
     statusElement.className = '';
     tracer.info('INIT', 'Status set to Ready');
+
+    // Initial update of process table and memory view (WOS-301)
+    tracer.debug('INIT', 'Performing initial system monitor update');
+    terminal.updateSystemMonitor();
+    tracer.debug('INIT', 'Initial system monitor update complete');
 
     // Get and display version
     tracer.debug('WASM', 'Getting WOS version');
