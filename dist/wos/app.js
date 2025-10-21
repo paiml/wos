@@ -1670,13 +1670,13 @@ class Terminal {
     // Handle built-in commands
     // WOS-305: Enhanced help command with support for help <command>
     if (cmd.startsWith('help')) {
-      const args = cmd.split(' ');
-      if (args.length > 1) {
+      const args = cmd.split(/\s+/).filter(arg => arg.length > 0); // Split on whitespace, filter empty
+      if (args.length > 1 && args[1]) {
         this.printDetailedHelp(args[1]);
       } else {
         this.printHelp();
       }
-      return;
+      return; // IMPORTANT: Must return to prevent WASM from handling it
     }
 
     if (cmd === 'clear' || cmd === 'cls') {
@@ -4040,6 +4040,179 @@ class InteractiveTutorial {
   }
 }
 
+// WOS-305: Contextual Help Panel
+class HelpPanel {
+  constructor() {
+    this.helpCommandList = document.getElementById('help-command-list');
+    this.searchInput = document.getElementById('help-search');
+    this.searchResultCount = document.getElementById('search-result-count');
+    this.helpPanel = document.getElementById('panel-help');
+    this.btnHelp = document.getElementById('btn-help');
+
+    this.populateCommandList();
+    this.setupEventListeners();
+  }
+
+  populateCommandList() {
+    if (!this.helpCommandList) return;
+
+    this.helpCommandList.innerHTML = '';
+
+    Object.values(HELP_DATA).forEach(cmdData => {
+      const item = document.createElement('div');
+      item.className = 'help-command-item';
+      item.setAttribute('role', 'listitem');
+      item.setAttribute('data-command-name', cmdData.name);
+      item.setAttribute('data-command-description', cmdData.description);
+      item.setAttribute('tabindex', '0');
+
+      const header = document.createElement('div');
+      header.className = 'help-command-header';
+      header.innerHTML = `
+        <span class="help-command-name">${cmdData.name}</span>
+        <span class="help-command-brief">${cmdData.description}</span>
+      `;
+
+      const details = document.createElement('div');
+      details.className = 'help-command-details hidden';
+      details.innerHTML = `
+        <div class="help-section">
+          <strong>Usage:</strong> <code>${cmdData.usage}</code>
+        </div>
+        ${cmdData.options && cmdData.options.length > 0 ? `
+          <div class="help-section">
+            <strong>Options:</strong>
+            <ul class="help-options-list">
+              ${cmdData.options.map(opt => `<li><code>${opt.flag}</code> - ${opt.description}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+        ${cmdData.examples && cmdData.examples.length > 0 ? `
+          <div class="help-section">
+            <strong>Examples:</strong>
+            <ul class="help-examples-list">
+              ${cmdData.examples.map(ex => `<li><code>${ex.command}</code> - ${ex.description}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+        ${cmdData.related && cmdData.related.length > 0 ? `
+          <div class="help-section">
+            <strong>See also:</strong> ${cmdData.related.join(', ')}
+          </div>
+        ` : ''}
+      `;
+
+      item.appendChild(header);
+      item.appendChild(details);
+      this.helpCommandList.appendChild(item);
+
+      // Click to expand
+      header.addEventListener('click', () => this.toggleCommandDetails(item));
+      item.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.toggleCommandDetails(item);
+        }
+      });
+    });
+
+    this.updateSearchResults(Object.keys(HELP_DATA).length);
+  }
+
+  toggleCommandDetails(item) {
+    const details = item.querySelector('.help-command-details');
+    const isHidden = details.classList.contains('hidden');
+
+    // Close all other expanded items
+    this.helpCommandList.querySelectorAll('.help-command-details').forEach(d => {
+      if (d !== details) d.classList.add('hidden');
+    });
+
+    details.classList.toggle('hidden');
+    item.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+  }
+
+  setupEventListeners() {
+    // Search functionality
+    if (this.searchInput) {
+      this.searchInput.addEventListener('input', (e) => this.handleSearch(e.target.value));
+      this.searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          this.searchInput.value = '';
+          this.handleSearch('');
+        }
+      });
+    }
+
+    // F1 keyboard shortcut to toggle help panel
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'F1') {
+        e.preventDefault();
+        this.toggleHelpPanel();
+        // Focus search input when opening
+        if (this.helpPanel && !this.helpPanel.classList.contains('collapsed') && this.searchInput) {
+          setTimeout(() => this.searchInput.focus(), 100);
+        }
+      }
+    });
+
+    // Help button click
+    if (this.btnHelp) {
+      this.btnHelp.addEventListener('click', () => {
+        this.toggleHelpPanel();
+        if (this.searchInput) {
+          setTimeout(() => this.searchInput.focus(), 100);
+        }
+      });
+    }
+  }
+
+  toggleHelpPanel() {
+    if (!this.helpPanel) return;
+    this.helpPanel.classList.toggle('collapsed');
+    const isCollapsed = this.helpPanel.classList.contains('collapsed');
+    const collapseBtn = this.helpPanel.querySelector('.btn-collapse');
+    if (collapseBtn) {
+      collapseBtn.setAttribute('aria-expanded', !isCollapsed);
+    }
+  }
+
+  handleSearch(query) {
+    const normalizedQuery = query.toLowerCase().trim();
+    let visibleCount = 0;
+
+    this.helpCommandList.querySelectorAll('.help-command-item').forEach(item => {
+      const cmdName = item.getAttribute('data-command-name').toLowerCase();
+      const cmdDesc = item.getAttribute('data-command-description').toLowerCase();
+      const fullText = item.textContent.toLowerCase();
+
+      const matches = normalizedQuery === '' ||
+                     cmdName.includes(normalizedQuery) ||
+                     cmdDesc.includes(normalizedQuery) ||
+                     fullText.includes(normalizedQuery);
+
+      if (matches) {
+        item.style.display = '';
+        visibleCount++;
+      } else {
+        item.style.display = 'none';
+      }
+    });
+
+    this.updateSearchResults(visibleCount, query);
+  }
+
+  updateSearchResults(count, query = '') {
+    if (!this.searchResultCount) return;
+
+    if (query) {
+      this.searchResultCount.textContent = `${count} result${count !== 1 ? 's' : ''}`;
+    } else {
+      this.searchResultCount.textContent = '';
+    }
+  }
+}
+
 // Initialize application
 async function initApp() {
   tracer.info('INIT', 'Application initialization started');
@@ -4104,11 +4277,17 @@ async function initApp() {
     const interactiveTutorial = new InteractiveTutorial();
     tracer.info('INIT', 'InteractiveTutorial initialized');
 
+    // WOS-305: Initialize Contextual Help Panel
+    tracer.debug('INIT', 'Creating HelpPanel');
+    const helpPanel = new HelpPanel();
+    tracer.info('INIT', 'HelpPanel initialized');
+
     // Expose to window for tests
     window.wos = wos;
     window.timeTravelDebugger = timeTravelDebugger;
     window.learningObjectives = learningObjectives;
     window.interactiveTutorial = interactiveTutorial;
+    window.helpPanel = helpPanel;
 
     // Get and display version
     tracer.debug('WASM', 'Getting WOS version');

@@ -524,6 +524,39 @@
             </div>
           </div>
 
+          <!-- WOS-305: Contextual Help Panel -->
+          <div id="panel-help" class="file-panel panel-help" data-panel="help" role="complementary" aria-label="Help panel">
+            <div class="file-panel-header panel-header">
+              <h3>Help & Documentation</h3>
+              <div class="file-controls">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand help panel" aria-label="Collapse help panel" aria-expanded="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M7 14l5-5 5 5z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="panel-content">
+              <!-- Search Input -->
+              <div class="help-search-container">
+                <input
+                  type="text"
+                  id="help-search"
+                  class="help-search-input"
+                  placeholder="Search commands..."
+                  aria-label="Search help documentation"
+                  autocomplete="off"
+                />
+                <span class="search-result-count" id="search-result-count" aria-live="polite"></span>
+              </div>
+
+              <!-- Command List -->
+              <div id="help-command-list" class="help-command-list" role="list">
+                <!-- Commands will be dynamically populated from HELP_DATA -->
+              </div>
+            </div>
+          </div>
+
         </div>
       </main>
     </div>
