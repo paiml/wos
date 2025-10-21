@@ -1754,15 +1754,50 @@ class Terminal {
       try {
         const result = this.wos.executeCommand(cmd);
         this.printLine(result, 'output');
+
+        // WOS-302: Log syscall trace for time-travel debugger
+        if (this.wos._addTrace) {
+          // Determine syscall type from command
+          const syscallName = this.getSyscallTypeFromCommand(cmd);
+          const isSuccess = !result.includes('Error') && !result.includes('error');
+          const resultObj = isSuccess ? { Ok: result } : { Err: result };
+          this.wos._addTrace({ [syscallName]: cmd }, resultObj, 1);
+        }
+
         this.updateSystemInfo();
         // WOS-301: Update filesystem list after command execution (for file creation/deletion)
         this.updateFilesystemList();
       } catch (error) {
         this.printLine(`Error: ${error}`, 'error');
+
+        // WOS-302: Log error trace
+        if (this.wos && this.wos._addTrace) {
+          this.wos._addTrace({ Error: cmd }, { Err: error.toString() }, 1);
+        }
       }
     } else {
       this.printLine('WASM not initialized - command not executed', 'error');
     }
+  }
+
+  // WOS-302: Helper to determine syscall type from command string
+  getSyscallTypeFromCommand(cmd) {
+    const parts = cmd.trim().split(/\s+/);
+    const command = parts[0];
+
+    // Map command to syscall type
+    const syscallMap = {
+      'echo': 'Write',
+      'cat': 'Read',
+      'ls': 'Read',
+      'ps': 'GetPid',
+      'touch': 'Open',
+      'rm': 'Close',
+      'mkdir': 'Open',
+      'cd': 'Read'
+    };
+
+    return syscallMap[command] || 'Unknown';
   }
 
   // WOS-305: Updated printHelp() to use HELP_DATA structure
@@ -4365,6 +4400,53 @@ async function initApp() {
     tracer.debug('WASM', 'Creating WosWasm instance');
     const wos = new WosWasm();
     tracer.info('WASM', 'WosWasm instance created');
+
+    // WOS-302: Extend WOS with Time-Travel Debugging methods (MVP mock implementation)
+    tracer.debug('WASM', 'Adding Time-Travel Debugging methods to WOS');
+    wos._kernelHistory = []; // Array of SystemCallTrace objects
+    wos._currentState = {
+      processes: {},
+      memory: { total: 4096 * 1024, used: 0, free: 4096 * 1024 },
+      filesystem: { files: [] }
+    };
+    wos._startTime = Date.now();
+    wos._nextTraceId = 0;
+
+    // Method: getKernelHistory() - Returns JSON array of all syscall traces
+    wos.getKernelHistory = function() {
+      tracer.debug('DEBUGGER', `getKernelHistory() called, returning ${this._kernelHistory.length} traces`);
+      return JSON.stringify(this._kernelHistory);
+    };
+
+    // Method: getCurrentState() - Returns JSON of current kernel state
+    wos.getCurrentState = function() {
+      tracer.debug('DEBUGGER', 'getCurrentState() called');
+      return JSON.stringify(this._currentState);
+    };
+
+    // Method: jumpToPosition(pos) - Navigate to specific position in history
+    wos.jumpToPosition = function(position) {
+      tracer.debug('DEBUGGER', `jumpToPosition(${position}) called`);
+      // MVP: Just acknowledge the jump, actual state restoration will be in WASM later
+      return true;
+    };
+
+    // Helper: addTrace(syscall, result, pid) - Add a new trace entry
+    wos._addTrace = function(syscall, result, pid = 1) {
+      const timestamp_us = (Date.now() - this._startTime) * 1000; // Convert to microseconds
+      const trace = {
+        trace_id: this._nextTraceId++,
+        calling_pid: pid,
+        syscall: syscall,
+        result: result,
+        timestamp_us: timestamp_us
+      };
+      this._kernelHistory.push(trace);
+      tracer.debug('DEBUGGER', `Added trace #${trace.trace_id}: ${JSON.stringify(syscall)}`);
+      return trace;
+    };
+
+    tracer.info('WASM', 'Time-Travel Debugging methods added');
 
     tracer.debug('INIT', 'Connecting terminal to WOS');
     terminal.setWOS(wos);
