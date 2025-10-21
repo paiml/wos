@@ -92,6 +92,50 @@ fn should_end_token(ch: char, in_single_quote: bool, in_double_quote: bool) -> b
     (ch == ' ' || ch == '\t') && !in_single_quote && !in_double_quote
 }
 
+/// Complete current token and add to tokens list
+fn complete_token(current: &mut String, tokens: &mut Vec<String>, had_quotes: &mut bool) {
+    if !current.is_empty() || *had_quotes {
+        tokens.push(current.clone());
+        current.clear();
+        *had_quotes = false;
+    }
+}
+
+/// Process a single character in tokenization
+/// Returns true if character was handled (no need to push to token)
+fn process_token_char(
+    ch: char,
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    current_token: &mut String,
+    in_single: &mut bool,
+    in_double: &mut bool,
+    had_quotes: &mut bool,
+    tokens: &mut Vec<String>,
+) -> bool {
+    // Handle escape sequences
+    if ch == '\\' && !*in_single {
+        process_escape_sequence(chars, current_token, *in_double);
+        return true;
+    }
+
+    // Handle quote toggles
+    let (new_single, new_double, quotes_flag) = handle_quote_toggle(ch, *in_single, *in_double);
+    if quotes_flag {
+        *in_single = new_single;
+        *in_double = new_double;
+        *had_quotes = true;
+        return true;
+    }
+
+    // Handle token-ending whitespace
+    if should_end_token(ch, *in_single, *in_double) {
+        complete_token(current_token, tokens, had_quotes);
+        return true;
+    }
+
+    false
+}
+
 /// Tokenize a command line respecting quotes and escapes
 fn tokenize(input: &str) -> Vec<String> {
     let mut tokens = Vec::new();
@@ -102,40 +146,23 @@ fn tokenize(input: &str) -> Vec<String> {
     let mut had_quotes = false;
 
     while let Some(ch) = chars.next() {
-        // Handle escape sequences (backslash outside single quotes)
-        if ch == '\\' && !in_single_quote {
-            process_escape_sequence(&mut chars, &mut current_token, in_double_quote);
-            continue;
-        }
+        let handled = process_token_char(
+            ch,
+            &mut chars,
+            &mut current_token,
+            &mut in_single_quote,
+            &mut in_double_quote,
+            &mut had_quotes,
+            &mut tokens,
+        );
 
-        // Handle quote toggles
-        let (new_single, new_double, quotes_flag) =
-            handle_quote_toggle(ch, in_single_quote, in_double_quote);
-        if quotes_flag {
-            in_single_quote = new_single;
-            in_double_quote = new_double;
-            had_quotes = true;
-            continue;
+        if !handled {
+            current_token.push(ch);
         }
-
-        // Handle token-ending whitespace
-        if should_end_token(ch, in_single_quote, in_double_quote) {
-            if !current_token.is_empty() || had_quotes {
-                tokens.push(current_token.clone());
-                current_token.clear();
-                had_quotes = false;
-            }
-            continue;
-        }
-
-        // Regular character
-        current_token.push(ch);
     }
 
     // Add final token if any
-    if !current_token.is_empty() || had_quotes {
-        tokens.push(current_token);
-    }
+    complete_token(&mut current_token, &mut tokens, &mut had_quotes);
 
     tokens
 }
