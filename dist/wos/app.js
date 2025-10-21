@@ -2740,9 +2740,13 @@ class TimeTravelDebugger {
       const stateJson = this.wos.getCurrentState();
       const state = JSON.parse(stateJson);
 
-      this.renderProcessState(state.processes || {});
-      this.renderMemoryState(state.memory || {});
-      this.renderFilesystemState(state.filesystem || {});
+      // Store previous state for diff highlighting
+      const prevState = this.previousState;
+      this.previousState = state;
+
+      this.renderProcessState(state.processes || {}, prevState?.processes);
+      this.renderMemoryState(state.memory || {}, prevState?.memory);
+      this.renderFilesystemState(state.filesystem || {}, prevState?.filesystem);
 
       this.showLoading(false);
     } catch (error) {
@@ -2751,7 +2755,7 @@ class TimeTravelDebugger {
     }
   }
 
-  renderProcessState(processes) {
+  renderProcessState(processes, prevProcesses) {
     if (!this.elements.stateProcesses) return;
 
     this.elements.stateProcesses.innerHTML = '';
@@ -2771,13 +2775,23 @@ class TimeTravelDebugger {
       header.className = 'state-item-header';
       header.textContent = `Process ${pid}`;
 
+      // Check if this process is new or changed
+      const prevProcess = prevProcesses?.[pid];
+      const isNew = !prevProcess;
+      const isChanged = prevProcess && JSON.stringify(process) !== JSON.stringify(prevProcess);
+
       const details = document.createElement('div');
       details.className = 'process-details hidden';
+
+      // Add diff highlighting to changed fields
+      const stateClass = (isNew || (prevProcess && process.state !== prevProcess.state)) ? 'state-diff' : '';
+      const memoryClass = (isNew || (prevProcess && process.memory !== prevProcess.memory)) ? 'state-diff' : '';
+
       details.innerHTML = `
         <p><strong>PID:</strong> ${pid}</p>
-        <p><strong>State:</strong> ${process.state || 'Unknown'}</p>
+        <p class="${stateClass}"><strong>State:</strong> ${process.state || 'Unknown'}</p>
         <p><strong>Parent:</strong> ${process.parent_pid || '-'}</p>
-        <p><strong>Memory:</strong> ${this.formatMemorySize(process.memory || 0)}</p>
+        <p class="${memoryClass}"><strong>Memory:</strong> ${this.formatMemorySize(process.memory || 0)}</p>
       `;
 
       // Add click handler to item (not just header) for accessibility
@@ -2793,17 +2807,21 @@ class TimeTravelDebugger {
     });
   }
 
-  renderMemoryState(memory) {
+  renderMemoryState(memory, prevMemory) {
     if (!this.elements.stateMemory) return;
+
+    // Add diff highlighting to changed memory values
+    const usedClass = (prevMemory && memory.used !== prevMemory.used) ? 'state-diff' : '';
+    const freeClass = (prevMemory && memory.free !== prevMemory.free) ? 'state-diff' : '';
 
     this.elements.stateMemory.innerHTML = `
       <p><strong>Total:</strong> ${this.formatMemorySize(memory.total || 0)}</p>
-      <p><strong>Used:</strong> ${this.formatMemorySize(memory.used || 0)}</p>
-      <p><strong>Free:</strong> ${this.formatMemorySize(memory.free || 0)}</p>
+      <p class="${usedClass}"><strong>Used:</strong> ${this.formatMemorySize(memory.used || 0)}</p>
+      <p class="${freeClass}"><strong>Free:</strong> ${this.formatMemorySize(memory.free || 0)}</p>
     `;
   }
 
-  renderFilesystemState(filesystem) {
+  renderFilesystemState(filesystem, prevFilesystem) {
     if (!this.elements.stateFilesystem) return;
 
     this.elements.stateFilesystem.innerHTML = '';
@@ -2814,10 +2832,16 @@ class TimeTravelDebugger {
       return;
     }
 
+    const prevFiles = prevFilesystem?.files || [];
+
     files.forEach(file => {
       const item = document.createElement('div');
-      item.className = 'file-tree-item';
-      item.textContent = file.path || file;
+      const filePath = file.path || file;
+
+      // Highlight new files
+      const isNew = !prevFiles.includes(filePath) && !prevFiles.find(f => (f.path || f) === filePath);
+      item.className = isNew ? 'file-tree-item state-diff' : 'file-tree-item';
+      item.textContent = filePath;
       this.elements.stateFilesystem.appendChild(item);
     });
   }
@@ -4433,6 +4457,7 @@ async function initApp() {
       }
     ];
     wos._nextTraceId = 3; // Continue from last mock trace ID
+    wos._currentPosition = 0; // Track current timeline position
 
     wos._currentState = {
       processes: {
@@ -4451,14 +4476,48 @@ async function initApp() {
 
     // Method: getCurrentState() - Returns JSON of current kernel state
     wos.getCurrentState = function() {
-      tracer.debug('DEBUGGER', 'getCurrentState() called');
-      return JSON.stringify(this._currentState);
+      tracer.debug('DEBUGGER', `getCurrentState() called at position ${this._currentPosition}`);
+
+      // Generate state that varies based on timeline position
+      // This simulates how state evolves as syscalls are executed
+      const pos = this._currentPosition || 0;
+
+      // Memory usage increases with position
+      const baseMemory = 1024 * 96;
+      const memoryUsed = baseMemory + (pos * 1024 * 4);
+      const totalMemory = 4096 * 1024;
+
+      // Process states evolve
+      const proc1State = pos < 1 ? 'Ready' : 'Running';
+      const proc2State = pos < 1 ? 'Blocked' : 'Ready';
+
+      // Additional processes appear at later positions
+      const processes = {
+        '1': { pid: 1, state: proc1State, parent_pid: null, memory: 1024 * (64 + pos * 2) },
+        '2': { pid: 2, state: proc2State, parent_pid: 1, memory: 1024 * (32 + pos) }
+      };
+
+      if (pos > 0) {
+        processes['3'] = { pid: 3, state: 'Ready', parent_pid: 1, memory: 1024 * 16 };
+      }
+
+      // Filesystem grows with position
+      const files = ['/bin/echo', '/bin/ls', '/bin/ps'];
+      if (pos > 0) files.push('/tmp/test.txt');
+      if (pos > 1) files.push('/tmp/output.log');
+
+      return JSON.stringify({
+        processes: processes,
+        memory: { total: totalMemory, used: memoryUsed, free: totalMemory - memoryUsed },
+        filesystem: { files: files }
+      });
     };
 
     // Method: jumpToPosition(pos) - Navigate to specific position in history
     wos.jumpToPosition = function(position) {
       tracer.debug('DEBUGGER', `jumpToPosition(${position}) called`);
-      // MVP: Just acknowledge the jump, actual state restoration will be in WASM later
+      // Store the current position so getCurrentState() can return position-specific state
+      this._currentPosition = position;
       return true;
     };
 
