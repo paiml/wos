@@ -556,6 +556,157 @@
       </div>
     </div>
 
+    <!-- WOS-304: Interactive Tutorial Overlay -->
+    <div id="tutorial-overlay" class="tutorial-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
+      <div class="tutorial-backdrop"></div>
+      <div class="tutorial-container">
+        <div class="tutorial-header">
+          <div class="tutorial-progress">
+            <span id="tutorial-step-indicator">Step 1 of 6</span>
+          </div>
+          <button id="btn-tutorial-close" class="btn-icon" title="Close tutorial" aria-label="Close tutorial">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Tutorial content container -->
+        <div class="tutorial-content" aria-live="polite">
+          <!-- Step 1: Welcome -->
+          <div class="tutorial-step" data-step="welcome">
+            <h2 id="tutorial-title" class="tutorial-title">Welcome to WOS!</h2>
+            <p class="tutorial-description">
+              Let's take a quick tour of the Integrated Learning Environment.
+              This 5-minute walkthrough will introduce you to the key features.
+            </p>
+            <div class="tutorial-actions">
+              <button id="btn-skip-tutorial" class="btn btn-secondary">Skip Tutorial</button>
+              <button id="btn-begin-tutorial" class="btn btn-primary">Begin Tour →</button>
+            </div>
+          </div>
+
+          <!-- Step 2: Terminal Basics -->
+          <div class="tutorial-step hidden" data-step="terminal">
+            <h2 class="tutorial-title">Terminal Basics</h2>
+            <p class="tutorial-instruction">
+              This is the WOS terminal. Try typing <code>ls</code> and pressing Enter to see the directory contents.
+            </p>
+            <p class="tutorial-explanation">
+              The terminal prompt shows your current directory. You can run commands just like a real Unix shell.
+            </p>
+            <div class="tutorial-actions">
+              <button id="btn-tutorial-back" class="btn btn-secondary">← Back</button>
+              <button id="btn-tutorial-next" class="btn btn-primary">Next →</button>
+            </div>
+          </div>
+
+          <!-- Step 3: Visual Monitor -->
+          <div class="tutorial-step hidden" data-step="monitor">
+            <h2 class="tutorial-title">Visual System Monitor</h2>
+            <p class="tutorial-instruction">
+              The Visual Monitor shows real-time process information. Try typing <code>ps</code> to see the process list.
+            </p>
+            <p class="tutorial-explanation">
+              You'll see process IDs (PIDs), states, and parent-child relationships. This helps you understand how processes work.
+            </p>
+            <div class="tutorial-actions">
+              <button id="btn-tutorial-back-2" class="btn btn-secondary">← Back</button>
+              <button id="btn-tutorial-next-2" class="btn btn-primary">Next →</button>
+            </div>
+          </div>
+
+          <!-- Step 4: Time-Travel Debugging -->
+          <div class="tutorial-step hidden" data-step="debugger">
+            <h2 class="tutorial-title">Time-Travel Debugger</h2>
+            <p class="tutorial-instruction">
+              The Time-Travel Debugger lets you step through system call history. Try dragging the timeline slider to explore past states.
+            </p>
+            <p class="tutorial-explanation">
+              Watch how processes are created and destroyed. You can jump to any point in history to inspect the system state.
+            </p>
+            <div class="tutorial-actions">
+              <button id="btn-tutorial-back-3" class="btn btn-secondary">← Back</button>
+              <button id="btn-tutorial-next-3" class="btn btn-primary">Next →</button>
+            </div>
+          </div>
+
+          <!-- Step 5: Test Runner -->
+          <div class="tutorial-step hidden" data-step="tests">
+            <h2 class="tutorial-title">Learning Objectives & Tests</h2>
+            <p class="tutorial-instruction">
+              The Learning Objectives panel shows your progress through the curriculum. Click "Run Tests" to see red/green feedback.
+            </p>
+            <p class="tutorial-explanation">
+              Progressive hints provide scaffolded support when you need help. Tests turn green when your implementation is correct.
+            </p>
+            <div class="tutorial-actions">
+              <button id="btn-tutorial-back-4" class="btn btn-secondary">← Back</button>
+              <button id="btn-tutorial-next-4" class="btn btn-primary">Next →</button>
+            </div>
+          </div>
+
+          <!-- Step 6: Completion -->
+          <div class="tutorial-step hidden" data-step="completion">
+            <h2 class="tutorial-title">Great job! You're ready to start building.</h2>
+            <p class="tutorial-description">
+              Need help? Click the <strong>?</strong> icon anytime to access documentation and retake this tutorial.
+            </p>
+            <p class="tutorial-encouragement">
+              Remember: Learning to build an operating system takes time. Use the progressive hints, run tests frequently, and explore at your own pace.
+            </p>
+            <div class="tutorial-actions">
+              <button id="btn-retake-tutorial" class="btn btn-secondary">Retake Tutorial</button>
+              <button id="btn-start-coding" class="btn btn-primary">Start Coding →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Announcement region for screen readers -->
+      <div class="sr-only" aria-live="polite" aria-atomic="true" id="tutorial-announcer"></div>
+    </div>
+
+    <!-- Help menu button (for retaking tutorial) -->
+    <button id="btn-help" class="btn-icon btn-help hidden" title="Help" aria-label="Help menu">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/>
+      </svg>
+    </button>
+
+    <!-- Help menu dropdown -->
+    <div id="help-menu" class="help-menu hidden">
+      <div class="help-menu-content">
+        <h3>Help & Resources</h3>
+        <ul class="help-menu-list">
+          <li>
+            <button id="btn-retake-tutorial-menu" class="help-menu-item">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+              </svg>
+              Retake Tutorial
+            </button>
+          </li>
+          <li>
+            <a href="https://docs.wos.dev" target="_blank" class="help-menu-item">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+              </svg>
+              Documentation
+            </a>
+          </li>
+          <li>
+            <a href="https://github.com/paiml/wos/issues" target="_blank" class="help-menu-item">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              </svg>
+              Report Issue
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+
     <script type="module" src="app.js"></script>
   </body>
 </html>
