@@ -1049,6 +1049,299 @@ class VimEditor {
   }
 }
 
+// WOS-305: Comprehensive Help System Data Structure
+// Provides detailed documentation for all commands with usage, examples, and related commands
+const HELP_DATA = {
+  help: {
+    name: 'help',
+    description: 'Display help information for commands',
+    usage: 'help [command]',
+    examples: [
+      { command: 'help', description: 'Show all available commands' },
+      { command: 'help ls', description: 'Show detailed help for ls command' },
+      { command: 'help cat', description: 'Show detailed help for cat command' }
+    ],
+    options: [
+      { flag: '[command]', description: 'Optional command name for detailed help' }
+    ],
+    related: ['version', 'config']
+  },
+  ls: {
+    name: 'ls',
+    description: 'List files and directories in the current directory',
+    usage: 'ls [options] [path]',
+    examples: [
+      { command: 'ls', description: 'List files in current directory' },
+      { command: 'ls /home', description: 'List files in /home directory' },
+      { command: 'ls -l', description: 'List files with detailed information' }
+    ],
+    options: [
+      { flag: '-l', description: 'Use long listing format' },
+      { flag: '-a', description: 'Show hidden files' },
+      { flag: '[path]', description: 'Directory path to list (default: current directory)' }
+    ],
+    related: ['cd', 'pwd', 'mkdir']
+  },
+  cat: {
+    name: 'cat',
+    description: 'Concatenate and display file contents',
+    usage: 'cat <filename>',
+    examples: [
+      { command: 'cat file.txt', description: 'Display contents of file.txt' },
+      { command: 'cat /etc/config', description: 'Display contents of /etc/config' }
+    ],
+    options: [
+      { flag: '<filename>', description: 'File to display (required)' }
+    ],
+    related: ['echo', 'grep', 'wc']
+  },
+  echo: {
+    name: 'echo',
+    description: 'Print text to the terminal output',
+    usage: 'echo <text>',
+    examples: [
+      { command: 'echo Hello World', description: 'Print "Hello World"' },
+      { command: 'echo "Hello, WOS!"', description: 'Print quoted text' }
+    ],
+    options: [
+      { flag: '<text>', description: 'Text to print (required)' }
+    ],
+    related: ['cat', 'printf']
+  },
+  cd: {
+    name: 'cd',
+    description: 'Change the current working directory',
+    usage: 'cd <directory>',
+    examples: [
+      { command: 'cd /home', description: 'Change to /home directory' },
+      { command: 'cd ..', description: 'Go up one directory level' },
+      { command: 'cd ~', description: 'Go to home directory' }
+    ],
+    options: [
+      { flag: '<directory>', description: 'Directory path to change to (required)' },
+      { flag: '..', description: 'Parent directory' },
+      { flag: '~', description: 'Home directory' }
+    ],
+    related: ['pwd', 'ls', 'mkdir']
+  },
+  pwd: {
+    name: 'pwd',
+    description: 'Print the current working directory path',
+    usage: 'pwd',
+    examples: [
+      { command: 'pwd', description: 'Show current directory path' }
+    ],
+    options: [],
+    related: ['cd', 'ls']
+  },
+  mkdir: {
+    name: 'mkdir',
+    description: 'Create a new directory',
+    usage: 'mkdir <directory>',
+    examples: [
+      { command: 'mkdir mydir', description: 'Create directory named "mydir"' },
+      { command: 'mkdir /home/docs', description: 'Create directory at /home/docs' }
+    ],
+    options: [
+      { flag: '<directory>', description: 'Directory name or path to create (required)' }
+    ],
+    related: ['ls', 'cd', 'rm']
+  },
+  rm: {
+    name: 'rm',
+    description: 'Remove (delete) files or directories',
+    usage: 'rm <file>',
+    examples: [
+      { command: 'rm file.txt', description: 'Delete file.txt' },
+      { command: 'rm /tmp/temp.log', description: 'Delete /tmp/temp.log' }
+    ],
+    options: [
+      { flag: '<file>', description: 'File to remove (required)' },
+      { flag: '-r', description: 'Remove directories recursively' }
+    ],
+    related: ['touch', 'mkdir', 'ls']
+  },
+  touch: {
+    name: 'touch',
+    description: 'Create a new empty file or update file timestamp',
+    usage: 'touch <filename>',
+    examples: [
+      { command: 'touch file.txt', description: 'Create empty file.txt' },
+      { command: 'touch /home/notes.md', description: 'Create file at /home/notes.md' }
+    ],
+    options: [
+      { flag: '<filename>', description: 'File to create or update (required)' }
+    ],
+    related: ['rm', 'cat', 'mkdir']
+  },
+  ps: {
+    name: 'ps',
+    description: 'List running processes in the system',
+    usage: 'ps',
+    examples: [
+      { command: 'ps', description: 'Show all running processes' }
+    ],
+    options: [],
+    related: ['kill', 'state']
+  },
+  grep: {
+    name: 'grep',
+    description: 'Search for patterns in file contents',
+    usage: 'grep <pattern> <file>',
+    examples: [
+      { command: 'grep "hello" file.txt', description: 'Search for "hello" in file.txt' },
+      { command: 'grep error log.txt', description: 'Search for "error" in log.txt' }
+    ],
+    options: [
+      { flag: '<pattern>', description: 'Text pattern to search for (required)' },
+      { flag: '<file>', description: 'File to search in (required)' }
+    ],
+    related: ['cat', 'wc']
+  },
+  wc: {
+    name: 'wc',
+    description: 'Count words, lines, and bytes in files',
+    usage: 'wc <file>',
+    examples: [
+      { command: 'wc file.txt', description: 'Count lines, words, and bytes in file.txt' }
+    ],
+    options: [
+      { flag: '<file>', description: 'File to analyze (required)' },
+      { flag: '-l', description: 'Count only lines' },
+      { flag: '-w', description: 'Count only words' },
+      { flag: '-c', description: 'Count only bytes' }
+    ],
+    related: ['cat', 'grep']
+  },
+  vim: {
+    name: 'vim',
+    description: 'Open the Vim modal text editor',
+    usage: 'vim [filename]',
+    examples: [
+      { command: 'vim', description: 'Open empty Vim editor' },
+      { command: 'vim file.txt', description: 'Edit file.txt in Vim' }
+    ],
+    options: [
+      { flag: '[filename]', description: 'Optional file to edit' }
+    ],
+    related: ['edit', 'cat']
+  },
+  edit: {
+    name: 'edit',
+    description: 'Open the Monaco code editor',
+    usage: 'edit <filename>',
+    examples: [
+      { command: 'edit file.js', description: 'Edit file.js in Monaco editor' },
+      { command: 'edit config.json', description: 'Edit config.json' }
+    ],
+    options: [
+      { flag: '<filename>', description: 'File to edit (required)' }
+    ],
+    related: ['vim', 'cat']
+  },
+  bash: {
+    name: 'bash',
+    description: 'Execute a shell script file',
+    usage: 'bash <script>',
+    examples: [
+      { command: 'bash script.sh', description: 'Execute script.sh' }
+    ],
+    options: [
+      { flag: '<script>', description: 'Script file to execute (required)' }
+    ],
+    related: ['source']
+  },
+  source: {
+    name: 'source',
+    description: 'Execute script in current shell context',
+    usage: 'source <script>',
+    examples: [
+      { command: 'source config.sh', description: 'Source config.sh in current shell' }
+    ],
+    options: [
+      { flag: '<script>', description: 'Script file to source (required)' }
+    ],
+    related: ['bash']
+  },
+  version: {
+    name: 'version',
+    description: 'Show the WOS system version information',
+    usage: 'version',
+    examples: [
+      { command: 'version', description: 'Display system version' }
+    ],
+    options: [],
+    related: ['help', 'state']
+  },
+  state: {
+    name: 'state',
+    description: 'Display current kernel state and system information',
+    usage: 'state',
+    examples: [
+      { command: 'state', description: 'Show kernel state' }
+    ],
+    options: [],
+    related: ['ps', 'version']
+  },
+  reset: {
+    name: 'reset',
+    description: 'Reset the system to initial state',
+    usage: 'reset',
+    examples: [
+      { command: 'reset', description: 'Reset system and clear all data' }
+    ],
+    options: [],
+    related: ['clear']
+  },
+  clear: {
+    name: 'clear',
+    description: 'Clear the terminal screen',
+    usage: 'clear',
+    examples: [
+      { command: 'clear', description: 'Clear terminal output' },
+      { command: 'cls', description: 'Alias for clear' }
+    ],
+    options: [],
+    related: ['reset']
+  },
+  history: {
+    name: 'history',
+    description: 'Show command history',
+    usage: 'history',
+    examples: [
+      { command: 'history', description: 'Display all previous commands' }
+    ],
+    options: [],
+    related: ['clear']
+  },
+  config: {
+    name: 'config',
+    description: 'Show current system configuration',
+    usage: 'config',
+    examples: [
+      { command: 'config', description: 'Display configuration settings' }
+    ],
+    options: [],
+    related: ['version', 'state']
+  },
+  theme: {
+    name: 'theme',
+    description: 'Change the terminal color theme',
+    usage: 'theme <mode>',
+    examples: [
+      { command: 'theme dark', description: 'Switch to dark theme' },
+      { command: 'theme light', description: 'Switch to light theme' },
+      { command: 'theme auto', description: 'Use system theme preference' }
+    ],
+    options: [
+      { flag: 'dark', description: 'Dark color scheme' },
+      { flag: 'light', description: 'Light color scheme' },
+      { flag: 'auto', description: 'Automatic based on system preference' }
+    ],
+    related: ['config']
+  }
+};
+
 class Terminal {
   constructor(configManager) {
     this.output = document.getElementById('terminal-output');
@@ -1375,8 +1668,14 @@ class Terminal {
     this.printCommand(cmd);
 
     // Handle built-in commands
-    if (cmd === 'help') {
-      this.printHelp();
+    // WOS-305: Enhanced help command with support for help <command>
+    if (cmd.startsWith('help')) {
+      const args = cmd.split(' ');
+      if (args.length > 1) {
+        this.printDetailedHelp(args[1]);
+      } else {
+        this.printHelp();
+      }
       return;
     }
 
@@ -1464,37 +1763,76 @@ class Terminal {
     }
   }
 
+  // WOS-305: Updated printHelp() to use HELP_DATA structure
   printHelp() {
     this.printLine('Available commands:', 'output');
+    this.printLine('Type "help <command>" for detailed documentation', 'output');
     this.printLine('', 'output');
-    this.printLine('Terminal commands:', 'output');
-    this.printLine('  help        - Show this help message', 'output');
-    this.printLine('  clear       - Clear terminal', 'output');
-    this.printLine('  history     - Show command history', 'output');
-    this.printLine('  version     - Show OS version', 'output');
-    this.printLine('  config      - Show current configuration', 'output');
-    this.printLine('  theme dark  - Switch to dark theme', 'output');
-    this.printLine('  theme light - Switch to light theme', 'output');
-    this.printLine('  theme auto  - Auto theme (system preference)', 'output');
-    this.printLine('', 'output');
-    this.printLine('OS commands (via WASM):', 'output');
-    this.printLine('  ps        - List processes', 'output');
-    this.printLine('  ls        - List files', 'output');
-    this.printLine('  cat       - Display file contents', 'output');
-    this.printLine('  pwd       - Print working directory', 'output');
-    this.printLine('  touch     - Create file', 'output');
-    this.printLine('  mkdir     - Create directory', 'output');
-    this.printLine('  rm        - Remove file', 'output');
-    this.printLine('  echo      - Echo arguments', 'output');
-    this.printLine('  grep      - Search file contents', 'output');
-    this.printLine('  wc        - Count words/lines/bytes', 'output');
-    this.printLine('  state     - Show kernel state', 'output');
-    this.printLine('  reset     - Reset system to initial state', 'output');
+
+    // Print all commands from HELP_DATA
+    Object.values(HELP_DATA).forEach(cmd => {
+      const padding = ' '.repeat(Math.max(1, 15 - cmd.name.length));
+      this.printLine(`  ${cmd.name}${padding}- ${cmd.description}`, 'output');
+    });
+
     this.printLine('', 'output');
     this.printLine('Keyboard shortcuts:', 'output');
     this.printLine('  ↑/↓       - Navigate command history', 'output');
     this.printLine('  Ctrl+L    - Clear terminal', 'output');
+    this.printLine('  F1        - Open help panel', 'output');
     this.printLine('', 'output');
+  }
+
+  // WOS-305: New method for detailed command help
+  printDetailedHelp(commandName) {
+    const helpData = HELP_DATA[commandName];
+
+    if (!helpData) {
+      this.printLine(`Unknown command: ${commandName}`, 'error');
+      this.printLine('Type "help" to see available commands', 'output');
+      return;
+    }
+
+    // Print command header
+    this.printLine(`Command: ${helpData.name}`, 'success help-command');
+    this.printLine('', 'output');
+
+    // Print description
+    this.printLine('DESCRIPTION:', 'output');
+    this.printLine(`  ${helpData.description}`, 'output');
+    this.printLine('', 'output');
+
+    // Print usage
+    this.printLine('USAGE:', 'output');
+    this.printLine(`  ${helpData.usage}`, 'output');
+    this.printLine('', 'output');
+
+    // Print options if available
+    if (helpData.options && helpData.options.length > 0) {
+      this.printLine('OPTIONS:', 'output');
+      helpData.options.forEach(opt => {
+        const padding = ' '.repeat(Math.max(1, 20 - opt.flag.length));
+        this.printLine(`  ${opt.flag}${padding}${opt.description}`, 'output');
+      });
+      this.printLine('', 'output');
+    }
+
+    // Print examples
+    if (helpData.examples && helpData.examples.length > 0) {
+      this.printLine('EXAMPLES:', 'output');
+      helpData.examples.forEach(example => {
+        this.printLine(`  $ ${example.command}`, 'command');
+        this.printLine(`    ${example.description}`, 'output');
+      });
+      this.printLine('', 'output');
+    }
+
+    // Print related commands
+    if (helpData.related && helpData.related.length > 0) {
+      this.printLine('SEE ALSO:', 'output');
+      this.printLine(`  ${helpData.related.join(', ')}`, 'output');
+      this.printLine('', 'output');
+    }
   }
 
   printHistory() {
