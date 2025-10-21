@@ -4070,7 +4070,7 @@ class HelpPanel {
       header.className = 'help-command-header';
       header.innerHTML = `
         <span class="help-command-name">${cmdData.name}</span>
-        <span class="help-command-brief">${cmdData.description}</span>
+        <span class="help-command-description">${cmdData.description}</span>
       `;
 
       const details = document.createElement('div');
@@ -4102,12 +4102,15 @@ class HelpPanel {
         ` : ''}
       `;
 
+      // Initialize aria-expanded
+      item.setAttribute('aria-expanded', 'false');
+
       item.appendChild(header);
       item.appendChild(details);
       this.helpCommandList.appendChild(item);
 
-      // Click to expand
-      header.addEventListener('click', () => this.toggleCommandDetails(item));
+      // Click anywhere on item to expand
+      item.addEventListener('click', () => this.toggleCommandDetails(item));
       item.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -4123,11 +4126,18 @@ class HelpPanel {
     const details = item.querySelector('.help-command-details');
     const isHidden = details.classList.contains('hidden');
 
-    // Close all other expanded items
-    this.helpCommandList.querySelectorAll('.help-command-details').forEach(d => {
-      if (d !== details) d.classList.add('hidden');
+    // Close all other expanded items and update their aria-expanded
+    this.helpCommandList.querySelectorAll('.help-command-item').forEach(otherItem => {
+      if (otherItem !== item) {
+        const otherDetails = otherItem.querySelector('.help-command-details');
+        if (otherDetails) {
+          otherDetails.classList.add('hidden');
+          otherItem.setAttribute('aria-expanded', 'false');
+        }
+      }
     });
 
+    // Toggle this item
     details.classList.toggle('hidden');
     item.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
   }
@@ -4140,11 +4150,37 @@ class HelpPanel {
         if (e.key === 'Escape') {
           this.searchInput.value = '';
           this.handleSearch('');
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          this.focusFirstHelpItem();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          this.focusLastHelpItem();
         }
       });
     }
 
-    // F1 keyboard shortcut to toggle help panel
+    // Arrow key navigation for help items
+    if (this.helpCommandList) {
+      this.helpCommandList.addEventListener('keydown', (e) => {
+        if (e.target.classList.contains('help-command-item')) {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            this.focusNextHelpItem(e.target);
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            this.focusPreviousHelpItem(e.target);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            if (this.searchInput) {
+              this.searchInput.focus();
+            }
+          }
+        }
+      });
+    }
+
+    // F1 keyboard shortcut to toggle help panel, Escape to close
     document.addEventListener('keydown', (e) => {
       if (e.key === 'F1') {
         e.preventDefault();
@@ -4152,6 +4188,16 @@ class HelpPanel {
         // Focus search input when opening
         if (this.helpPanel && !this.helpPanel.classList.contains('collapsed') && this.searchInput) {
           setTimeout(() => this.searchInput.focus(), 100);
+        }
+      } else if (e.key === 'Escape') {
+        // Close help panel if it's open
+        if (this.helpPanel && !this.helpPanel.classList.contains('collapsed')) {
+          e.preventDefault();
+          this.helpPanel.classList.add('collapsed');
+          const collapseBtn = this.helpPanel.querySelector('.btn-collapse');
+          if (collapseBtn) {
+            collapseBtn.setAttribute('aria-expanded', 'false');
+          }
         }
       }
     });
@@ -4181,15 +4227,35 @@ class HelpPanel {
     const normalizedQuery = query.toLowerCase().trim();
     let visibleCount = 0;
 
+    // First check if query exactly matches any command name
+    let exactMatch = false;
+    if (normalizedQuery) {
+      this.helpCommandList.querySelectorAll('.help-command-item').forEach(item => {
+        const cmdName = item.getAttribute('data-command-name').toLowerCase();
+        if (cmdName === normalizedQuery) {
+          exactMatch = true;
+        }
+      });
+    }
+
     this.helpCommandList.querySelectorAll('.help-command-item').forEach(item => {
       const cmdName = item.getAttribute('data-command-name').toLowerCase();
       const cmdDesc = item.getAttribute('data-command-description').toLowerCase();
       const fullText = item.textContent.toLowerCase();
 
-      const matches = normalizedQuery === '' ||
-                     cmdName.includes(normalizedQuery) ||
-                     cmdDesc.includes(normalizedQuery) ||
-                     fullText.includes(normalizedQuery);
+      let matches;
+      if (normalizedQuery === '') {
+        // Empty query - show all
+        matches = true;
+      } else if (exactMatch) {
+        // Exact command name match exists - show only that command
+        matches = cmdName === normalizedQuery;
+      } else {
+        // No exact match - do full-text search
+        matches = cmdName.includes(normalizedQuery) ||
+                 cmdDesc.includes(normalizedQuery) ||
+                 fullText.includes(normalizedQuery);
+      }
 
       if (matches) {
         item.style.display = '';
@@ -4210,6 +4276,44 @@ class HelpPanel {
     } else {
       this.searchResultCount.textContent = '';
     }
+  }
+
+  focusFirstHelpItem() {
+    const items = this.getVisibleHelpItems();
+    if (items.length > 0) {
+      items[0].focus();
+    }
+  }
+
+  focusLastHelpItem() {
+    const items = this.getVisibleHelpItems();
+    if (items.length > 0) {
+      items[items.length - 1].focus();
+    }
+  }
+
+  focusNextHelpItem(currentItem) {
+    const items = this.getVisibleHelpItems();
+    const currentIndex = Array.from(items).indexOf(currentItem);
+    if (currentIndex >= 0 && currentIndex < items.length - 1) {
+      items[currentIndex + 1].focus();
+    }
+  }
+
+  focusPreviousHelpItem(currentItem) {
+    const items = this.getVisibleHelpItems();
+    const currentIndex = Array.from(items).indexOf(currentItem);
+    if (currentIndex > 0) {
+      items[currentIndex - 1].focus();
+    } else if (currentIndex === 0 && this.searchInput) {
+      // At first item, go back to search input
+      this.searchInput.focus();
+    }
+  }
+
+  getVisibleHelpItems() {
+    return Array.from(this.helpCommandList.querySelectorAll('.help-command-item'))
+      .filter(item => item.style.display !== 'none');
   }
 }
 
