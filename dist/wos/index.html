@@ -453,6 +453,77 @@
               </div>
             </div>
           </div>
+
+          <!-- WOS-303: Learning Objectives & Test Status Panel -->
+          <div id="panel-learning-objectives" class="file-panel learning-panel" data-panel="learning_objectives">
+            <div class="file-panel-header">
+              <h3>Learning Objectives & Tests</h3>
+              <div class="file-controls">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M7 14l5-5 5 5z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="panel-content">
+              <!-- Phase Tracker Section -->
+              <div class="learning-section phase-tracker-section">
+                <div class="section-header">
+                  <h4>Phase Progress</h4>
+                </div>
+                <div id="phase-tracker" class="phase-tracker">
+                  <!-- Phase items will be dynamically populated -->
+                  <div class="no-data">Loading curriculum phases...</div>
+                </div>
+              </div>
+
+              <!-- Task List Section -->
+              <div class="learning-section task-list-section">
+                <div class="section-header">
+                  <h4 id="task-list-title">Select a Phase</h4>
+                </div>
+                <div id="task-list" class="task-list">
+                  <div class="no-data">Select a phase to view tasks</div>
+                </div>
+              </div>
+
+              <!-- Test Runner Section -->
+              <div class="learning-section test-runner-section">
+                <div class="section-header">
+                  <h4>Test Runner</h4>
+                  <div class="test-runner-controls">
+                    <button id="btn-run-all-tests" class="btn-icon" title="Run all tests for current phase">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M8 5v14l11-7z"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div id="test-runner" class="test-runner">
+                  <div id="test-runner-output" class="test-runner-output">
+                    <div class="no-data">No tests running</div>
+                  </div>
+                  <div id="test-summary" class="test-summary hidden">
+                    <span id="test-summary-text"></span>
+                  </div>
+                  <div id="test-error-display" class="test-error-display hidden">
+                    <div class="error-header">Error Details</div>
+                    <div id="test-error-content" class="error-content"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Celebration Animation (hidden by default) -->
+          <div id="celebration-animation" class="celebration hidden" aria-live="polite" aria-atomic="true">
+            <div class="celebration-content">
+              <h2 class="celebration-title">🎉 Phase Complete!</h2>
+              <p class="celebration-message">Great job! All tests passing.</p>
+            </div>
+          </div>
+
         </div>
       </main>
     </div>
