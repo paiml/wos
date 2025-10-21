@@ -77,7 +77,7 @@ help:
 	@echo ""
 	@echo "🔧 Development:"
 	@echo "  make hooks-install    Install pre-commit hooks"
-	@echo "  make serve            Start local HTTP server (port 8000)"
+	@echo "  make serve            Start development server with hot reload (port 8000)"
 	@echo "  make clean            Clean build artifacts"
 	@echo "  make cleanup-processes Kill runaway test/build processes"
 	@echo "  make check-memory     Verify system memory availability"
@@ -112,7 +112,7 @@ wasm:
 	@which wasm-bindgen > /dev/null 2>&1 || (echo "❌ wasm-bindgen not found. Install with: cargo install wasm-bindgen-cli" && exit 1)
 	@wasm-bindgen $(WASM_TARGET) --out-dir dist/wos --target web
 	@echo "✓ WASM build complete"
-	@echo "💡 Start local server: make serve"
+	@echo "💡 Start development server: make serve (hot reload + WASM auto-compilation)"
 	@echo "💡 Open browser: http://localhost:8000/"
 
 dist: wasm
@@ -400,8 +400,9 @@ hooks-install:
 # ============================================================================
 
 serve:
-	@echo "🌐 Starting HTTP server on http://localhost:8000"
-	@cd dist && ruchy serve wos --port 8000
+	@echo "🌐 Starting development server with hot reload on http://localhost:8000"
+	@echo "💡 Features: Hot reload (--watch), WASM auto-compilation (--watch-wasm)"
+	@cd dist && ruchy serve wos --port 8000 --watch --watch-wasm --verbose
 
 clean:
 	@echo "🧹 Cleaning build artifacts..."

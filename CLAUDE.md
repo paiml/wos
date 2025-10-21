@@ -36,9 +36,10 @@ make quality
 make wasm
 # Outputs to: dist/wos/wos_bg.wasm, wos.js
 
-# Start local development server (REQUIRED: Use ruchy serve ONLY)
-ruchy serve dist/wos --port 8000
+# Start development server with hot reload (REQUIRED: Use ruchy serve ONLY)
+ruchy serve dist/wos --port 8000 --watch --watch-wasm --verbose
 # Open: http://127.0.0.1:8000/
+# Features: Auto-reload on file changes, WASM auto-compilation, graceful shutdown
 ```
 
 ## Local HTTP Server Policy (CRITICAL - STOP THE LINE)
@@ -74,17 +75,28 @@ ruchy --version
 - ✅ **Memory safe** (Rust guarantees - no segfaults)
 - ✅ **Energy efficient** (16x better req/CPU% ratio)
 - ✅ **Auto MIME detection** for HTML, CSS, JS, JSON, WASM files
+- ✅ **Hot Reload** (v3.105.0+): File watching with debouncing (300ms default)
+- ✅ **WASM Auto-Compilation**: .ruchy files → .wasm on save
+- ✅ **Graceful Shutdown**: Ctrl+C cleanup with PID file management
+- ✅ **Network Access**: Local + network IPs for mobile/VM testing
+- ✅ **Vite-Style Output**: Color-coded logging for better DX
 
 **Usage Examples**:
 ```bash
-# Development (default port 8080)
+# Development with hot reload (RECOMMENDED)
+ruchy serve dist/wos --port 8000 --watch --watch-wasm --verbose
+
+# Production mode (no file watching)
+ruchy serve dist/wos --port 8000
+
+# Custom port with hot reload
+ruchy serve dist/wos --port 3000 --watch --watch-wasm
+
+# Bind to all interfaces for mobile/VM testing
+ruchy serve dist/wos --port 8000 --host 0.0.0.0 --watch --watch-wasm
+
+# Quick start (default port 8080, no hot reload)
 ruchy serve dist/wos
-
-# Custom port
-ruchy serve dist/wos --port 3000
-
-# Bind to all interfaces (for VM/container access)
-ruchy serve dist/wos --port 8000 --host 0.0.0.0
 ```
 
 ## Development Workflow
@@ -518,8 +530,10 @@ The HTML terminal interface provides:
 - Keyboard shortcuts (↑/↓ history, Ctrl+L clear)
 
 ```bash
-ruchy serve dist/wos --port 8000
+# Start with hot reload and WASM auto-compilation
+ruchy serve dist/wos --port 8000 --watch --watch-wasm --verbose
 # Open: http://127.0.0.1:8000/
+# Changes to HTML/CSS/JS/WASM auto-reload in browser
 ```
 
 ## Development Scope
@@ -536,10 +550,11 @@ ruchy serve dist/wos --port 8000
 
 **Local Development Focus**:
 - `make wasm` - perfect local build
-- `ruchy serve dist/wos --port 8000` - local development server (12.13x faster than Python)
+- `make serve` - development server with hot reload (12.13x faster than Python)
+- `ruchy serve dist/wos --port 8000 --watch --watch-wasm` - manual server start with hot reload
 - `http://127.0.0.1:8000/` - fully functional browser interface
 - All quality gates running locally
-- Perfect developer experience
+- Perfect developer experience with auto-reload and WASM auto-compilation
 - E2E tests running locally with Playwright
 
 **Deployment (Future)**:

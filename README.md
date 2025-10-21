@@ -33,10 +33,11 @@ rustup target add wasm32-unknown-unknown
 # Build WASM binary and generate JS bindings
 make wasm
 
-# Start local development server
+# Start development server with hot reload
 make serve
 
 # Open browser to http://localhost:8000/dist/wos/
+# Changes to HTML/CSS/JS/WASM automatically reload in browser
 ```
 
 ### Testing
@@ -89,6 +90,12 @@ WOS follows a classic microkernel architecture with minimal kernel functionality
 - **wasm-bindgen**: Rust/JavaScript interop layer
 - **im-rs**: Persistent data structures for O(1) cloning
 - **Deno**: Modern JavaScript runtime for frontend testing
+- **ruchy serve** (v3.105.0+): High-performance development server (12.13x faster than Python http.server)
+  - Hot reload with file watching (300ms debounce)
+  - WASM auto-compilation (.ruchy → .wasm)
+  - Graceful shutdown with PID file management
+  - Network access for mobile/VM testing
+  - Vite-style colored output
 
 ### Persistent Data Structures
 
@@ -260,6 +267,7 @@ See [Tracing Specification](docs/specifications/tracing-spec.md) for complete de
 make help            # Show all available commands
 make build           # Build all crates
 make wasm            # Build WASM binary
+make serve           # Start development server with hot reload
 make test            # Run Rust tests
 make test-frontend   # Run frontend unit tests
 make test-all        # Run all tests (Rust + Frontend + E2E)
@@ -455,6 +463,7 @@ Built with:
 - [im-rs](https://github.com/bodil/im-rs) - Persistent data structures
 - [Deno](https://deno.land/) - Modern JavaScript runtime
 - [Playwright](https://playwright.dev/) - E2E testing framework
+- [ruchy](https://github.com/paiml/ruchy) - High-performance development server with hot reload
 
 ---
 
