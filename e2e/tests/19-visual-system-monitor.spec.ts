@@ -18,6 +18,10 @@ import { test, expect } from '@playwright/test';
 
 test.describe('WOS-301: Visual System Monitor', () => {
   test.beforeEach(async ({ page }) => {
+    // Mark tutorial as completed to prevent overlay from blocking clicks
+    await page.addInitScript(() => {
+      localStorage.setItem('wos-tutorial-completed', 'true');
+    });
     await page.goto('index.html');
     // Wait for WASM to initialize
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
@@ -364,8 +368,8 @@ test.describe('WOS-301: Visual System Monitor', () => {
         await processRow.click();
         await page.waitForTimeout(200);
 
-        // Details panel or tooltip should appear
-        const detailsPanel = await page.locator('.process-details, .details-panel, [role="dialog"]');
+        // Details panel or tooltip should appear (exclude tutorial dialog)
+        const detailsPanel = await page.locator('.process-details:not(.hidden), .details-panel:not(.hidden)');
         if (await detailsPanel.count() > 0) {
           await expect(detailsPanel).toBeVisible();
         }
