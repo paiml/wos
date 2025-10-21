@@ -142,7 +142,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       await page.locator('#btn-begin-tutorial').click();
       await page.waitForTimeout(300);
 
-      const terminal = await page.locator('#terminal-panel');
+      const terminal = await page.locator('#terminal');
       const hasHighlight = await terminal.evaluate((el) => {
         return el.classList.contains('tutorial-highlight');
       });
@@ -157,7 +157,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       await page.locator('#btn-begin-tutorial').click();
       await page.waitForTimeout(300);
 
-      const terminal = await page.locator('#terminal-panel');
+      const terminal = await page.locator('#terminal');
       const boxShadow = await terminal.evaluate((el) => {
         return window.getComputedStyle(el).boxShadow;
       });
@@ -220,7 +220,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       await page.locator('#btn-tutorial-next').click(); // Skip terminal step
       await page.waitForTimeout(300);
 
-      const processView = await page.locator('#panel-visual-monitor');
+      const processView = await page.locator('#panel-system-monitor');
       const hasHighlight = await processView.evaluate((el) => {
         return el.classList.contains('tutorial-highlight');
       });
@@ -273,8 +273,8 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       await page.locator('#btn-tutorial-next').click();
       await page.waitForTimeout(300);
 
-      const debugger = await page.locator('#panel-time-travel-debugger');
-      const hasHighlight = await debugger.evaluate((el) => {
+      const debuggerPanel = await page.locator('#panel-time-travel-debugger');
+      const hasHighlight = await debuggerPanel.evaluate((el) => {
         return el.classList.contains('tutorial-highlight');
       });
 
@@ -638,8 +638,8 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       await page.reload();
       await page.waitForSelector('#tutorial-overlay', { timeout: 10000 });
 
-      const liveRegion = await page.locator('[aria-live="polite"]');
-      await expect(liveRegion).toBeVisible();
+      const liveRegion = await page.locator('#tutorial-announcer');
+      await expect(liveRegion).toBeAttached();
     });
 
     test('should announce step changes to screen readers', async ({ page }) => {
@@ -649,10 +649,10 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       await page.locator('#btn-begin-tutorial').click();
       await page.waitForTimeout(300);
 
-      const liveRegion = await page.locator('[aria-live="polite"]');
+      const liveRegion = await page.locator('#tutorial-announcer');
       const announcement = await liveRegion.textContent();
 
-      expect(announcement).toMatch(/Step 2|Terminal/i);
+      expect(announcement).toMatch(/Step 2|terminal/i);
     });
   });
 
@@ -682,7 +682,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       await page.locator('#btn-begin-tutorial').click();
       await page.waitForTimeout(300);
 
-      const terminal = await page.locator('#terminal-panel.tutorial-highlight');
+      const terminal = await page.locator('#terminal.tutorial-highlight');
       const animationDuration = await terminal.evaluate((el) => {
         return window.getComputedStyle(el).animationDuration;
       });

@@ -3314,6 +3314,362 @@ Hint: Check if panel is collapsed in beforeEach hook</pre>
   }
 }
 
+/**
+ * WOS-304: Interactive Tutorial (First-Run Experience)
+ *
+ * Manages 5-minute guided walkthrough with:
+ * - 6-step tutorial flow (Welcome → Terminal → Monitor → Debugger → Tests → Completion)
+ * - UI element highlighting with glowing borders
+ * - Skip/retake functionality
+ * - localStorage persistence
+ * - Full keyboard navigation
+ * - Screen reader support
+ */
+class InteractiveTutorial {
+  constructor() {
+    tracer.debug('TUTORIAL', 'InteractiveTutorial constructor called');
+
+    // DOM elements
+    this.overlay = document.getElementById('tutorial-overlay');
+    this.stepIndicator = document.getElementById('tutorial-step-indicator');
+    this.tutorialContent = document.querySelector('.tutorial-content');
+    this.announcer = document.getElementById('tutorial-announcer');
+    this.helpButton = document.getElementById('btn-help');
+    this.helpMenu = document.getElementById('help-menu');
+
+    // Tutorial steps
+    this.steps = ['welcome', 'terminal', 'monitor', 'debugger', 'tests', 'completion'];
+    this.currentStepIndex = 0;
+
+    // State
+    this.isActive = false;
+    this.highlightedElement = null;
+
+    // Check if tutorial should be shown
+    this.checkFirstVisit();
+
+    // Attach event listeners
+    this.attachEventListeners();
+
+    tracer.info('TUTORIAL', 'InteractiveTutorial initialized');
+  }
+
+  /**
+   * Check if this is first visit and show tutorial
+   */
+  checkFirstVisit() {
+    const completed = localStorage.getItem('wos-tutorial-completed');
+    const savedStep = localStorage.getItem('wos-tutorial-step');
+
+    if (!completed) {
+      // First visit or tutorial not completed
+      if (savedStep) {
+        // Resume from saved step
+        const stepIndex = this.steps.indexOf(savedStep);
+        if (stepIndex !== -1) {
+          this.currentStepIndex = stepIndex;
+        }
+      }
+
+      // Show tutorial after a short delay to let app initialize
+      setTimeout(() => {
+        this.show();
+      }, 500);
+    }
+  }
+
+  /**
+   * Show tutorial overlay
+   */
+  show() {
+    tracer.info('TUTORIAL', 'Showing tutorial overlay');
+    this.isActive = true;
+    this.overlay.classList.remove('hidden');
+    this.renderCurrentStep();
+
+    // Focus first interactive element
+    setTimeout(() => {
+      const firstButton = this.overlay.querySelector('button:not([disabled])');
+      if (firstButton) {
+        firstButton.focus();
+      }
+    }, 100);
+  }
+
+  /**
+   * Hide tutorial overlay
+   */
+  hide() {
+    tracer.info('TUTORIAL', 'Hiding tutorial overlay');
+    this.isActive = false;
+    this.overlay.classList.add('hidden');
+    this.clearHighlight();
+
+    // Show help button after tutorial
+    if (this.helpButton) {
+      this.helpButton.classList.remove('hidden');
+    }
+  }
+
+  /**
+   * Render current tutorial step
+   */
+  renderCurrentStep() {
+    const currentStep = this.steps[this.currentStepIndex];
+    tracer.debug('TUTORIAL', `Rendering step: ${currentStep} (${this.currentStepIndex + 1}/${this.steps.length})`);
+
+    // Update progress indicator
+    this.stepIndicator.textContent = `Step ${this.currentStepIndex + 1} of ${this.steps.length}`;
+
+    // Hide all steps
+    this.tutorialContent.querySelectorAll('.tutorial-step').forEach(step => {
+      step.classList.add('hidden');
+    });
+
+    // Show current step
+    const stepElement = this.tutorialContent.querySelector(`[data-step="${currentStep}"]`);
+    if (stepElement) {
+      stepElement.classList.remove('hidden');
+    }
+
+    // Apply highlighting based on step
+    this.applyStepHighlight(currentStep);
+
+    // Announce to screen readers
+    this.announce(`Step ${this.currentStepIndex + 1} of ${this.steps.length}: ${currentStep}`);
+
+    // Save progress
+    localStorage.setItem('wos-tutorial-step', currentStep);
+  }
+
+  /**
+   * Apply UI highlighting for current step
+   */
+  applyStepHighlight(step) {
+    // Clear previous highlight
+    this.clearHighlight();
+
+    let targetElement = null;
+
+    switch (step) {
+      case 'terminal':
+        targetElement = document.getElementById('terminal');
+        break;
+      case 'monitor':
+        targetElement = document.getElementById('panel-system-monitor');
+        break;
+      case 'debugger':
+        targetElement = document.getElementById('panel-time-travel-debugger');
+        break;
+      case 'tests':
+        targetElement = document.getElementById('panel-learning-objectives');
+        break;
+      default:
+        // No highlighting for welcome and completion steps
+        break;
+    }
+
+    if (targetElement) {
+      targetElement.classList.add('tutorial-highlight');
+      this.highlightedElement = targetElement;
+      tracer.debug('TUTORIAL', `Highlighted element: ${targetElement.id}`);
+    }
+  }
+
+  /**
+   * Clear UI highlighting
+   */
+  clearHighlight() {
+    if (this.highlightedElement) {
+      this.highlightedElement.classList.remove('tutorial-highlight');
+      this.highlightedElement = null;
+    }
+  }
+
+  /**
+   * Advance to next step
+   */
+  nextStep() {
+    if (this.currentStepIndex < this.steps.length - 1) {
+      this.currentStepIndex++;
+      this.renderCurrentStep();
+    }
+  }
+
+  /**
+   * Go back to previous step
+   */
+  previousStep() {
+    if (this.currentStepIndex > 0) {
+      this.currentStepIndex--;
+      this.renderCurrentStep();
+    }
+  }
+
+  /**
+   * Skip tutorial
+   */
+  skip() {
+    tracer.info('TUTORIAL', 'Tutorial skipped by user');
+    this.markComplete();
+    this.hide();
+  }
+
+  /**
+   * Complete tutorial
+   */
+  complete() {
+    tracer.info('TUTORIAL', 'Tutorial completed');
+    this.markComplete();
+    this.hide();
+  }
+
+  /**
+   * Mark tutorial as completed in localStorage
+   */
+  markComplete() {
+    localStorage.setItem('wos-tutorial-completed', 'true');
+    localStorage.removeItem('wos-tutorial-step');
+  }
+
+  /**
+   * Retake tutorial from beginning
+   */
+  retake() {
+    tracer.info('TUTORIAL', 'Retaking tutorial');
+
+    // Clear completion state
+    localStorage.removeItem('wos-tutorial-completed');
+    localStorage.removeItem('wos-tutorial-step');
+
+    // Reset to first step
+    this.currentStepIndex = 0;
+
+    // Hide help menu
+    if (this.helpMenu) {
+      this.helpMenu.classList.add('hidden');
+    }
+
+    // Show tutorial
+    this.show();
+  }
+
+  /**
+   * Announce message to screen readers
+   */
+  announce(message) {
+    if (this.announcer) {
+      this.announcer.textContent = message;
+    }
+  }
+
+  /**
+   * Attach event listeners
+   */
+  attachEventListeners() {
+    // Welcome step buttons
+    const beginButton = document.getElementById('btn-begin-tutorial');
+    if (beginButton) {
+      beginButton.addEventListener('click', () => {
+        this.nextStep();
+      });
+    }
+
+    const skipButton = document.getElementById('btn-skip-tutorial');
+    if (skipButton) {
+      skipButton.addEventListener('click', () => {
+        this.skip();
+      });
+    }
+
+    // Navigation buttons (Next) - delegate to handle dynamic button
+    document.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'btn-tutorial-next') {
+        this.nextStep();
+      }
+    });
+
+    // Navigation buttons (Back) - delegate to handle dynamic button
+    document.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'btn-tutorial-back') {
+        this.previousStep();
+      }
+    });
+
+    // Completion step buttons
+    const retakeButton = document.getElementById('btn-retake-tutorial');
+    if (retakeButton) {
+      retakeButton.addEventListener('click', () => {
+        this.retake();
+      });
+    }
+
+    const startCodingButton = document.getElementById('btn-start-coding');
+    if (startCodingButton) {
+      startCodingButton.addEventListener('click', () => {
+        this.complete();
+      });
+    }
+
+    // Close button
+    const closeButton = document.getElementById('btn-tutorial-close');
+    if (closeButton) {
+      closeButton.addEventListener('click', () => {
+        this.skip();
+      });
+    }
+
+    // Help menu button
+    if (this.helpButton) {
+      this.helpButton.addEventListener('click', () => {
+        if (this.helpMenu) {
+          this.helpMenu.classList.toggle('hidden');
+        }
+      });
+    }
+
+    // Retake from help menu
+    const retakeMenuButton = document.getElementById('btn-retake-tutorial-menu');
+    if (retakeMenuButton) {
+      retakeMenuButton.addEventListener('click', () => {
+        this.retake();
+      });
+    }
+
+    // Close help menu when clicking outside
+    document.addEventListener('click', (e) => {
+      if (this.helpMenu && !this.helpMenu.classList.contains('hidden')) {
+        if (!this.helpMenu.contains(e.target) && !this.helpButton.contains(e.target)) {
+          this.helpMenu.classList.add('hidden');
+        }
+      }
+    });
+
+    // Keyboard navigation
+    this.overlay.addEventListener('keydown', (e) => {
+      if (!this.isActive) return;
+
+      switch (e.key) {
+        case 'Escape':
+          this.skip();
+          break;
+        case 'ArrowLeft':
+          if (this.currentStepIndex > 0) {
+            e.preventDefault();
+            this.previousStep();
+          }
+          break;
+        case 'ArrowRight':
+          if (this.currentStepIndex < this.steps.length - 1) {
+            e.preventDefault();
+            this.nextStep();
+          }
+          break;
+      }
+    });
+  }
+}
+
 // Initialize application
 async function initApp() {
   tracer.info('INIT', 'Application initialization started');
@@ -3373,10 +3729,16 @@ async function initApp() {
     const learningObjectives = new LearningObjectives();
     tracer.info('INIT', 'LearningObjectives initialized');
 
+    // WOS-304: Initialize Interactive Tutorial (First-Run Experience)
+    tracer.debug('INIT', 'Creating InteractiveTutorial');
+    const interactiveTutorial = new InteractiveTutorial();
+    tracer.info('INIT', 'InteractiveTutorial initialized');
+
     // Expose to window for tests
     window.wos = wos;
     window.timeTravelDebugger = timeTravelDebugger;
     window.learningObjectives = learningObjectives;
+    window.interactiveTutorial = interactiveTutorial;
 
     // Get and display version
     tracer.debug('WASM', 'Getting WOS version');
