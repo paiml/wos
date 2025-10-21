@@ -4406,9 +4406,12 @@ async function initApp() {
     tracer.debug('WASM', 'Adding Time-Travel Debugging methods to WOS');
     wos._kernelHistory = []; // Array of SystemCallTrace objects
     wos._currentState = {
-      processes: {},
-      memory: { total: 4096 * 1024, used: 0, free: 4096 * 1024 },
-      filesystem: { files: [] }
+      processes: {
+        '1': { pid: 1, state: 'Running', parent_pid: null, memory: 1024 * 64 },
+        '2': { pid: 2, state: 'Ready', parent_pid: 1, memory: 1024 * 32 }
+      },
+      memory: { total: 4096 * 1024, used: 1024 * 96, free: 4096 * 1024 - 1024 * 96 },
+      filesystem: { files: ['/bin/echo', '/bin/ls', '/bin/ps', '/tmp/test.txt'] }
     };
     wos._startTime = Date.now();
     wos._nextTraceId = 0;
