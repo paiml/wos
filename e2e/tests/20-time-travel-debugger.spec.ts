@@ -20,7 +20,13 @@ import { test, expect } from '@playwright/test';
 
 test.describe('WOS-302: Time-Travel Debugger', () => {
   test.beforeEach(async ({ page }) => {
+    // Disable tutorial overlay BEFORE page loads to prevent it from blocking interactions
+    await page.addInitScript(() => {
+      localStorage.setItem('wos-tutorial-completed', 'true');
+    });
+
     await page.goto('index.html');
+
     // Wait for WASM to initialize
     await page.waitForSelector('#status:has-text("Ready")', { timeout: 10000 });
 
