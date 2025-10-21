@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4912b27d597dc6cee5a9e7fd8aabb60f8a06a8e3f3b622d6b203aa8fb0bf4d1c # shrinks to interpreter = "bash", prefix = "/usr/bin/env "
