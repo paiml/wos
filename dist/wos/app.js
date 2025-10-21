@@ -1755,6 +1755,8 @@ class Terminal {
         const result = this.wos.executeCommand(cmd);
         this.printLine(result, 'output');
         this.updateSystemInfo();
+        // WOS-301: Update filesystem list after command execution (for file creation/deletion)
+        this.updateFilesystemList();
       } catch (error) {
         this.printLine(`Error: ${error}`, 'error');
       }
@@ -2033,6 +2035,13 @@ class Terminal {
       const tbody = document.getElementById('process-table-body');
       if (!tbody) return;
 
+      // WOS-301: Remember currently selected process to preserve selection across updates
+      let selectedPid = null;
+      const selectedRow = tbody.querySelector('tr.selected');
+      if (selectedRow) {
+        selectedPid = selectedRow.dataset.pid;
+      }
+
       // Parse ps output to get process information
       // Expected format (tab-separated): PID\tSTATE\tPARENT
       const lines = result.trim().split('\n');
@@ -2050,8 +2059,8 @@ class Terminal {
         const line = lines[i].trim();
         if (!line || line.includes('No processes')) continue;
 
-        // Split by tabs and whitespace
-        const parts = line.split(/\t+/);
+        // Split by tabs or multiple spaces (handles both tab and space-separated output)
+        const parts = line.split(/[\t\s]+/);
         if (parts.length >= 2) {
           // Extract PID, STATE, and PARENT
           const pid = parts[0]?.trim();
@@ -2100,8 +2109,12 @@ class Terminal {
         // Set attributes AFTER innerHTML to ensure they're not cleared
         row.setAttribute('tabindex', '0');
         row.setAttribute('aria-label', `Process ${proc.pid}, state ${proc.state}, parent ${proc.parent}`);
-        row.setAttribute('class', ''); // Initialize class attribute for highlight test
         row.dataset.pid = proc.pid;
+
+        // WOS-301: Restore 'selected' class if this was the previously selected process
+        if (proc.pid === selectedPid) {
+          row.classList.add('selected');
+        }
 
         // Add click handler for row selection
         row.addEventListener('click', (e) => {
