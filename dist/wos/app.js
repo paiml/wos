@@ -4404,7 +4404,35 @@ async function initApp() {
 
     // WOS-302: Extend WOS with Time-Travel Debugging methods (MVP mock implementation)
     tracer.debug('WASM', 'Adding Time-Travel Debugging methods to WOS');
-    wos._kernelHistory = []; // Array of SystemCallTrace objects
+    wos._startTime = Date.now();
+    wos._nextTraceId = 0;
+
+    // Initialize with mock trace history (MVP: Populate with sample syscalls for testing)
+    wos._kernelHistory = [
+      {
+        trace_id: 0,
+        calling_pid: 1,
+        syscall: { Write: { fd: 1, data: 'init started' } },
+        result: { Ok: 'Written 12 bytes' },
+        timestamp_us: 100
+      },
+      {
+        trace_id: 1,
+        calling_pid: 1,
+        syscall: { Read: { fd: 0, count: 1024 } },
+        result: { Ok: 'Read 5 bytes' },
+        timestamp_us: 250
+      },
+      {
+        trace_id: 2,
+        calling_pid: 2,
+        syscall: { Fork: null },
+        result: { Ok: 'PID 2' },
+        timestamp_us: 500
+      }
+    ];
+    wos._nextTraceId = 3; // Continue from last mock trace ID
+
     wos._currentState = {
       processes: {
         '1': { pid: 1, state: 'Running', parent_pid: null, memory: 1024 * 64 },
@@ -4413,8 +4441,6 @@ async function initApp() {
       memory: { total: 4096 * 1024, used: 1024 * 96, free: 4096 * 1024 - 1024 * 96 },
       filesystem: { files: ['/bin/echo', '/bin/ls', '/bin/ps', '/tmp/test.txt'] }
     };
-    wos._startTime = Date.now();
-    wos._nextTraceId = 0;
 
     // Method: getKernelHistory() - Returns JSON array of all syscall traces
     wos.getKernelHistory = function() {
