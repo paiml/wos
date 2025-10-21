@@ -176,7 +176,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       const terminalStep = await page.locator('.tutorial-step[data-step="terminal"]');
       const instruction = await terminalStep.locator('.tutorial-instruction').textContent();
 
-      expect(instruction).toMatch(/type.*ls/i);
+      expect(instruction).toMatch(/try.*typing.*ls/i);
     });
 
     test('should advance when user types ls and presses Enter', async ({ page }) => {
@@ -240,7 +240,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       const monitorStep = await page.locator('.tutorial-step[data-step="monitor"]');
       const instruction = await monitorStep.locator('.tutorial-instruction').textContent();
 
-      expect(instruction).toMatch(/type.*ps/i);
+      expect(instruction).toMatch(/try.*typing.*ps/i);
     });
 
     test('should explain PID and process states', async ({ page }) => {
