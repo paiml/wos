@@ -241,7 +241,344 @@ fn try_read_procfs(
     None
 }
 
-/// Dispatch a system call
+// Syscall handler helpers (extracted for complexity reduction)
+
+/// Handle GetPid syscall
+fn sys_getpid(
+    state: KernelState,
+    calling_pid: ProcessId,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    Ok((state, SyscallOutput::Pid(calling_pid)))
+}
+
+/// Handle Fork syscall
+fn sys_fork(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let child_pid = state.allocate_pid();
+    let parent = state
+        .get_process(calling_pid)
+        .ok_or(KernelError::ProcessNotFound(calling_pid))?
+        .clone();
+
+    let mut child = parent.clone();
+    child.pid = child_pid;
+    child.parent_pid = Some(calling_pid);
+    state.add_process(child);
+
+    Ok((state, SyscallOutput::Pid(child_pid)))
+}
+
+/// Handle Exit syscall
+fn sys_exit(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    code: i32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    if let Some(process) = state.get_process_mut(calling_pid) {
+        process.state = crate::state::ProcessState::Terminated(code);
+        Ok((state, SyscallOutput::Success))
+    } else {
+        Err(KernelError::ProcessNotFound(calling_pid))
+    }
+}
+
+/// Handle WaitPid syscall
+fn sys_waitpid(
+    state: KernelState,
+    calling_pid: ProcessId,
+    wait_pid: ProcessId,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    if !state.processes.contains_key(&calling_pid) {
+        return Err(KernelError::ProcessNotFound(calling_pid));
+    }
+
+    let target = state
+        .get_process(wait_pid)
+        .ok_or(KernelError::ProcessNotFound(wait_pid))?;
+
+    if target.parent_pid != Some(calling_pid) {
+        return Err(KernelError::PermissionDenied);
+    }
+
+    match target.state {
+        crate::state::ProcessState::Terminated(exit_code) => {
+            Ok((state, SyscallOutput::Value(exit_code)))
+        }
+        _ => Err(KernelError::InvalidProcessState),
+    }
+}
+
+/// Handle Open syscall
+fn sys_open(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    path: String,
+    flags: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path_buf = PathBuf::from(&path);
+
+    if !state.vfs.exists(&path_buf) {
+        if (flags & O_CREAT) != 0 {
+            state
+                .vfs
+                .create_file(path_buf.clone(), vec![])
+                .map_err(|_| KernelError::FileNotFound(path.clone()))?;
+        } else {
+            return Err(KernelError::FileNotFound(path));
+        }
+    }
+
+    if let Some(process) = state.get_process_mut(calling_pid) {
+        let fd = process.open_file(path_buf);
+        Ok((state, SyscallOutput::FileDescriptor(fd)))
+    } else {
+        Err(KernelError::ProcessNotFound(calling_pid))
+    }
+}
+
+/// Handle Close syscall
+fn sys_close(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    fd: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    if let Some(process) = state.get_process_mut(calling_pid) {
+        if process.close_file(fd).is_some() {
+            Ok((state, SyscallOutput::Success))
+        } else {
+            Err(KernelError::InvalidFileDescriptor(fd))
+        }
+    } else {
+        Err(KernelError::ProcessNotFound(calling_pid))
+    }
+}
+
+/// Handle Read syscall
+fn sys_read(
+    state: KernelState,
+    calling_pid: ProcessId,
+    fd: u32,
+    count: usize,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let process = state
+        .get_process(calling_pid)
+        .ok_or(KernelError::ProcessNotFound(calling_pid))?;
+
+    let path = process
+        .get_file_path(fd)
+        .ok_or(KernelError::InvalidFileDescriptor(fd))?;
+
+    // Check if this is a pipe read
+    if path
+        .to_str()
+        .map(|s| s.starts_with("/pipe/"))
+        .unwrap_or(false)
+    {
+        if let Some(pipe) = state.pipes.get(&fd) {
+            let bytes_to_return = pipe.data.len().min(count);
+            let data = pipe.data[..bytes_to_return].to_vec();
+            return Ok((state, SyscallOutput::Data(data)));
+        } else {
+            return Err(KernelError::InvalidFileDescriptor(fd));
+        }
+    }
+
+    // Check if this is a ProcFS path
+    if let Some(procfs_result) = try_read_procfs(&state, path, calling_pid) {
+        let content = procfs_result?;
+        let bytes_to_return = content.len().min(count);
+        let data = content[..bytes_to_return].to_vec();
+        return Ok((state, SyscallOutput::Data(data)));
+    }
+
+    // Read from VFS
+    match state.vfs.read_file(path) {
+        Ok(content) => {
+            let bytes_to_return = content.len().min(count);
+            let data = content[..bytes_to_return].to_vec();
+            Ok((state, SyscallOutput::Data(data)))
+        }
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(_) => Err(KernelError::InvalidParameters(
+            "VFS error during read".to_string(),
+        )),
+    }
+}
+
+/// Handle Write syscall
+fn sys_write(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    fd: u32,
+    data: Vec<u8>,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = {
+        let process = state
+            .get_process(calling_pid)
+            .ok_or(KernelError::ProcessNotFound(calling_pid))?;
+        process
+            .get_file_path(fd)
+            .ok_or(KernelError::InvalidFileDescriptor(fd))?
+            .clone()
+    };
+
+    // Check if this is a pipe write
+    if path
+        .to_str()
+        .map(|s| s.starts_with("/pipe/"))
+        .unwrap_or(false)
+    {
+        if let Some(fd_str) = path.to_str().and_then(|s| s.split('/').nth(2)) {
+            if let Ok(read_fd) = fd_str.parse::<u32>() {
+                if let Some(pipe) = state.pipes.get_mut(&read_fd) {
+                    pipe.data.extend_from_slice(&data);
+                    return Ok((state, SyscallOutput::Value(data.len() as i32)));
+                }
+            }
+        }
+        return Err(KernelError::InvalidFileDescriptor(fd));
+    }
+
+    // Write to VFS
+    match state.vfs.write_file(&path, data.clone()) {
+        Ok(_) => Ok((state, SyscallOutput::Value(data.len() as i32))),
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(_) => Err(KernelError::InvalidParameters(
+            "VFS error during write".to_string(),
+        )),
+    }
+}
+
+/// Handle Mmap syscall
+fn sys_mmap(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    size: usize,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    if let Some(process) = state.get_process_mut(calling_pid) {
+        if let Some(addr) = process.memory.mmap(size) {
+            Ok((state, SyscallOutput::Address(addr)))
+        } else {
+            Err(KernelError::ResourceExhausted("Out of memory".to_string()))
+        }
+    } else {
+        Err(KernelError::ProcessNotFound(calling_pid))
+    }
+}
+
+/// Handle Munmap syscall
+fn sys_munmap(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    addr: u64,
+    size: usize,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    if let Some(process) = state.get_process_mut(calling_pid) {
+        if process.memory.munmap(addr, size) {
+            Ok((state, SyscallOutput::Success))
+        } else {
+            Err(KernelError::InvalidParameters(
+                "Invalid munmap range".to_string(),
+            ))
+        }
+    } else {
+        Err(KernelError::ProcessNotFound(calling_pid))
+    }
+}
+
+/// Handle Send syscall
+fn sys_send(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    target_pid: ProcessId,
+    data: Vec<u8>,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    if !state.processes.contains_key(&target_pid) {
+        return Err(KernelError::ProcessNotFound(target_pid));
+    }
+
+    let message = crate::state::Message::new(calling_pid, target_pid, data);
+
+    if let Some(target_process) = state.get_process_mut(target_pid) {
+        target_process.message_queue.push_back(message);
+        Ok((state, SyscallOutput::Success))
+    } else {
+        Err(KernelError::ProcessNotFound(target_pid))
+    }
+}
+
+/// Handle Recv syscall
+fn sys_recv(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let process = state
+        .get_process_mut(calling_pid)
+        .ok_or(KernelError::ProcessNotFound(calling_pid))?;
+
+    if process.message_queue.is_empty() {
+        return Err(KernelError::InvalidProcessState);
+    }
+
+    let message = process.message_queue.remove(0);
+    Ok((state, SyscallOutput::Data(message.payload)))
+}
+
+/// Handle Pipe syscall
+fn sys_pipe(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    if let Some(process) = state.get_process_mut(calling_pid) {
+        let read_fd = process.allocate_fd();
+        let write_fd = read_fd + 1;
+
+        process
+            .open_files
+            .insert(read_fd, PathBuf::from(format!("/pipe/{}/read", read_fd)));
+        process
+            .open_files
+            .insert(write_fd, PathBuf::from(format!("/pipe/{}/write", read_fd)));
+
+        let pipe = crate::state::PipeBuffer {
+            read_fd,
+            write_fd,
+            owner_pid: calling_pid,
+            data: Vec::new(),
+        };
+        state.pipes.insert(read_fd, pipe);
+
+        Ok((state, SyscallOutput::Pipe { read_fd, write_fd }))
+    } else {
+        Err(KernelError::ProcessNotFound(calling_pid))
+    }
+}
+
+/// Handle Dup2 syscall
+fn sys_dup2(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    oldfd: u32,
+    newfd: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    if let Some(process) = state.get_process_mut(calling_pid) {
+        match process.dup_fd(oldfd, newfd) {
+            Ok(_) => Ok((state, SyscallOutput::Success)),
+            Err(msg) => Err(KernelError::InvalidParameters(msg)),
+        }
+    } else {
+        Err(KernelError::ProcessNotFound(calling_pid))
+    }
+}
+
 ///
 /// Pure functional dispatcher: takes kernel state and syscall, returns new state and output.
 /// Never panics - all errors are returned as Results.
@@ -256,376 +593,21 @@ pub fn dispatch_syscall(
     }
 
     match syscall {
-        SystemCall::GetPid => {
-            // Return calling process's PID
-            Ok((state, SyscallOutput::Pid(calling_pid)))
-        }
-
-        SystemCall::Fork => {
-            // Fork: create child process
-            let mut new_state = state;
-
-            // Allocate new PID for child
-            let child_pid = new_state.allocate_pid();
-
-            // Get parent process
-            let parent = new_state
-                .get_process(calling_pid)
-                .ok_or(KernelError::ProcessNotFound(calling_pid))?
-                .clone();
-
-            // Create child process (copy of parent)
-            let mut child = parent.clone();
-            child.pid = child_pid;
-            child.parent_pid = Some(calling_pid);
-
-            // Add child to process table
-            new_state.add_process(child);
-
-            // Return child PID to parent
-            Ok((new_state, SyscallOutput::Pid(child_pid)))
-        }
-
-        SystemCall::Exit(code) => {
-            // Exit: terminate calling process
-            let mut new_state = state;
-
-            // Update process state to Terminated
-            if let Some(process) = new_state.get_process_mut(calling_pid) {
-                process.state = crate::state::ProcessState::Terminated(code);
-            } else {
-                return Err(KernelError::ProcessNotFound(calling_pid));
-            }
-
-            Ok((new_state, SyscallOutput::Success))
-        }
-
-        SystemCall::WaitPid(wait_pid) => {
-            // WaitPid: wait for child process to terminate
-            let state_ref = &state;
-
-            // Verify calling process exists
-            if !state_ref.processes.contains_key(&calling_pid) {
-                return Err(KernelError::ProcessNotFound(calling_pid));
-            }
-
-            // Verify target process exists
-            let target = state_ref
-                .get_process(wait_pid)
-                .ok_or(KernelError::ProcessNotFound(wait_pid))?;
-
-            // Verify target is a child of caller
-            if target.parent_pid != Some(calling_pid) {
-                return Err(KernelError::PermissionDenied);
-            }
-
-            // Check if child has terminated
-            match target.state {
-                crate::state::ProcessState::Terminated(exit_code) => {
-                    // Child has exited, return exit code
-                    Ok((state, SyscallOutput::Value(exit_code)))
-                }
-                _ => {
-                    // Child still running - in real OS, would block
-                    // For now, return error to indicate blocking needed
-                    Err(KernelError::InvalidProcessState)
-                }
-            }
-        }
-
-        SystemCall::Sleep(_duration) => {
-            // Not implemented yet - placeholder
-            Err(KernelError::NotImplemented)
-        }
-
-        SystemCall::Open { path, flags } => {
-            // Open file: create file descriptor
-            let mut new_state = state;
-            let path_buf = PathBuf::from(&path);
-
-            // Check if file exists in VFS
-            if !new_state.vfs.exists(&path_buf) {
-                // File doesn't exist - check if O_CREAT flag is set
-                if (flags & O_CREAT) != 0 {
-                    // Create empty file using mutable VFS operation
-                    new_state
-                        .vfs
-                        .create_file(path_buf.clone(), vec![])
-                        .map_err(|_| KernelError::FileNotFound(path.clone()))?;
-                } else {
-                    return Err(KernelError::FileNotFound(path));
-                }
-            }
-
-            // Get mutable access to process
-            if let Some(process) = new_state.get_process_mut(calling_pid) {
-                // Open file (allocate file descriptor)
-                let fd = process.open_file(path_buf);
-                Ok((new_state, SyscallOutput::FileDescriptor(fd)))
-            } else {
-                Err(KernelError::ProcessNotFound(calling_pid))
-            }
-        }
-
-        SystemCall::Close { fd } => {
-            // Close file: remove file descriptor
-            let mut new_state = state;
-
-            // Get mutable access to process
-            if let Some(process) = new_state.get_process_mut(calling_pid) {
-                // Close file descriptor
-                if process.close_file(fd).is_some() {
-                    Ok((new_state, SyscallOutput::Success))
-                } else {
-                    // FD not found or is a standard stream
-                    Err(KernelError::InvalidFileDescriptor(fd))
-                }
-            } else {
-                Err(KernelError::ProcessNotFound(calling_pid))
-            }
-        }
-
-        SystemCall::Read { fd, count } => {
-            // Read from file descriptor
-            let new_state = state;
-
-            // Get the process
-            let process = new_state
-                .get_process(calling_pid)
-                .ok_or(KernelError::ProcessNotFound(calling_pid))?;
-
-            // Get file path from FD table
-            let path = process
-                .get_file_path(fd)
-                .ok_or(KernelError::InvalidFileDescriptor(fd))?;
-
-            // Check if this is a pipe read
-            if path
-                .to_str()
-                .map(|s| s.starts_with("/pipe/"))
-                .unwrap_or(false)
-            {
-                // This is a pipe read - check if it's the read end
-                if let Some(pipe) = new_state.pipes.get(&fd) {
-                    // Read from pipe buffer
-                    let bytes_to_return = pipe.data.len().min(count);
-                    let data = pipe.data[..bytes_to_return].to_vec();
-                    return Ok((new_state, SyscallOutput::Data(data)));
-                } else {
-                    return Err(KernelError::InvalidFileDescriptor(fd));
-                }
-            }
-
-            // Check if this is a ProcFS path and handle specially
-            if let Some(procfs_result) = try_read_procfs(&new_state, path, calling_pid) {
-                let content = procfs_result?;
-                let bytes_to_return = content.len().min(count);
-                let data = content[..bytes_to_return].to_vec();
-                return Ok((new_state, SyscallOutput::Data(data)));
-            }
-
-            // Read from VFS for regular files
-            match new_state.vfs.read_file(path) {
-                Ok(content) => {
-                    // Return up to 'count' bytes
-                    let bytes_to_return = content.len().min(count);
-                    let data = content[..bytes_to_return].to_vec();
-                    Ok((new_state, SyscallOutput::Data(data)))
-                }
-                Err(wos_shared::vfs::VfsError::NotFound) => {
-                    Err(KernelError::FileNotFound(path.display().to_string()))
-                }
-                Err(wos_shared::vfs::VfsError::PermissionDenied) => {
-                    Err(KernelError::PermissionDenied)
-                }
-                Err(_) => Err(KernelError::InvalidParameters(
-                    "VFS error during read".to_string(),
-                )),
-            }
-        }
-
-        SystemCall::Write { fd, data } => {
-            // Write to file descriptor
-            let mut new_state = state;
-
-            // Get file path from FD table
-            let path = {
-                let process = new_state
-                    .get_process(calling_pid)
-                    .ok_or(KernelError::ProcessNotFound(calling_pid))?;
-
-                process
-                    .get_file_path(fd)
-                    .ok_or(KernelError::InvalidFileDescriptor(fd))?
-                    .clone()
-            };
-
-            // Check if this is a pipe write
-            if path
-                .to_str()
-                .map(|s| s.starts_with("/pipe/"))
-                .unwrap_or(false)
-            {
-                // Extract read_fd from path like "/pipe/3/write" -> 3
-                if let Some(fd_str) = path.to_str().and_then(|s| s.split('/').nth(2)) {
-                    if let Ok(read_fd) = fd_str.parse::<u32>() {
-                        // This is a pipe write - find the corresponding pipe
-                        if let Some(pipe) = new_state.pipes.get_mut(&read_fd) {
-                            // Append data to pipe buffer
-                            pipe.data.extend_from_slice(&data);
-                            return Ok((new_state, SyscallOutput::Value(data.len() as i32)));
-                        }
-                    }
-                }
-                return Err(KernelError::InvalidFileDescriptor(fd));
-            }
-
-            // Write to VFS for regular files
-            match new_state.vfs.write_file(&path, data.clone()) {
-                Ok(_) => {
-                    // Return number of bytes written
-                    Ok((new_state, SyscallOutput::Value(data.len() as i32)))
-                }
-                Err(wos_shared::vfs::VfsError::NotFound) => {
-                    Err(KernelError::FileNotFound(path.display().to_string()))
-                }
-                Err(wos_shared::vfs::VfsError::PermissionDenied) => {
-                    Err(KernelError::PermissionDenied)
-                }
-                Err(_) => Err(KernelError::InvalidParameters(
-                    "VFS error during write".to_string(),
-                )),
-            }
-        }
-
-        SystemCall::Mmap { size } => {
-            // Allocate memory for process
-            let mut new_state = state;
-
-            // Get mutable access to process
-            if let Some(process) = new_state.get_process_mut(calling_pid) {
-                // Allocate memory
-                if let Some(addr) = process.memory.mmap(size) {
-                    Ok((new_state, SyscallOutput::Address(addr)))
-                } else {
-                    Err(KernelError::ResourceExhausted("Out of memory".to_string()))
-                }
-            } else {
-                Err(KernelError::ProcessNotFound(calling_pid))
-            }
-        }
-
-        SystemCall::Munmap { addr, size } => {
-            // Free memory for process
-            let mut new_state = state;
-
-            // Get mutable access to process
-            if let Some(process) = new_state.get_process_mut(calling_pid) {
-                // Free memory
-                if process.memory.munmap(addr, size) {
-                    Ok((new_state, SyscallOutput::Success))
-                } else {
-                    Err(KernelError::InvalidParameters(
-                        "Invalid munmap range".to_string(),
-                    ))
-                }
-            } else {
-                Err(KernelError::ProcessNotFound(calling_pid))
-            }
-        }
-
-        SystemCall::Send { target_pid, data } => {
-            // Send message to target process
-            let mut new_state = state;
-
-            // Check if target process exists
-            if !new_state.processes.contains_key(&target_pid) {
-                return Err(KernelError::ProcessNotFound(target_pid));
-            }
-
-            // Create message
-            let message = crate::state::Message::new(calling_pid, target_pid, data);
-
-            // Add message to target's queue
-            if let Some(target_process) = new_state.get_process_mut(target_pid) {
-                target_process.message_queue.push_back(message);
-                Ok((new_state, SyscallOutput::Success))
-            } else {
-                Err(KernelError::ProcessNotFound(target_pid))
-            }
-        }
-
-        SystemCall::Recv { timeout: _ } => {
-            // Receive message from queue
-            let mut new_state = state;
-
-            // Get the calling process
-            let process = new_state
-                .get_process_mut(calling_pid)
-                .ok_or(KernelError::ProcessNotFound(calling_pid))?;
-
-            // Check if there are messages in the queue
-            if process.message_queue.is_empty() {
-                // No messages - would block in real implementation
-                // For now, return an error to indicate no messages available
-                return Err(KernelError::InvalidProcessState);
-            }
-
-            // Pop first message from queue (FIFO)
-            let message = process.message_queue.remove(0);
-
-            // Return message data
-            Ok((new_state, SyscallOutput::Data(message.payload)))
-        }
-
-        SystemCall::Pipe => {
-            // Create a pipe
-            let mut new_state = state;
-
-            // Get mutable access to process
-            if let Some(process) = new_state.get_process_mut(calling_pid) {
-                // Allocate two file descriptors
-                let read_fd = process.allocate_fd();
-                let write_fd = read_fd + 1; // write_fd is next after read_fd
-
-                // Add pipe FDs to process (use special path to identify pipes)
-                process
-                    .open_files
-                    .insert(read_fd, PathBuf::from(format!("/pipe/{}/read", read_fd)));
-                process
-                    .open_files
-                    .insert(write_fd, PathBuf::from(format!("/pipe/{}/write", read_fd)));
-
-                // Create pipe buffer in kernel state
-                let pipe = crate::state::PipeBuffer {
-                    read_fd,
-                    write_fd,
-                    owner_pid: calling_pid,
-                    data: Vec::new(),
-                };
-                new_state.pipes.insert(read_fd, pipe);
-
-                Ok((new_state, SyscallOutput::Pipe { read_fd, write_fd }))
-            } else {
-                Err(KernelError::ProcessNotFound(calling_pid))
-            }
-        }
-
-        SystemCall::Dup2 { oldfd, newfd } => {
-            // Duplicate file descriptor
-            let mut new_state = state;
-
-            // Get mutable access to process
-            if let Some(process) = new_state.get_process_mut(calling_pid) {
-                // Duplicate the FD
-                match process.dup_fd(oldfd, newfd) {
-                    Ok(_) => Ok((new_state, SyscallOutput::Success)),
-                    Err(msg) => Err(KernelError::InvalidParameters(msg)),
-                }
-            } else {
-                Err(KernelError::ProcessNotFound(calling_pid))
-            }
-        }
+        SystemCall::GetPid => sys_getpid(state, calling_pid),
+        SystemCall::Fork => sys_fork(state, calling_pid),
+        SystemCall::Exit(code) => sys_exit(state, calling_pid, code),
+        SystemCall::WaitPid(wait_pid) => sys_waitpid(state, calling_pid, wait_pid),
+        SystemCall::Sleep(_duration) => Err(KernelError::NotImplemented),
+        SystemCall::Open { path, flags } => sys_open(state, calling_pid, path, flags),
+        SystemCall::Close { fd } => sys_close(state, calling_pid, fd),
+        SystemCall::Read { fd, count } => sys_read(state, calling_pid, fd, count),
+        SystemCall::Write { fd, data } => sys_write(state, calling_pid, fd, data),
+        SystemCall::Mmap { size } => sys_mmap(state, calling_pid, size),
+        SystemCall::Munmap { addr, size } => sys_munmap(state, calling_pid, addr, size),
+        SystemCall::Send { target_pid, data } => sys_send(state, calling_pid, target_pid, data),
+        SystemCall::Recv { timeout: _ } => sys_recv(state, calling_pid),
+        SystemCall::Pipe => sys_pipe(state, calling_pid),
+        SystemCall::Dup2 { oldfd, newfd } => sys_dup2(state, calling_pid, oldfd, newfd),
     }
 }
 
