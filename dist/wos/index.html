@@ -70,15 +70,17 @@
                 <table class="process-table">
                   <thead>
                     <tr>
-                      <th>PID</th>
-                      <th>State</th>
-                      <th>Parent</th>
-                      <th>Command</th>
+                      <th data-sort="pid">PID</th>
+                      <th data-sort="state">State</th>
+                      <th data-sort="parent">Parent</th>
+                      <th data-sort="cpu">CPU Time</th>
+                      <th data-sort="memory">Memory</th>
+                      <th data-sort="command">Command</th>
                     </tr>
                   </thead>
                   <tbody id="process-table-body">
                     <tr>
-                      <td colspan="4" class="no-data">No processes running</td>
+                      <td colspan="6" class="no-data">No processes running</td>
                     </tr>
                   </tbody>
                 </table>
@@ -99,11 +101,44 @@
               </div>
             </div>
             <div class="panel-content">
-              <div class="memory-info">
-                <p><strong>Total Memory:</strong> <span id="mem-total">4096 KB</span></p>
-                <p><strong>Used:</strong> <span id="mem-used">0 KB</span></p>
-                <p><strong>Free:</strong> <span id="mem-free">4096 KB</span></p>
-                <p><strong>Usage:</strong> <span id="mem-percent">0%</span></p>
+              <div class="memory-visualization">
+                <!-- Memory Segments with Graphical Bars -->
+                <div class="memory-segment">
+                  <div class="segment-label">Code Segment</div>
+                  <div class="segment-bar-container">
+                    <div class="memory-segment-bar perm-exec" data-segment="code" style="width: 0%;" title="Code segment: 0 MB / 16 MB"></div>
+                  </div>
+                  <div class="segment-info"><span class="segment-size" data-segment="code">0 MB</span> / <span class="segment-max">16 MB</span></div>
+                </div>
+                <div class="memory-segment">
+                  <div class="segment-label">Data Segment</div>
+                  <div class="segment-bar-container">
+                    <div class="memory-segment-bar perm-read perm-write" data-segment="data" style="width: 0%;" title="Data segment: 0 MB / 16 MB"></div>
+                  </div>
+                  <div class="segment-info"><span class="segment-size" data-segment="data">0 MB</span> / <span class="segment-max">16 MB</span></div>
+                </div>
+                <div class="memory-segment">
+                  <div class="segment-label">Heap</div>
+                  <div class="segment-bar-container">
+                    <div class="memory-segment-bar perm-read perm-write" data-segment="heap" style="width: 0%;" title="Heap: 0 MB / 256 MB"></div>
+                  </div>
+                  <div class="segment-info"><span class="segment-size" data-segment="heap">0 MB</span> / <span class="segment-max">256 MB</span></div>
+                </div>
+                <div class="memory-segment">
+                  <div class="segment-label">Stack</div>
+                  <div class="segment-bar-container">
+                    <div class="memory-segment-bar perm-read perm-write" data-segment="stack" style="width: 0%;" title="Stack: 0 MB / 8 MB"></div>
+                  </div>
+                  <div class="segment-info"><span class="segment-size" data-segment="stack">0 MB</span> / <span class="segment-max">8 MB</span></div>
+                </div>
+                <!-- Memory Summary -->
+                <div class="memory-summary">
+                  <p><strong>Total Memory:</strong> <span id="mem-total">4096 KB</span></p>
+                  <p><strong>Used:</strong> <span id="mem-used">0 KB</span></p>
+                  <p><strong>Free:</strong> <span id="mem-free">4096 KB</span></p>
+                  <p><strong>Usage:</strong> <span id="mem-percent">0%</span></p>
+                  <p><strong>Free Pages:</strong> <span id="mem-free-pages">0</span> | <strong>Allocated:</strong> <span id="mem-allocated-pages">0</span> | <strong>Total:</strong> <span id="mem-total-pages">0</span></p>
+                </div>
               </div>
             </div>
           </div>
@@ -184,6 +219,7 @@
             </div>
 
             <div id="file-browser" class="file-browser">
+              <div id="file-list"></div>
               <div class="file-placeholder">No files loaded. Upload a file or create new file to begin.</div>
             </div>
           </div>

@@ -601,14 +601,25 @@ class FileManager {
   }
 
   renderFileList() {
+    const fileList = document.getElementById('file-list');
     const browser = document.getElementById('file-browser');
 
-    if (this.files.size === 0) {
-      browser.innerHTML = '<div class="file-placeholder">No files loaded. Upload a file or create new file to begin.</div>';
-      return;
+    if (!fileList) {
+      // Fallback to old behavior
+      if (this.files.size === 0) {
+        browser.innerHTML = '<div class="file-placeholder">No files loaded. Upload a file or create new file to begin.</div>';
+        return;
+      }
+      browser.innerHTML = '';
+    } else {
+      if (this.files.size === 0) {
+        fileList.innerHTML = '';
+        return;
+      }
+      fileList.innerHTML = '';
     }
 
-    browser.innerHTML = '';
+    const container = fileList || browser;
 
     for (const [fileName, fileData] of this.files) {
       const item = document.createElement('div');
@@ -630,7 +641,7 @@ class FileManager {
       item.addEventListener('click', () => this.selectFile(fileName));
       item.addEventListener('dblclick', () => this.openVimEditor(fileName));
 
-      browser.appendChild(item);
+      container.appendChild(item);
     }
   }
 
@@ -1661,6 +1672,189 @@ class Terminal {
       this.syscallCount = 0;
       this.lastSyscallTime = now;
     }
+
+    // Update detailed visual panels
+    this.updateProcessTable();
+    this.updateMemoryView();
+  }
+
+  // WOS-301: Update process table with live process data
+  updateProcessTable() {
+    if (!this.wos) return;
+
+    try {
+      // Get process list using ps command
+      const result = this.wos.executeCommand('ps');
+      if (!result || !result.stdout) return;
+
+      const tbody = document.getElementById('process-table-body');
+      if (!tbody) return;
+
+      // Parse ps output to get process information
+      // Expected format: PID STATE PARENT COMMAND
+      const lines = result.stdout.trim().split('\n');
+      const processes = [];
+
+      // Skip header line if present
+      const startIdx = lines[0]?.includes('PID') ? 1 : 0;
+
+      for (let i = startIdx; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        const parts = line.split(/\s+/);
+        if (parts.length >= 4) {
+          processes.push({
+            pid: parts[0],
+            state: parts[1] || 'Ready',
+            parent: parts[2] || '-',
+            command: parts.slice(3).join(' ') || 'init',
+            // Simulated data for now
+            cpuTime: `${(Math.random() * 5).toFixed(2)}ms`,
+            memory: `${Math.floor(128 + Math.random() * 128)}KB`
+          });
+        }
+      }
+
+      // Clear existing rows
+      tbody.innerHTML = '';
+
+      if (processes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="no-data">No processes running</td></tr>';
+        return;
+      }
+
+      // Add process rows
+      processes.forEach(proc => {
+        const row = document.createElement('tr');
+        row.setAttribute('tabindex', '0');
+        row.setAttribute('aria-label', `Process ${proc.pid}, state ${proc.state}, parent ${proc.parent}`);
+        row.dataset.pid = proc.pid;
+
+        const stateClass = `state-${proc.state.toLowerCase()}`;
+
+        row.innerHTML = `
+          <td>${proc.pid}</td>
+          <td><span class="process-state ${stateClass}">${proc.state}</span></td>
+          <td>${proc.parent}</td>
+          <td>${proc.cpuTime}</td>
+          <td>${proc.memory}</td>
+          <td>${proc.command}</td>
+        `;
+
+        // Add click handler for row selection
+        row.addEventListener('click', (e) => {
+          // Remove selection from other rows
+          tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+          // Add selection to clicked row
+          row.classList.add('selected');
+          // Highlight memory regions for this process
+          this.highlightProcessMemory(proc.pid);
+        });
+
+        // Add keyboard navigation
+        row.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            row.click();
+          }
+        });
+
+        tbody.appendChild(row);
+      });
+    } catch (error) {
+      tracer.error('VISUAL_MONITOR', 'Failed to update process table', error);
+    }
+  }
+
+  // WOS-301: Update memory view with graphical bars
+  updateMemoryView() {
+    if (!this.wos) return;
+
+    try {
+      // Get memory statistics
+      const processCount = this.wos.processCount();
+      const memTotal = 4096; // 4MB total
+      const memUsed = processCount * 128; // ~128KB per process
+
+      // Update memory summary
+      document.getElementById('mem-total').textContent = `${memTotal} KB`;
+      document.getElementById('mem-used').textContent = `${memUsed} KB`;
+      document.getElementById('mem-free').textContent = `${memTotal - memUsed} KB`;
+      const memPercent = ((memUsed / memTotal) * 100).toFixed(1);
+      document.getElementById('mem-percent').textContent = `${memPercent}%`;
+
+      // Update memory segment bars (simulated data)
+      // Code segment: typically 100% allocated
+      const codeUsage = 100;
+      this.updateSegmentBar('code', codeUsage, 16, 16);
+
+      // Data segment: varies with process count
+      const dataUsage = Math.min((processCount * 4) / 16 * 100, 100);
+      this.updateSegmentBar('data', dataUsage, processCount * 4, 16);
+
+      // Heap: varies with memory usage
+      const heapUsed = Math.floor(memUsed * 0.6); // 60% of used memory is heap
+      const heapUsage = (heapUsed / 256) * 100;
+      this.updateSegmentBar('heap', heapUsage, heapUsed / 1024, 256); // Convert KB to MB
+
+      // Stack: smaller allocation
+      const stackUsed = Math.floor(memUsed * 0.15); // 15% of used memory is stack
+      const stackUsage = (stackUsed / (8 * 1024)) * 100; // 8MB max
+      this.updateSegmentBar('stack', stackUsage, stackUsed / 1024, 8); // Convert KB to MB
+
+      // Update page counts
+      const pageSize = 4; // 4KB pages
+      const totalPages = memTotal / pageSize;
+      const allocatedPages = Math.floor(memUsed / pageSize);
+      const freePages = totalPages - allocatedPages;
+
+      document.getElementById('mem-free-pages').textContent = freePages;
+      document.getElementById('mem-allocated-pages').textContent = allocatedPages;
+      document.getElementById('mem-total-pages').textContent = totalPages;
+    } catch (error) {
+      tracer.error('VISUAL_MONITOR', 'Failed to update memory view', error);
+    }
+  }
+
+  // Helper: Update a memory segment bar
+  updateSegmentBar(segment, percentage, used, max) {
+    const bar = document.querySelector(`.memory-segment-bar[data-segment="${segment}"]`);
+    const sizeSpan = document.querySelector(`.segment-size[data-segment="${segment}"]`);
+
+    if (bar) {
+      const clampedPercent = Math.min(Math.max(percentage, 0), 100);
+      bar.style.width = `${clampedPercent.toFixed(1)}%`;
+
+      // Update tooltip
+      const usedFormatted = used < 1 ? `${(used * 1024).toFixed(0)} KB` : `${used.toFixed(1)} MB`;
+      const maxFormatted = max < 1 ? `${(max * 1024).toFixed(0)} KB` : `${max} MB`;
+      bar.title = `${segment.charAt(0).toUpperCase() + segment.slice(1)}: ${usedFormatted} / ${maxFormatted} (${clampedPercent.toFixed(1)}%)`;
+    }
+
+    if (sizeSpan) {
+      const usedFormatted = used < 1 ? `${(used * 1024).toFixed(0)} KB` : `${used.toFixed(1)} MB`;
+      sizeSpan.textContent = usedFormatted;
+    }
+  }
+
+  // Helper: Highlight memory regions for selected process
+  highlightProcessMemory(pid) {
+    // Remove previous highlights
+    document.querySelectorAll('.memory-segment-bar').forEach(bar => {
+      bar.classList.remove('highlighted');
+    });
+
+    // Highlight relevant segments (simulated - in real implementation would query actual process memory map)
+    // For now, highlight heap and stack for all processes
+    document.querySelectorAll('.memory-segment-bar[data-segment="heap"]').forEach(bar => {
+      bar.classList.add('highlighted');
+    });
+    document.querySelectorAll('.memory-segment-bar[data-segment="stack"]').forEach(bar => {
+      bar.classList.add('highlighted');
+    });
+
+    tracer.debug('VISUAL_MONITOR', `Highlighted memory regions for process ${pid}`);
   }
 
   openVim(fileName) {

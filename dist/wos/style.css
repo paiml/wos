@@ -795,6 +795,18 @@ footer a:hover {
   color: var(--accent);
   font-weight: 600;
   border-bottom: 2px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.process-table th:hover {
+  background: var(--bg-hover);
+}
+
+.process-table th[data-sort]::after {
+  content: ' ↕';
+  opacity: 0.3;
+  font-size: 10px;
 }
 
 .process-table td {
@@ -802,8 +814,53 @@ footer a:hover {
   border-bottom: 1px solid var(--border);
 }
 
+.process-table tbody tr {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
 .process-table tbody tr:hover {
   background: var(--bg-terminal);
+}
+
+.process-table tbody tr:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.process-table tbody tr.selected,
+.process-table tbody tr.highlighted,
+.process-table tbody tr.active {
+  background: var(--bg-hover);
+  border-left: 3px solid var(--accent);
+}
+
+/* Process state color coding */
+.process-table .process-state {
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.process-table .process-state.state-ready {
+  color: #4ecb71;
+  background: rgba(78, 203, 113, 0.1);
+}
+
+.process-table .process-state.state-running {
+  color: #4a9eff;
+  background: rgba(74, 158, 255, 0.1);
+}
+
+.process-table .process-state.state-blocked {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.process-table .process-state.state-terminated {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.1);
 }
 
 .process-table .no-data {
@@ -824,6 +881,100 @@ footer a:hover {
 }
 
 .memory-info strong {
+  color: var(--accent);
+}
+
+/* Memory Visualization with Graphical Bars */
+.memory-visualization {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.memory-segment {
+  margin-bottom: 16px;
+}
+
+.segment-label {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-primary);
+}
+
+.segment-bar-container {
+  width: 100%;
+  height: 20px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 4px;
+  position: relative;
+}
+
+.memory-segment-bar {
+  height: 100%;
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+/* Permission color coding */
+.memory-segment-bar.perm-read {
+  background: linear-gradient(90deg, #4a9eff 0%, #3a8eef 100%);
+}
+
+.memory-segment-bar.perm-write {
+  background: linear-gradient(90deg, #4ecb71 0%, #3ebb61 100%);
+}
+
+.memory-segment-bar.perm-exec {
+  background: linear-gradient(90deg, #ff6b6b 0%, #ef5b5b 100%);
+}
+
+.memory-segment-bar.perm-rwx {
+  background: linear-gradient(90deg, #a855f7 0%, #9845e7 100%);
+}
+
+.memory-segment-bar.highlighted {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 12px rgba(74, 158, 255, 0.5);
+  border-radius: 2px;
+}
+
+.memory-segment-bar:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  font-size: 11px;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.segment-info {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.segment-size {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.memory-summary {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.memory-summary p {
+  margin-bottom: 8px;
+}
+
+.memory-summary strong {
   color: var(--accent);
 }
 
