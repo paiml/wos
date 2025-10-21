@@ -2780,9 +2780,10 @@ class TimeTravelDebugger {
         <p><strong>Memory:</strong> ${this.formatMemorySize(process.memory || 0)}</p>
       `;
 
-      header.addEventListener('click', () => {
+      // Add click handler to item (not just header) for accessibility
+      item.addEventListener('click', () => {
         const isExpanded = item.getAttribute('aria-expanded') === 'true';
-        item.setAttribute('aria-expanded', !isExpanded);
+        item.setAttribute('aria-expanded', String(!isExpanded));
         details.classList.toggle('hidden');
       });
 
