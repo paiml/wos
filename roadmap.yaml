@@ -611,6 +611,9 @@ phases:
         priority: critical
         cycle: 12-13
         time_estimate: 8_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "58/58 memory tests passing (includes mmap/munmap + property tests)"
         spec_ref: "Section 3.7, 7.3"
         requirements:
           - "sys_mmap(size, flags) -> allocate pages"
@@ -637,6 +640,9 @@ phases:
         priority: high
         cycle: 14-15
         time_estimate: 5_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "58/58 memory tests passing (includes permission checking + violations)"
         spec_ref: "Section 3.6"
         requirements:
           - "Page permissions (read, write, execute)"
@@ -666,6 +672,9 @@ phases:
         priority: critical
         cycle: 16-17
         time_estimate: 6_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Part of 70 syscall tests (sys_open, sys_close, fd table)"
         spec_ref: "Section 3.8"
         requirements:
           - "Integrate wasm-labs-shared VFS"
@@ -691,6 +700,9 @@ phases:
         priority: critical
         cycle: 18-20
         time_estimate: 8_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Part of 70 syscall tests (sys_read, sys_write, read_write_cycle)"
         spec_ref: "Section 3.8"
         requirements:
           - "sys_read(fd, count) -> bytes"
