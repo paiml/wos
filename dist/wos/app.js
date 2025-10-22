@@ -2437,6 +2437,7 @@ class TimeTravelDebugger {
     this.traces = [];
     this.isPlaying = false;
     this.playbackInterval = null;
+    this.lastRenderedPosition = -1; // Track last rendered position for diff highlighting
     this.filters = {
       pid: '',
       syscallType: '',
@@ -2573,7 +2574,13 @@ class TimeTravelDebugger {
 
         this.updateTimeline();
         this.updateEventLog();
-        this.updateStateInspector();
+
+        // Only update state inspector if position changed (preserves diff highlighting)
+        if (this.currentPosition !== this.lastRenderedPosition) {
+          this.updateStateInspector();
+          this.lastRenderedPosition = this.currentPosition;
+        }
+
         this.updateTraceCount();
       }
     } catch (error) {
@@ -2917,6 +2924,7 @@ class TimeTravelDebugger {
     this.updateTimeline();
     this.updateEventLog();
     this.updateStateInspector();
+    this.lastRenderedPosition = this.currentPosition;
   }
 
   onSliderHover(e) {
