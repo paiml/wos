@@ -4018,6 +4018,8 @@ class InteractiveTutorial {
         break;
       case 'debugger':
         targetElement = document.getElementById('panel-time-travel-debugger');
+        // WOS-304: Load demo trace data for tutorial
+        this.loadDemoTraceData();
         break;
       case 'tests':
         targetElement = document.getElementById('panel-learning-objectives');
@@ -4050,6 +4052,39 @@ class InteractiveTutorial {
       this.highlightedElement.classList.remove('tutorial-highlight');
       this.highlightedElement = null;
     }
+  }
+
+  /**
+   * Load demo trace data for tutorial debugger step (WOS-304)
+   */
+  loadDemoTraceData() {
+    const eventLogList = document.getElementById('event-log-list');
+    if (!eventLogList) {
+      tracer.warn('TUTORIAL', 'event-log-list element not found');
+      return;
+    }
+
+    // Clear any existing demo data
+    eventLogList.innerHTML = '';
+    eventLogList.classList.remove('hidden');
+
+    // Create demo trace entries
+    const demoTraces = [
+      { time: '0ms', pid: 1, syscall: 'Fork', result: 'Success' },
+      { time: '5ms', pid: 2, syscall: 'Exec', result: 'Success' },
+      { time: '12ms', pid: 2, syscall: 'Write', result: 'Success' },
+      { time: '18ms', pid: 1, syscall: 'Read', result: 'Success' },
+      { time: '25ms', pid: 2, syscall: 'Exit', result: 'Success' }
+    ];
+
+    demoTraces.forEach(trace => {
+      const entry = document.createElement('div');
+      entry.className = 'event-log-entry';
+      entry.textContent = `${trace.time} PID=${trace.pid} ${trace.syscall} (${trace.result})`;
+      eventLogList.appendChild(entry);
+    });
+
+    tracer.info('TUTORIAL', `Loaded ${demoTraces.length} demo trace entries`);
   }
 
   /**
