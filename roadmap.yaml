@@ -115,6 +115,9 @@ phases:
         priority: critical
         cycle: 4-5
         time_estimate: 6_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "11/11 unit tests + 2 property tests (100% passing)"
         spec_ref: "Section 3.5 (ScriptExecutor), Section 4.4 (Execution model)"
         requirements:
           - "ScriptExecutor::execute(script: &Script, vfs: &mut VFS, ctx: &Context)"
@@ -150,6 +153,9 @@ phases:
         priority: high
         cycle: 6
         time_estimate: 4_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "6/6 unit tests + 1 property test (100% passing)"
         spec_ref: "Section 4.5 (Variable support), Section 5.2 (Variable scope)"
         requirements:
           - "Support VAR=value assignments in scripts"
