@@ -186,6 +186,9 @@ phases:
         priority: critical
         cycle: 7
         time_estimate: 3_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "7/7 unit tests (100% passing)"
         spec_ref: "Section 3.1 (bash command), Section 6.1 (Integration points)"
         requirements:
           - "Add 'bash' to command dispatcher in wos/src/lib.rs"
@@ -215,6 +218,9 @@ phases:
         priority: high
         cycle: 8
         time_estimate: 3_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "3/3 unit tests (100% passing)"
         spec_ref: "Section 3.2 (source command), Section 5.3 (Shell context)"
         requirements:
           - "Add 'source' command to dispatcher"
@@ -242,6 +248,9 @@ phases:
         priority: medium
         cycle: 9
         time_estimate: 3_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "4/4 unit tests (100% passing)"
         spec_ref: "Section 3.3 (Executable scripts), Section 5.4 (Path resolution)"
         requirements:
           - "Detect ./script.sh pattern in command parser"
