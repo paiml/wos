@@ -3994,6 +3994,7 @@ class InteractiveTutorial {
 
   /**
    * Apply UI highlighting for current step
+   * WOS-304: Integrates with WOS-306 progressive disclosure
    */
   applyStepHighlight(step) {
     // Clear previous highlight
@@ -4020,6 +4021,14 @@ class InteractiveTutorial {
     }
 
     if (targetElement) {
+      // WOS-304 + WOS-306: Expand collapsed panels before highlighting
+      // Check if target is a panel that might be collapsed
+      if (targetElement.classList.contains('file-panel') &&
+          targetElement.classList.contains('collapsed')) {
+        targetElement.classList.remove('collapsed');
+        tracer.debug('TUTORIAL', `Expanded collapsed panel for highlighting: ${targetElement.id}`);
+      }
+
       targetElement.classList.add('tutorial-highlight');
       this.highlightedElement = targetElement;
       tracer.debug('TUTORIAL', `Highlighted element: ${targetElement.id}`);
