@@ -1636,7 +1636,7 @@ footer a:hover {
 }
 
 #btn-tutorial-close:focus {
-  outline: 2px solid var(--accent-color);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -1681,7 +1681,7 @@ footer a:hover {
 }
 
 .tutorial-step strong {
-  color: var(--accent-color);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -1723,7 +1723,7 @@ footer a:hover {
 }
 
 .tutorial-actions button:focus {
-  outline: 2px solid var(--accent-color);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -1731,7 +1731,7 @@ footer a:hover {
 .tutorial-actions button[id^="btn-begin"],
 .tutorial-actions button[id*="next"],
 .tutorial-actions button[id*="start-coding"] {
-  background: var(--accent-color);
+  background: var(--accent);
   color: white;
 }
 
@@ -1758,7 +1758,7 @@ footer a:hover {
 /* Tutorial Highlight Effect (Glowing border on UI elements) */
 .tutorial-highlight {
   position: relative;
-  box-shadow: 0 0 0 3px var(--accent-color),
+  box-shadow: 0 0 0 3px var(--accent),
               0 0 20px rgba(59, 130, 246, 0.5);
   border-radius: 4px;
   animation: tutorialPulse 2s ease-in-out infinite;
@@ -1767,11 +1767,11 @@ footer a:hover {
 
 @keyframes tutorialPulse {
   0%, 100% {
-    box-shadow: 0 0 0 3px var(--accent-color),
+    box-shadow: 0 0 0 3px var(--accent),
                 0 0 20px rgba(59, 130, 246, 0.5);
   }
   50% {
-    box-shadow: 0 0 0 3px var(--accent-color),
+    box-shadow: 0 0 0 3px var(--accent),
                 0 0 30px rgba(59, 130, 246, 0.8);
   }
 }
@@ -1784,7 +1784,7 @@ footer a:hover {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--accent-color);
+  background: var(--accent);
   color: white;
   border: none;
   font-size: 24px;
@@ -1803,7 +1803,7 @@ footer a:hover {
 }
 
 #btn-help:focus {
-  outline: 2px solid var(--accent-color);
+  outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
 
@@ -1848,11 +1848,63 @@ footer a:hover {
 }
 
 #help-menu button:focus {
-  outline: 2px solid var(--accent-color);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-/* Reduced motion support for tutorial */
+/* WOS-306: Progressive Disclosure - Panel Tabs */
+.panel-tab {
+  position: relative;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  user-select: none;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  margin-bottom: -1px;
+}
+
+.panel-tab:hover {
+  background: var(--accent);
+  color: var(--bg-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0, 212, 170, 0.3);
+}
+
+.panel-tab:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.panel-tab:active {
+  transform: translateY(0);
+}
+
+/* WOS-306: Panel content transitions */
+.file-panel .panel-content {
+  transition: opacity 0.3s ease, max-height 0.3s ease, visibility 0s 0.3s;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+}
+
+.file-panel.collapsed .panel-content {
+  opacity: 0;
+  max-height: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, max-height 0.3s ease, visibility 0s 0.3s;
+}
+
+/* Hide tab when panel is expanded */
+.file-panel:not(.collapsed) .panel-tab {
+  display: none;
+}
+
+/* Reduced motion support for tutorial and WOS-306 progressive disclosure */
 @media (prefers-reduced-motion: reduce) {
   .tutorial-overlay,
   .tutorial-container,
@@ -1862,10 +1914,24 @@ footer a:hover {
 
   .tutorial-highlight {
     animation: none !important;
-    box-shadow: 0 0 0 3px var(--accent-color);
+    box-shadow: 0 0 0 3px var(--accent);
   }
 
   #btn-help:hover {
+    transform: none;
+  }
+
+  /* WOS-306: Disable panel transitions for reduced motion */
+  .panel-tab,
+  .file-panel .panel-content {
+    transition: none !important;
+  }
+
+  .panel-tab:hover {
+    transform: none;
+  }
+
+  .panel-tab:active {
     transform: none;
   }
 }

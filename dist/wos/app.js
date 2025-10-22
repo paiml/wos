@@ -290,13 +290,15 @@ class ConfigManager {
         mode: "interactive",
         panels: {
           terminal: { visible: true, collapsed: false },
-          process_list: { visible: true, collapsed: false },
-          memory_map: { visible: true, collapsed: false },
-          system_call_trace: { visible: true, collapsed: false },
-          files: { visible: true, collapsed: false },
-          system_info: { visible: true, collapsed: false },
-          system_monitor: { visible: true, collapsed: false },
-          time_travel_debugger: { visible: true, collapsed: false }
+          process_list: { visible: true, collapsed: true }, // WOS-306: Collapsed for progressive disclosure
+          memory_map: { visible: true, collapsed: true }, // WOS-306: Collapsed for progressive disclosure
+          syscall_trace: { visible: true, collapsed: true }, // WOS-306: Collapsed for progressive disclosure
+          filesystem: { visible: true, collapsed: true }, // WOS-306: Collapsed for progressive disclosure
+          system_monitor: { visible: true, collapsed: true }, // WOS-306: Collapsed for progressive disclosure
+          system_monitor_detailed: { visible: true, collapsed: true }, // WOS-306: Collapsed by default for progressive disclosure
+          time_travel_debugger: { visible: true, collapsed: true }, // WOS-306: Collapsed by default for progressive disclosure
+          learning_objectives: { visible: true, collapsed: false }, // WOS-306: Expanded by default
+          help: { visible: true, collapsed: true } // WOS-306: Collapsed for progressive disclosure
         }
       }
     };
@@ -351,41 +353,37 @@ class PanelManager {
     const config = this.configManager.getConfig();
     if (!config || !config.ui || !config.ui.panels) return;
 
-    // Load saved panel state from localStorage
-    const savedState = localStorage.getItem('wos_panel_state');
+    // WOS-306: Load saved panel state from localStorage (progressive disclosure)
+    const savedState = localStorage.getItem('wos-layout-preferences');
     const panelState = savedState ? JSON.parse(savedState) : {};
 
     // Get all panels with data-panel attribute
     const panelElements = document.querySelectorAll('[data-panel]');
     panelElements.forEach(panelEl => {
       const panelName = panelEl.dataset.panel;
-      const panelConfig = config.ui.panels[panelName];
+      const panelConfig = config.ui.panels[panelName] || { visible: true, collapsed: false };
 
-      if (panelConfig) {
-        // Override config with saved state if available
-        if (panelState[panelName]) {
-          panelConfig.visible = panelState[panelName].visible;
-          panelConfig.collapsed = panelState[panelName].collapsed;
-        }
+      // WOS-306: Override config with saved state if available
+      if (panelState[panelName]) {
+        panelConfig.collapsed = (panelState[panelName] === 'collapsed');
+      }
 
-        this.panels[panelName] = {
-          element: panelEl,
-          config: panelConfig
-        };
+      this.panels[panelName] = {
+        element: panelEl,
+        config: panelConfig
+      };
 
-        // Apply initial visibility
-        if (panelConfig.visible === false) {
-          panelEl.style.display = 'none';
-        }
+      // Apply initial visibility
+      if (panelConfig.visible === false) {
+        panelEl.style.display = 'none';
+      }
 
-        // Apply initial collapsed state (without saving again to avoid recursion)
-        if (panelConfig.collapsed === true) {
-          panelEl.classList.add('collapsed');
-          const content = panelEl.querySelector('.panel-content, .file-browser, .file-actions, .file-info, .system-info, .quality-metrics');
-          if (content) {
-            content.style.display = 'none';
-          }
-        }
+      // WOS-306: Apply initial collapsed state and create tabs
+      if (panelConfig.collapsed === true) {
+        panelEl.classList.add('collapsed');
+        // CSS handles hiding via opacity and max-height transitions
+        // Create tab for collapsed panel
+        this.createPanelTab(panelName, panelEl);
       }
     });
   }
@@ -420,10 +418,12 @@ class PanelManager {
     if (!panel) return;
 
     panel.element.classList.add('collapsed');
-    const content = panel.element.querySelector('.panel-content, .file-browser, .file-actions, .file-info, .system-info, .quality-metrics');
-    if (content) {
-      content.style.display = 'none';
-    }
+
+    // WOS-306: Use CSS transitions instead of display:none for smooth animations
+    // The CSS handles hiding via opacity: 0 and max-height: 0
+
+    // WOS-306: Create tab for collapsed panel
+    this.createPanelTab(panelName, panel.element);
 
     // Update config and persist to localStorage
     panel.config.collapsed = true;
@@ -437,10 +437,12 @@ class PanelManager {
     if (!panel) return;
 
     panel.element.classList.remove('collapsed');
-    const content = panel.element.querySelector('.panel-content, .file-browser, .file-actions, .file-info, .system-info, .quality-metrics');
-    if (content) {
-      content.style.display = '';
-    }
+
+    // WOS-306: Use CSS transitions instead of display for smooth animations
+    // The CSS handles showing via opacity: 1 and max-height: auto
+
+    // WOS-306: Remove tab when panel is expanded
+    this.removePanelTab(panelName, panel.element);
 
     // Update config and persist to localStorage
     panel.config.collapsed = false;
@@ -465,16 +467,60 @@ class PanelManager {
     panel.config.visible = false;
   }
 
+  // WOS-306: Create tab element for collapsed panel (progressive disclosure)
+  createPanelTab(panelName, panelElement) {
+    // Check if tab already exists
+    const existingTab = panelElement.querySelector('.panel-tab');
+    if (existingTab) return;
+
+    // Get panel title from header
+    const header = panelElement.querySelector('.file-panel-header h3');
+    const panelTitle = header ? header.textContent : panelName;
+
+    // Create tab element
+    const tab = document.createElement('div');
+    tab.className = 'panel-tab';
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-expanded', 'false');
+    tab.setAttribute('aria-label', `Expand ${panelTitle} panel`);
+    tab.textContent = panelTitle;
+
+    // Add click listener to expand panel
+    tab.addEventListener('click', () => {
+      this.expandPanel(panelName);
+    });
+
+    // Add keyboard support (Enter/Space to expand)
+    tab.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.expandPanel(panelName);
+      }
+    });
+
+    // Make tab focusable
+    tab.setAttribute('tabindex', '0');
+
+    // Insert tab at the beginning of the panel
+    panelElement.insertBefore(tab, panelElement.firstChild);
+  }
+
+  // WOS-306: Remove tab element when panel is expanded
+  removePanelTab(panelName, panelElement) {
+    const tab = panelElement.querySelector('.panel-tab');
+    if (tab) {
+      tab.remove();
+    }
+  }
+
   savePanelState() {
-    // Save panel state to localStorage
+    // WOS-306: Save panel state to localStorage (progressive disclosure)
     const panelState = {};
     for (const [name, panel] of Object.entries(this.panels)) {
-      panelState[name] = {
-        visible: panel.config.visible !== false,
-        collapsed: panel.config.collapsed === true
-      };
+      // Store simple 'collapsed' or 'expanded' string
+      panelState[name] = panel.config.collapsed === true ? 'collapsed' : 'expanded';
     }
-    localStorage.setItem('wos_panel_state', JSON.stringify(panelState));
+    localStorage.setItem('wos-layout-preferences', JSON.stringify(panelState));
   }
 }
 
@@ -1768,6 +1814,12 @@ class Terminal {
         this.updateSystemInfo();
         // WOS-301: Update filesystem list after command execution (for file creation/deletion)
         this.updateFilesystemList();
+
+        // WOS-304: Notify tutorial of command execution
+        if (window.interactiveTutorial && window.interactiveTutorial.handleTerminalCommand) {
+          const commandName = cmd.trim().split(/\s+/)[0]; // Extract first word (command name)
+          window.interactiveTutorial.handleTerminalCommand(commandName);
+        }
       } catch (error) {
         this.printLine(`Error: ${error}`, 'error');
 
@@ -3100,10 +3152,56 @@ class LearningObjectives {
     tracer.debug('PANEL', 'Loading roadmap data');
 
     try {
-      // Mock data matching roadmap.yaml Phase 10 structure
+      // Mock data matching roadmap.yaml structure
       // In production, fetch /roadmap.yaml and parse with js-yaml
       this.roadmapData = {
         phases: [
+          {
+            id: 'phase-1',
+            name: 'Foundation',
+            goal: 'Core kernel structures with Toyota Way quality framework',
+            priority: 'critical',
+            duration: '3_weeks',
+            cycles: 15,
+            tickets: [
+              {
+                id: 'WOS-001',
+                title: 'Project scaffolding and quality gate infrastructure',
+                priority: 'critical',
+                cycle: '1',
+                time_estimate: '4_hours',
+                status: 'completed',
+                tests: [
+                  'test_workspace_structure',
+                  'test_quality_gates_configured',
+                  'test_wasm_target_available'
+                ],
+                hints: [
+                  { level: 1, content: 'Start with Cargo workspace setup' },
+                  { level: 2, content: 'Configure PMAT quality gates' },
+                  { level: 3, content: 'Set up pre-commit hooks' }
+                ]
+              },
+              {
+                id: 'WOS-002',
+                title: 'Kernel state types and serialization',
+                priority: 'critical',
+                cycle: '2',
+                time_estimate: '3_hours',
+                status: 'completed',
+                tests: [
+                  'test_kernel_state_creation',
+                  'test_process_serialization_roundtrip',
+                  'test_process_state_transitions'
+                ],
+                hints: [
+                  { level: 1, content: 'Define KernelState struct' },
+                  { level: 2, content: 'Implement Serialize/Deserialize' },
+                  { level: 3, content: 'Use im-rs for persistent data structures' }
+                ]
+              }
+            ]
+          },
           {
             id: 'phase-10',
             name: 'Enhanced Integrated Learning Environment',
@@ -3859,15 +3957,29 @@ class InteractiveTutorial {
     // Update progress indicator
     this.stepIndicator.textContent = `Step ${this.currentStepIndex + 1} of ${this.steps.length}`;
 
-    // Hide all steps
+    // Hide all steps and clear button visibility states
     this.tutorialContent.querySelectorAll('.tutorial-step').forEach(step => {
       step.classList.add('hidden');
+      // Clear hidden class from buttons so they can be properly shown/hidden when step becomes visible
+      step.querySelectorAll('.btn-tutorial-back, .btn-tutorial-next').forEach(btn => {
+        btn.classList.remove('hidden');
+      });
     });
 
     // Show current step
     const stepElement = this.tutorialContent.querySelector(`[data-step="${currentStep}"]`);
     if (stepElement) {
       stepElement.classList.remove('hidden');
+
+      // Show/hide back button based on step
+      const backButtons = stepElement.querySelectorAll('.btn-tutorial-back');
+      backButtons.forEach(btn => {
+        if (this.currentStepIndex === 0) {
+          btn.classList.add('hidden');
+        } else {
+          btn.classList.remove('hidden');
+        }
+      });
     }
 
     // Apply highlighting based on step
@@ -4022,14 +4134,14 @@ class InteractiveTutorial {
 
     // Navigation buttons (Next) - delegate to handle dynamic button
     document.addEventListener('click', (e) => {
-      if (e.target && e.target.id === 'btn-tutorial-next') {
+      if (e.target && e.target.classList.contains('btn-tutorial-next')) {
         this.nextStep();
       }
     });
 
     // Navigation buttons (Back) - delegate to handle dynamic button
     document.addEventListener('click', (e) => {
-      if (e.target && e.target.id === 'btn-tutorial-back') {
+      if (e.target && e.target.classList.contains('btn-tutorial-back')) {
         this.previousStep();
       }
     });
