@@ -127,8 +127,9 @@ test.describe('WOS-307: Responsive Design', () => {
         return window.getComputedStyle(el).gridTemplateColumns;
       });
 
-      // Should be single column
-      expect(gridColumns).toContain('1fr');
+      // Should be single column (either "1fr" or a single pixel value like "351px")
+      const columnCount = gridColumns.split(' ').length;
+      expect(columnCount).toBe(1);
     });
 
     test('should show tab navigation for panels', async ({ page }) => {
@@ -158,12 +159,20 @@ test.describe('WOS-307: Responsive Design', () => {
       await page.setViewportSize({ width: 375, height: 667 });
 
       const main = await page.locator('main');
-      const flexDirection = await main.evaluate((el) => {
-        return window.getComputedStyle(el).flexDirection || window.getComputedStyle(el).gridAutoFlow;
+      const layoutInfo = await main.evaluate((el) => {
+        const styles = window.getComputedStyle(el);
+        return {
+          display: styles.display,
+          gridColumns: styles.gridTemplateColumns,
+          flexDirection: styles.flexDirection
+        };
       });
 
-      // Should stack vertically (column) or use single-column grid
-      expect(flexDirection !== 'row').toBeTruthy();
+      // Should be single column grid or vertical flex
+      const isSingleColumn = layoutInfo.gridColumns.split(' ').length === 1;
+      const isVerticalFlex = layoutInfo.flexDirection === 'column';
+
+      expect(isSingleColumn || isVerticalFlex).toBeTruthy();
     });
   });
 

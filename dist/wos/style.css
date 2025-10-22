@@ -86,9 +86,67 @@ main {
   overflow: hidden;
 }
 
-@media (max-width: 1024px) {
+/* WOS-307: Responsive Design - Desktop (≥1280px) */
+@media (min-width: 1280px) {
   main {
-    grid-template-columns: 1fr;
+    grid-template-columns: 2fr 1fr 1fr 1fr; /* 4-panel layout */
+    gap: 16px;
+  }
+}
+
+/* WOS-307: Responsive Design - Laptop (1024-1279px) */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  main {
+    grid-template-columns: 2fr 1fr 1fr; /* 3-panel layout */
+    gap: 16px;
+  }
+}
+
+/* WOS-307: Responsive Design - Tablet (768-1023px) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  main {
+    grid-template-columns: 1fr 1fr; /* 2-panel layout */
+    gap: 12px;
+    padding: 16px;
+  }
+}
+
+/* WOS-307: Responsive Design - Mobile (≤767px) */
+@media (max-width: 767px) {
+  main {
+    grid-template-columns: 1fr; /* Single column layout */
+    gap: 12px;
+    padding: 12px;
+  }
+}
+
+/* WOS-307: WCAG 2.1 Level AA - Touch Target Sizes (44×44px minimum) */
+@media (max-width: 1023px) {
+  /* Increase all button sizes for touch devices */
+  .terminal-controls button,
+  .btn-icon,
+  .btn-collapse,
+  .btn-run-tests,
+  .btn-show-hint,
+  .tutorial-actions button,
+  button {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+
+  /* Icon buttons need explicit sizing */
+  .btn-icon {
+    padding: 12px;
+  }
+
+  /* Ensure adequate spacing between touch targets */
+  .terminal-controls {
+    gap: 8px;
+  }
+
+  .file-controls {
+    gap: 8px;
   }
 }
 
