@@ -46,6 +46,9 @@ phases:
         priority: critical
         cycle: 1
         time_estimate: 3_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "9/9 unit tests passing + 5 property tests (100%)"
         spec_ref: "Section 3.3 (Script struct), Section 4.2 (Error types)"
         requirements:
           - "Script struct with path, content, shebang fields"
@@ -74,6 +77,9 @@ phases:
         priority: critical
         cycle: 2-3
         time_estimate: 5_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "14/14 unit tests passing + 5 property tests (100%)"
         spec_ref: "Section 3.4 (ScriptLoader design), Section 4.3 (Shebang validation)"
         requirements:
           - "ScriptLoader::load(vfs: &VFS, path: &str) -> Result<Script>"
