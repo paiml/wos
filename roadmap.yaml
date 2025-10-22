@@ -888,6 +888,9 @@ phases:
         priority: critical
         cycle: 33-34
         time_estimate: 6_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "26/26 WASM binding tests passing (execute_command, state serialization, syscalls)"
         spec_ref: "Section 6.6"
         requirements:
           - "WosWasm struct with #[wasm_bindgen]"
@@ -911,6 +914,9 @@ phases:
         priority: critical
         cycle: 35-37
         time_estimate: 10_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "35/35 E2E tests passing (terminal rendering, command execution, history, persistence)"
         spec_ref: "Section 6.6"
         requirements:
           - "Terminal UI (HTML/CSS)"
@@ -937,6 +943,9 @@ phases:
         priority: medium
         cycle: 38-39
         time_estimate: 6_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Part of 40 quality/export tests (TDG metrics, dashboard display)"
         spec_ref: "Tech Review Section 4"
         requirements:
           - "Embed quality metrics in UI"
@@ -958,6 +967,9 @@ phases:
         priority: high
         cycle: 40
         time_estimate: 4_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Part of 40 quality/export tests (JSON, SARIF, HTML, Markdown export)"
         spec_ref: "Tech Review Section 8"
         requirements:
           - "Export formats: JSON, SARIF, HTML, Markdown"
