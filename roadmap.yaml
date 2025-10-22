@@ -796,6 +796,9 @@ phases:
         priority: critical
         cycle: 25-26
         time_estimate: 5_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "12/12 init tests passing (100%)"
         spec_ref: "Section 6.5"
         requirements:
           - "Init process (always PID 1)"
@@ -820,6 +823,9 @@ phases:
         priority: critical
         cycle: 27-29
         time_estimate: 10_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "20/20 shell tests passing (100%)"
         spec_ref: "Section 6.5"
         requirements:
           - "Command parser (nom-based)"
@@ -848,6 +854,9 @@ phases:
         priority: high
         cycle: 30-32
         time_estimate: 8_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "26/26 program tests passing (echo, ls, ps, cat, grep, etc.)"
         spec_ref: "Section 6.5"
         requirements:
           - "echo: print arguments"
