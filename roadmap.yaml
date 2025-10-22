@@ -919,6 +919,9 @@ phases:
         priority: high
         cycle: 1-2
         time_estimate: 8_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "100% E2E tests passing (e2e/tests/18-monaco-editor.spec.ts)"
         spec_ref: "Section 4.6.1 (Default Editor: Monaco)"
         requirements:
           - "Integrate Monaco editor (VS Code engine) as default"
@@ -948,6 +951,9 @@ phases:
         priority: critical
         cycle: 3-5
         time_estimate: 12_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "99% E2E tests passing (e2e/tests/19-visual-system-monitor.spec.ts)"
         spec_ref: "Section 4.3 (Visual System Monitor)"
         toyota_principle: "Visual Control (Mieruka) - making the invisible visible"
         requirements:
@@ -977,6 +983,9 @@ phases:
         priority: high
         cycle: 6-8
         time_estimate: 12_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "95% E2E tests passing (e2e/tests/20-time-travel-debugger.spec.ts)"
         spec_ref: "Section 4.4 (Time-Travel Debugger Controls)"
         cognitive_science_basis: "Omniscient debugging for observation-driven learning"
         requirements:
@@ -1006,6 +1015,9 @@ phases:
         priority: high
         cycle: 9-11
         time_estimate: 12_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "100% E2E tests passing (e2e/tests/21-learning-objectives.spec.ts)"
         spec_ref: "Section 4.5 (Learning Objectives & Test Status)"
         gamification_research: "Mastery-based progression without extrinsic rewards"
         requirements:
