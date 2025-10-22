@@ -1035,6 +1035,8 @@ phases:
         priority: high
         cycle: 12-13
         time_estimate: 8_hours
+        status: in_progress
+        progress_date: "2025-10-22"
         spec_ref: "Section 4.7.1 (Interactive Tutorial)"
         ux_research: "Interactive onboarding reduces abandonment (Nielsen, Harrison)"
         requirements:
@@ -1051,12 +1053,23 @@ phases:
           - "test_tutorial_retake"
           - "e2e_tutorial_complete_workflow"
         acceptance:
-          - "All 6 steps functional"
-          - "Tutorial state persists"
-          - "Skip and retake work"
-          - "E2E tests passing"
+          - "All 6 steps functional ✓"
+          - "Tutorial state persists ✓"
+          - "Skip and retake work ✓"
+          - "E2E tests passing ⏳ (96.3%)"
+        test_results: "207/215 E2E tests passing (96.3%)"
+        remaining_issues:
+          - "Event log trace data not implemented (5 browsers)"
+          - "Tab focus on mobile browsers (2 browsers)"
+          - "Resume saved step on Mobile Safari (1 browser)"
         complexity_target: 15
         coverage_target: 85
+        implementation:
+          - "Panel expansion before highlighting (app.js:4023-4030)"
+          - "Button selector visibility fix (tests/*.spec.ts)"
+          - "localStorage completion flag (app.js:3994-3998)"
+          - "Tab focus management (app.js:3926-3933)"
+          - "Integration with WOS-306 progressive disclosure"
 
       - id: WOS-305
         title: "Contextual help system"
