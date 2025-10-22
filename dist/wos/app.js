@@ -477,12 +477,13 @@ class PanelManager {
     const header = panelElement.querySelector('.file-panel-header h3');
     const panelTitle = header ? header.textContent : panelName;
 
-    // Create tab element
+    // Create tab element (WOS-308: role="button" for semantic correctness)
     const tab = document.createElement('div');
     tab.className = 'panel-tab';
-    tab.setAttribute('role', 'tab');
+    tab.setAttribute('role', 'button');
     tab.setAttribute('aria-expanded', 'false');
     tab.setAttribute('aria-label', `Expand ${panelTitle} panel`);
+    tab.setAttribute('tabindex', '0'); // WOS-308: Make keyboard accessible
     tab.textContent = panelTitle;
 
     // Add click listener to expand panel

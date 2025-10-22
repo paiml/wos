@@ -14,27 +14,31 @@
     </script>
   </head>
   <body>
+    <!-- WOS-308: Skip link for keyboard navigation (WCAG 2.4.1) -->
+    <a href="#terminal-input" class="skip-link">Skip to terminal</a>
+
     <div class="container">
       <header>
         <h1>WOS</h1>
         <p class="subtitle">Rust + WASM | ↑/↓ History | Ctrl+L Clear</p>
       </header>
 
-      <main>
+      <main role="main">
         <div class="terminal-container">
           <div class="terminal-header">
             <span class="terminal-title">Terminal</span>
             <div class="terminal-controls">
-              <button id="btn-clear" title="Clear terminal (Ctrl+L)">Clear</button>
-              <button id="btn-reset" title="Reset OS state">Reset</button>
-              <button id="btn-save" title="Save state to localStorage">Save</button>
-              <button id="btn-load" title="Load state from localStorage">Load</button>
+              <button id="btn-clear" title="Clear terminal (Ctrl+L)" aria-label="Clear terminal">Clear</button>
+              <button id="btn-reset" title="Reset OS state" aria-label="Reset OS state">Reset</button>
+              <button id="btn-save" title="Save state to localStorage" aria-label="Save state">Save</button>
+              <button id="btn-load" title="Load state from localStorage" aria-label="Load state">Load</button>
             </div>
           </div>
           <div class="terminal" id="terminal">
-            <div id="terminal-output"></div>
+            <!-- WOS-308: ARIA live region for screen readers (WCAG 4.1.2) -->
+            <div id="terminal-output" role="log" aria-live="polite" aria-atomic="false"></div>
             <div class="terminal-input-line">
-              <span class="terminal-prompt">wos$ </span>
+              <label for="terminal-input" class="terminal-prompt">wos$ </label>
               <input
                 type="text"
                 id="terminal-input"
@@ -42,6 +46,7 @@
                 autocomplete="off"
                 spellcheck="false"
                 autofocus
+                aria-label="Terminal command input"
               />
             </div>
           </div>
@@ -53,13 +58,13 @@
             <div class="file-panel-header">
               <h3>Process List</h3>
               <div class="file-controls">
-                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel" aria-label="Collapse or expand Process List panel" aria-expanded="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M7 14l5-5 5 5z"/>
                   </svg>
                 </button>
-                <button class="btn-icon btn-refresh-panel" title="Refresh process list">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button class="btn-icon btn-refresh-panel" title="Refresh process list" aria-label="Refresh process list">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
                   </svg>
                 </button>
@@ -93,8 +98,8 @@
             <div class="file-panel-header">
               <h3>Memory Map</h3>
               <div class="file-controls">
-                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel" aria-label="Collapse or expand Memory Map panel" aria-expanded="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M7 14l5-5 5 5z"/>
                   </svg>
                 </button>
@@ -148,13 +153,13 @@
             <div class="file-panel-header">
               <h3>System Call Trace</h3>
               <div class="file-controls">
-                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel" aria-label="Collapse or expand System Call Trace panel" aria-expanded="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M7 14l5-5 5 5z"/>
                   </svg>
                 </button>
-                <button class="btn-icon btn-clear-trace" title="Clear trace">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button class="btn-icon btn-clear-trace" title="Clear trace" aria-label="Clear system call trace">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
                   </svg>
                 </button>
@@ -172,18 +177,18 @@
             <div class="file-panel-header">
               <h3>Files</h3>
               <div class="file-controls">
-                <button id="btn-upload" class="btn-icon" title="Upload file">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button id="btn-upload" class="btn-icon" title="Upload file" aria-label="Upload file">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
                   </svg>
                 </button>
-                <button id="btn-new-file" class="btn-icon" title="New file">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button id="btn-new-file" class="btn-icon" title="New file" aria-label="Create new file">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
                   </svg>
                 </button>
-                <button id="btn-refresh" class="btn-icon" title="Refresh file list">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button id="btn-refresh" class="btn-icon" title="Refresh file list" aria-label="Refresh file list">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
                   </svg>
                 </button>
@@ -240,8 +245,8 @@
             <div class="file-panel-header">
               <h3>System Monitor</h3>
               <div class="file-controls">
-                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel" aria-label="Collapse or expand System Monitor panel" aria-expanded="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M7 14l5-5 5 5z"/>
                   </svg>
                 </button>
@@ -291,13 +296,13 @@
             <div class="file-panel-header">
               <h3>Time-Travel Debugger</h3>
               <div class="file-controls">
-                <button id="export-traces-json" class="btn-icon" title="Export trace history as JSON">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button id="export-traces-json" class="btn-icon" title="Export trace history as JSON" aria-label="Export trace history as JSON">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
                   </svg>
                 </button>
-                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel" aria-label="Collapse or expand Time-Travel Debugger panel" aria-expanded="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M7 14l5-5 5 5z"/>
                   </svg>
                 </button>
@@ -443,8 +448,8 @@
               <div id="event-details-panel" class="event-details-panel hidden">
                 <div class="event-details-header">
                   <div class="event-details-title">Event Details</div>
-                  <button id="event-details-close" class="btn-icon" title="Close details">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <button id="event-details-close" class="btn-icon" title="Close details" aria-label="Close event details">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                       <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                     </svg>
                   </button>
@@ -461,8 +466,8 @@
             <div class="file-panel-header">
               <h3>Learning Objectives & Tests</h3>
               <div class="file-controls">
-                <button class="btn-icon btn-collapse" title="Collapse/Expand panel">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <button class="btn-icon btn-collapse" title="Collapse/Expand panel" aria-label="Collapse or expand Learning Objectives panel" aria-expanded="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M7 14l5-5 5 5z"/>
                   </svg>
                 </button>
@@ -495,8 +500,8 @@
                 <div class="section-header">
                   <h4>Test Runner</h4>
                   <div class="test-runner-controls">
-                    <button id="btn-run-all-tests" class="btn-icon" title="Run all tests for current phase">
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <button id="btn-run-all-tests" class="btn-icon" title="Run all tests for current phase" aria-label="Run all tests for current phase">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                         <path d="M8 5v14l11-7z"/>
                       </svg>
                     </button>
@@ -532,7 +537,7 @@
               <h3>Help & Documentation</h3>
               <div class="file-controls">
                 <button class="btn-icon btn-collapse" title="Collapse/Expand help panel" aria-label="Collapse help panel" aria-expanded="true">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                     <path d="M7 14l5-5 5 5z"/>
                   </svg>
                 </button>
@@ -600,7 +605,7 @@
             <span id="tutorial-step-indicator">Step 1 of 6</span>
           </div>
           <button id="btn-tutorial-close" class="btn-icon" title="Close tutorial" aria-label="Close tutorial">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
             </svg>
           </button>
@@ -704,7 +709,7 @@
 
     <!-- Help menu button (for retaking tutorial) -->
     <button id="btn-help" class="btn-icon btn-help hidden" title="Help" aria-label="Help menu">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/>
       </svg>
     </button>

@@ -17,6 +17,7 @@
     "codegen": "playwright codegen http://localhost:8000/dist/wos/"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.0",
     "@playwright/test": "^1.48.0",
     "@types/node": "^22.0.0"
   },
