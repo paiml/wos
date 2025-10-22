@@ -525,6 +525,9 @@ phases:
         priority: high
         cycle: 8
         time_estimate: 4_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "36/36 quality tests passing (TDG, thresholds, SARIF export)"
         spec_ref: "Tech Review Section 1"
         requirements:
           - "TDG scoring infrastructure"
@@ -547,6 +550,9 @@ phases:
         priority: medium
         cycle: 9
         time_estimate: 5_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "11/11 trace tests passing (history, time-travel, export)"
         spec_ref: "Tech Review Section 9.2, 9.1"
         requirements:
           - "SystemCallTrace struct"
