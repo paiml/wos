@@ -2432,7 +2432,11 @@ class Terminal {
 class TimeTravelDebugger {
   constructor(wos) {
     this.wos = wos;
-    this.currentPosition = 0;
+
+    // Restore position from localStorage
+    const savedPosition = localStorage.getItem('wos-debugger-position');
+    this.currentPosition = savedPosition ? parseInt(savedPosition, 10) : 0;
+
     this.maxPosition = 0;
     this.traces = [];
     this.isPlaying = false;
@@ -2915,6 +2919,9 @@ class TimeTravelDebugger {
 
   onSliderChange() {
     this.currentPosition = parseInt(this.elements.slider.value);
+
+    // Save position to localStorage
+    localStorage.setItem('wos-debugger-position', String(this.currentPosition));
 
     // Jump to position in kernel history
     if (this.wos && this.wos.jumpToPosition) {
