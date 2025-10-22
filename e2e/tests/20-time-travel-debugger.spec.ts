@@ -344,15 +344,22 @@ test.describe('WOS-302: Time-Travel Debugger', () => {
 
     test('should step backward through history', async ({ page }) => {
       const slider = await page.locator('#timeline-slider');
-      const initialPosition = await slider.inputValue();
 
-      // Click step back button
+      // First step forward to establish a non-zero position
+      const stepForwardButton = await page.locator('#playback-step-forward');
+      await stepForwardButton.click();
+      await page.waitForTimeout(50);
+
+      const positionAfterForward = await slider.inputValue();
+      expect(parseInt(positionAfterForward)).toBeGreaterThan(0);
+
+      // Now test stepping backward
       const stepBackButton = await page.locator('#playback-step-back');
       await stepBackButton.click();
       await page.waitForTimeout(50);
 
       const newPosition = await slider.inputValue();
-      expect(parseInt(newPosition)).toBeLessThan(parseInt(initialPosition));
+      expect(parseInt(newPosition)).toBeLessThan(parseInt(positionAfterForward));
     });
 
     test('should step forward through history', async ({ page }) => {
