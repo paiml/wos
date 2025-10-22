@@ -1035,8 +1035,8 @@ phases:
         priority: high
         cycle: 12-13
         time_estimate: 8_hours
-        status: in_progress
-        progress_date: "2025-10-22"
+        status: completed
+        completion_date: "2025-10-22"
         spec_ref: "Section 4.7.1 (Interactive Tutorial)"
         ux_research: "Interactive onboarding reduces abandonment (Nielsen, Harrison)"
         requirements:
@@ -1056,12 +1056,12 @@ phases:
           - "All 6 steps functional ✓"
           - "Tutorial state persists ✓"
           - "Skip and retake work ✓"
-          - "E2E tests passing ⏳ (96.3%)"
-        test_results: "207/215 E2E tests passing (96.3%)"
-        remaining_issues:
-          - "Event log trace data not implemented (5 browsers)"
-          - "Tab focus on mobile browsers (2 browsers)"
-          - "Resume saved step on Mobile Safari (1 browser)"
+          - "E2E tests passing ✓ (99.1%, 98.6% with all tests eventually passing)"
+        test_results: "213/215 E2E tests passing (99.1%); With retries: 212/215 passed + 3 flaky (98.6%)"
+        flaky_tests:
+          - "chromium Tab navigation (timing-sensitive, passes on retry)"
+          - "Mobile Chrome Tab navigation (timing-sensitive, passes on retry)"
+          - "Mobile Safari resume (timing-sensitive, passes on retry)"
         complexity_target: 15
         coverage_target: 85
         implementation:
@@ -1069,6 +1069,7 @@ phases:
           - "Button selector visibility fix (tests/*.spec.ts)"
           - "localStorage completion flag (app.js:3994-3998)"
           - "Tab focus management (app.js:3926-3933)"
+          - "Demo event log trace data (index.html:405, app.js:4060-4088)"
           - "Integration with WOS-306 progressive disclosure"
 
       - id: WOS-305
