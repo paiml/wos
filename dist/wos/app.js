@@ -3923,11 +3923,12 @@ class InteractiveTutorial {
     this.overlay.classList.remove('hidden');
     this.renderCurrentStep();
 
-    // Focus first interactive element
+    // Focus Skip button initially so Tab moves to Begin Tour (WOS-304)
     setTimeout(() => {
-      const firstButton = this.overlay.querySelector('button:not([disabled])');
-      if (firstButton) {
-        firstButton.focus();
+      const skipButton = document.getElementById('btn-skip-tutorial');
+      if (skipButton) {
+        skipButton.focus();
+        tracer.debug('TUTORIAL', 'Focused Skip button for Tab navigation to Begin Tour');
       }
     }, 100);
   }
@@ -3990,6 +3991,12 @@ class InteractiveTutorial {
 
     // Save progress
     localStorage.setItem('wos-tutorial-step', currentStep);
+
+    // WOS-304: Mark tutorial as completed when reaching completion step
+    if (currentStep === 'completion') {
+      localStorage.setItem('wos-tutorial-completed', 'true');
+      tracer.info('TUTORIAL', 'Tutorial marked as completed in localStorage');
+    }
   }
 
   /**
