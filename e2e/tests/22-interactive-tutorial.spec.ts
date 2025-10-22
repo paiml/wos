@@ -205,7 +205,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
 
-      const nextButton = await page.locator('#btn-tutorial-next');
+      const nextButton = await page.locator('.btn-tutorial-next').first();
       await expect(nextButton).toBeVisible();
     });
   });
@@ -218,7 +218,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       // Advance to monitor step
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click(); // Skip terminal step
+      await page.locator('.btn-tutorial-next').click(); // Skip terminal step
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
 
       const processView = await page.locator('#panel-system-monitor');
@@ -235,7 +235,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
 
       const monitorStep = await page.locator('.tutorial-step[data-step="monitor"]');
@@ -250,7 +250,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
 
       const monitorStep = await page.locator('.tutorial-step[data-step="monitor"]');
@@ -269,9 +269,9 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       // Advance to debugger step
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
 
       const debuggerPanel = await page.locator('#panel-time-travel-debugger');
@@ -288,9 +288,9 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
 
       // Should have some trace entries
@@ -305,9 +305,9 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
 
       const debuggerStep = await page.locator('.tutorial-step[data-step="debugger"]');
@@ -325,11 +325,11 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       // Advance to test runner step
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="tests"]')).toBeVisible({ timeout: 5000 });
 
       const learningPanel = await page.locator('#panel-learning-objectives');
@@ -346,11 +346,11 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="tests"]')).toBeVisible({ timeout: 5000 });
 
       const testStep = await page.locator('.tutorial-step[data-step="tests"]');
@@ -365,11 +365,11 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="tests"]')).toBeVisible({ timeout: 5000 });
 
       const testStep = await page.locator('.tutorial-step[data-step="tests"]');
@@ -387,13 +387,13 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       // Advance to completion step
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="tests"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="completion"]')).toBeVisible({ timeout: 5000 });
 
       const completionStep = await page.locator('.tutorial-step[data-step="completion"]');
@@ -409,13 +409,13 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="tests"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="completion"]')).toBeVisible({ timeout: 5000 });
 
       const retakeButton = await page.locator('#btn-retake-tutorial');
@@ -428,13 +428,13 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="tests"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="completion"]')).toBeVisible({ timeout: 5000 });
 
       const startButton = await page.locator('#btn-start-coding');
@@ -448,13 +448,13 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="tests"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="completion"]')).toBeVisible({ timeout: 5000 });
 
       const completed = await page.evaluate(() => {
@@ -470,13 +470,13 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="debugger"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="tests"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').click();
       await expect(page.locator('.tutorial-step[data-step="completion"]')).toBeVisible({ timeout: 5000 });
 
       const startButton = await page.locator('#btn-start-coding');
@@ -517,11 +517,11 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').first().click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
 
       // Now on step 3 (monitor), go back
-      const backButton = await page.locator('#btn-tutorial-back');
+      const backButton = await page.locator('.btn-tutorial-back').first();
       await backButton.click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
 
@@ -534,7 +534,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
       await page.reload();
       await page.waitForSelector('#tutorial-overlay', { timeout: 10000 });
 
-      const backButton = await page.locator('#btn-tutorial-back');
+      const backButton = await page.locator('.btn-tutorial-back').first();
       await expect(backButton).not.toBeVisible();
     });
 
@@ -544,7 +544,7 @@ test.describe('WOS-304: Interactive Tutorial', () => {
 
       await page.locator('#btn-begin-tutorial').click();
       await expect(page.locator('.tutorial-step[data-step="terminal"]')).toBeVisible({ timeout: 5000 });
-      await page.locator('#btn-tutorial-next').click();
+      await page.locator('.btn-tutorial-next').first().click();
       await expect(page.locator('.tutorial-step[data-step="monitor"]')).toBeVisible({ timeout: 5000 });
 
       const currentStep = await page.evaluate(() => {
