@@ -75,12 +75,11 @@ header h1 {
   font-size: 1.1rem;
 }
 
-/* Main layout - FIXED GRID (no scrolling off-screen) */
+/* Main layout - FIXED GRID with ACCORDION behavior */
 main {
   flex: 1;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  grid-auto-rows: minmax(0, 1fr); /* Equal-height rows that fill viewport */
+  display: flex;
+  flex-direction: column; /* Stack panels vertically for accordion */
   gap: 20px;
   padding: 20px;
   min-height: 0;
@@ -281,8 +280,9 @@ main {
   border-radius: 8px;
   border: 1px solid var(--border);
   overflow: hidden;
-  /* FIXED GRID: Fit within grid cell, no off-screen scrolling */
-  height: 100%; /* Fill grid cell completely */
+  /* ACCORDION: Expanded panel grows to fill space */
+  flex: 1 1 auto; /* Expanded panel grows */
+  min-height: 50px;
   display: flex;
   flex-direction: column;
 }
@@ -825,6 +825,7 @@ footer a:hover {
 }
 
 .file-panel.collapsed {
+  flex: 0 0 50px; /* Collapsed: fixed 50px, don't grow */
   max-height: 50px;
 }
 

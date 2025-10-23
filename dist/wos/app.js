@@ -436,6 +436,13 @@ class PanelManager {
     const panel = this.panels[panelName];
     if (!panel) return;
 
+    // ACCORDION BEHAVIOR: Collapse all other panels first
+    for (const [otherName, otherPanel] of Object.entries(this.panels)) {
+      if (otherName !== panelName && !otherPanel.element.classList.contains('collapsed')) {
+        this.collapsePanel(otherName);
+      }
+    }
+
     panel.element.classList.remove('collapsed');
 
     // WOS-306: Use CSS transitions instead of display for smooth animations
