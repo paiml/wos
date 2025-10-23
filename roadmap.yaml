@@ -39,8 +39,8 @@ phases:
     cycles: 4
     status: completed
     completion_date: "2025-10-23"
-    commit: "be9efabcac8d26a21be2e54e53683bcd809d5275"
-    test_results: "12/12 Playwright tests passing (100%)"
+    commit: "8eee774 (test fix) + be9efabcac (UX implementation)"
+    test_results: "14/14 Playwright tests passing (100%)"
     tickets:
       - id: WOS-UX-01
         title: "Icon Toolbar Pattern (Chrome DevTools Style)"
@@ -74,7 +74,7 @@ phases:
       - id: WOS-UX-03
         title: "Pragmatic AI Labs Badge"
         status: completed
-        test_results: "1/1 tests passing (paiml-badge-test.spec.js)"
+        test_results: "3/3 tests passing (paiml-badge-test.spec.js)"
         features:
           - "Top-right corner badge with logo + paiml.com link"
           - "Opens https://paiml.com in new tab"
