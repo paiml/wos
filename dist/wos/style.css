@@ -1945,7 +1945,7 @@ footer a:hover {
 /* WOS-306: Panel content transitions */
 .file-panel .panel-content {
   transition: opacity 0.3s ease, max-height 0.3s ease, visibility 0s 0.3s;
-  overflow: hidden;
+  overflow-y: auto;
   opacity: 1;
   visibility: visible;
 }
