@@ -97,7 +97,7 @@ phases:
           - "dist/wos/index.html - Simplified menu (lines 771-786)"
           - "dist/wos/app.js - Removed dead code (line 4364)"
 
-  # PHASE 12.1: Terminal State Visibility & Vim UX Improvements (BUG FIXES - IN PROGRESS)
+  # PHASE 12.1: Terminal State Visibility & Vim UX Improvements (BUG FIXES - COMPLETED ✅)
   - id: phase-12-1
     name: "Terminal State Visibility & Vim UX Improvements"
     goal: "Fix customer-reported bugs: dynamic prompt showing CWD, improved vim error messages"
