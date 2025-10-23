@@ -80,11 +80,11 @@ main {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  grid-auto-rows: minmax(200px, 1fr);
+  grid-auto-rows: auto; /* FIXED: Let panels grow to natural height */
   gap: 20px;
   padding: 20px;
   min-height: 0;
-  height: calc(100vh - 60px); /* Constrain to viewport minus header */
+  max-height: calc(100vh - 60px); /* Change to max-height for scrolling */
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -282,8 +282,9 @@ main {
   border-radius: 8px;
   border: 1px solid var(--border);
   overflow: hidden;
-  /* Grid item - fits within grid cell */
-  height: 100%;
+  /* Grid item - size based on content */
+  min-height: 200px; /* Minimum usable height */
+  max-height: 600px; /* Maximum before scrolling */
   display: flex;
   flex-direction: column;
 }
