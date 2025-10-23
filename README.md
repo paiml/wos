@@ -4,8 +4,11 @@
 [![Test Coverage](https://img.shields.io/badge/Coverage-85%25%2B-brightgreen)](PROGRESS.md)
 [![Tests](https://img.shields.io/badge/Tests-546%20unit%20%7C%20211%20E2E-brightgreen)](PROGRESS.md)
 [![Quality Gates](https://img.shields.io/badge/Quality%20Gates-6%2F6%20passing-brightgreen)](Makefile)
+[![Production](https://img.shields.io/badge/Production-Live-brightgreen)](https://interactive.paiml.com/wos/)
 
 An educational microkernel operating system written in pure Rust that compiles to WebAssembly. WOS demonstrates OS concepts (processes, memory management, file systems, IPC) in a safe, testable environment that runs directly in your browser.
+
+**🚀 [Try it live at interactive.paiml.com/wos](https://interactive.paiml.com/wos/)** | **🎬 [Watch Demo Video](docs/webos-showcase-demo.webm)**
 
 ## Features
 
@@ -417,6 +420,43 @@ WOS is designed for teaching operating systems concepts:
 - **Debuggability**: Full state inspection at any point
 - **Testability**: Deterministic execution, reproducible tests
 - **Visualization**: Browser DevTools for live inspection
+
+## Deployment
+
+WebOS is deployed to production at [interactive.paiml.com/wos](https://interactive.paiml.com/wos/) using a rapid iteration workflow:
+
+### Rapid Iteration Workflow
+
+```bash
+# One-time setup: Create symlink
+cd /home/noah/src/wos
+make link-dev
+
+# Daily development cycle
+cd /home/noah/src/wos
+make build  # Changes appear instantly in paiml.com dist/
+
+# Deploy to production
+cd /home/noah/src/interactive.paiml.com
+make deploy  # Runs quality gates + E2E + uploads to S3
+```
+
+### Deployment Details
+- **Production URL**: https://interactive.paiml.com/wos/
+- **S3 Bucket**: `interactive.paiml.com-production-mces4cme`
+- **CloudFront**: Distribution ID `ELY820FVFXAFF`
+- **Symlink**: `/home/noah/src/interactive.paiml.com/dist/wos` → `/home/noah/src/wos/dist/wos`
+
+See [docs/RAPID-ITERATION-WORKFLOW.md](docs/RAPID-ITERATION-WORKFLOW.md) for complete deployment guide.
+
+## Demo Video
+
+A 30-second comprehensive showcase of WebOS features:
+- **Video**: [docs/webos-showcase-demo.webm](docs/webos-showcase-demo.webm) (362KB, 1920x1080)
+- **Features**: Vim mode, bash scripting, environment variables, file operations, process management
+- **Regenerate**: `npx playwright test tests/e2e/wos-showcase-demo.spec.js --project=demo`
+
+See [docs/DEMO-VIDEO.md](docs/DEMO-VIDEO.md) for technical details.
 
 ## Contributing
 

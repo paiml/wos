@@ -1,4 +1,4 @@
-.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-all cleanup-processes check-memory deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config
+.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-all cleanup-processes check-memory link-dev deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
@@ -83,6 +83,7 @@ help:
 	@echo "  make check-memory     Verify system memory availability"
 	@echo ""
 	@echo "🚀 Deployment:"
+	@echo "  make link-dev         Link dist to paiml.com for rapid iteration"
 	@echo "  make deploy           Full deployment (build + upload + cache invalidation)"
 	@echo "  make deploy-config    Create .env.deploy.example configuration"
 	@echo "  make deploy-check     Verify deployment prerequisites"
@@ -717,6 +718,11 @@ lint-all: clippy lint-frontend lint-scripts
 # ============================================================================
 
 .PHONY: deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config
+
+# Development workflow: symlink dist to paiml.com for rapid iteration
+link-dev:
+	@echo "🔗 Linking WebOS dist to interactive.paiml.com..."
+	@bash scripts/link-to-paiml.sh
 
 # Main deployment target - builds and deploys to production
 deploy: deploy-check deploy-build deploy-upload deploy-invalidate

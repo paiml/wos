@@ -8,7 +8,11 @@ Tiny but functional educational OS demonstrating fundamental OS concepts in a mo
 
 **Core Innovation**: Educational microkernel OS with pure functional design, deterministic execution, and extreme TDD methodology achieving <100ms cold start and <5 second setup time.
 
-**MVP Focus**: 100% extreme quality LOCAL development environment. No deployment infrastructure (local development only).
+**Production Deployment**: ✅ Live at https://interactive.paiml.com/wos/
+- Deployed: 2025-10-23
+- Catalog integration: interactive.paiml.com homepage
+- Rapid iteration workflow: symlink-based development
+- Demo video: docs/webos-showcase-demo.webm
 
 ## Build Commands
 
@@ -643,6 +647,34 @@ WOS teaches OS concepts through hands-on experimentation:
 - "The Rust Programming Language" - Official book
 - "Writing an OS in Rust" - Philipp Oppermann
 
+## Deployment Workflow
+
+**Production URL**: https://interactive.paiml.com/wos/
+
+### Rapid Iteration Workflow
+
+```bash
+# One-time setup: Create symlink
+cd /home/noah/src/wos
+make link-dev
+
+# Daily development
+cd /home/noah/src/wos
+make build  # Changes appear instantly via symlink!
+
+# Deploy to production
+cd /home/noah/src/interactive.paiml.com
+make deploy  # Quality gates + E2E + S3 upload
+```
+
+### Deployment Architecture
+- **Symlink**: `/home/noah/src/interactive.paiml.com/dist/wos` → `/home/noah/src/wos/dist/wos`
+- **S3 Bucket**: `interactive.paiml.com-production-mces4cme`
+- **CloudFront**: Distribution ID `ELY820FVFXAFF`
+- **Catalog Integration**: WebOS appears on interactive.paiml.com homepage
+
+See `docs/DEPLOYMENT-CHECKLIST.md` and `docs/RAPID-ITERATION-WORKFLOW.md` for complete guides.
+
 ## Summary
 
 WOS is a **tiny but functional educational OS** (~5000 lines) demonstrating real OS concepts using modern, safe, and testable Rust patterns. Runs entirely in browser with zero setup, following extreme TDD methodology for maximum quality.
@@ -653,4 +685,4 @@ WOS is a **tiny but functional educational OS** (~5000 lines) demonstrating real
 - Extreme TDD (85%+ coverage, 90%+ mutation score)
 - Microkernel architecture (minimal TCB)
 - Educational focus (simplified but correct)
-- Local development only (MVP scope)
+- Production deployment (https://interactive.paiml.com/wos/)
