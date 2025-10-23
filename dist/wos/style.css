@@ -75,18 +75,17 @@ header h1 {
   font-size: 1.1rem;
 }
 
-/* Main layout */
+/* Main layout - FIXED GRID (no scrolling off-screen) */
 main {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  grid-auto-rows: auto; /* FIXED: Let panels grow to natural height */
+  grid-auto-rows: minmax(0, 1fr); /* Equal-height rows that fill viewport */
   gap: 20px;
   padding: 20px;
   min-height: 0;
-  max-height: calc(100vh - 60px); /* Change to max-height for scrolling */
-  overflow-y: auto;
-  overflow-x: hidden;
+  height: calc(100vh - 60px); /* Fixed height - no scrolling */
+  overflow: hidden; /* Prevent scrolling - fixed grid */
 }
 
 /* WOS-307: Responsive Design - Desktop (≥1280px) */
@@ -282,9 +281,8 @@ main {
   border-radius: 8px;
   border: 1px solid var(--border);
   overflow: hidden;
-  /* Grid item - size based on content */
-  min-height: 200px; /* Minimum usable height */
-  max-height: 600px; /* Maximum before scrolling */
+  /* FIXED GRID: Fit within grid cell, no off-screen scrolling */
+  height: 100%; /* Fill grid cell completely */
   display: flex;
   flex-direction: column;
 }
