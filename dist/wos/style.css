@@ -80,9 +80,11 @@ main {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-auto-rows: minmax(200px, 1fr);
   gap: 20px;
   padding: 20px;
   min-height: 0;
+  height: calc(100vh - 60px); /* Constrain to viewport minus header */
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -90,7 +92,7 @@ main {
 /* WOS-307: Responsive Design - Desktop (≥1280px) */
 @media (min-width: 1280px) {
   main {
-    grid-template-columns: 2fr 1fr 1fr 1fr; /* 4-panel layout */
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); /* Wider panels on desktop */
     gap: 16px;
   }
 }
@@ -98,7 +100,7 @@ main {
 /* WOS-307: Responsive Design - Laptop (1024-1279px) */
 @media (min-width: 1024px) and (max-width: 1279px) {
   main {
-    grid-template-columns: 2fr 1fr 1fr; /* 3-panel layout */
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); /* Medium panels on laptop */
     gap: 16px;
   }
 }
@@ -279,10 +281,9 @@ main {
   background: var(--bg-secondary);
   border-radius: 8px;
   border: 1px solid var(--border);
-  overflow: visible;
-  /* Grid item sizing */
-  min-height: 400px;
-  max-height: 800px;
+  overflow: hidden;
+  /* Grid item - fits within grid cell */
+  height: 100%;
   display: flex;
   flex-direction: column;
 }
