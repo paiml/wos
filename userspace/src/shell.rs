@@ -136,13 +136,38 @@ impl Shell {
             }
         } else {
             let path = &cmd.args[0];
-            if path.starts_with('/') {
+            let new_path = if path.starts_with('/') {
                 // Absolute path
-                self.cwd = path.clone();
+                path.clone()
             } else {
                 // Relative path
-                self.cwd = format!("{}/{}", self.cwd.trim_end_matches('/'), path);
+                format!("{}/{}", self.cwd.trim_end_matches('/'), path)
+            };
+
+            // Normalize path (resolve ".." and ".")
+            self.cwd = Self::normalize_path(&new_path);
+        }
+    }
+
+    /// Normalize a path by resolving ".." and "." components
+    fn normalize_path(path: &str) -> String {
+        let mut parts = Vec::new();
+
+        for part in path.split('/') {
+            match part {
+                "" | "." => continue, // Skip empty and current directory
+                ".." => {
+                    // Go up one directory
+                    parts.pop();
+                }
+                _ => parts.push(part),
             }
+        }
+
+        if parts.is_empty() {
+            "/".to_string()
+        } else {
+            format!("/{}", parts.join("/"))
         }
     }
 
@@ -418,5 +443,60 @@ mod tests {
         let syscall = shell_main_loop(&mut shell, "   ", &state);
         assert_eq!(syscall, None);
         assert_eq!(shell.history.len(), 0); // Empty lines not added to history
+    }
+
+    // WOS-400: Tests for path normalization
+    #[test]
+    fn test_normalize_path_parent_directory() {
+        assert_eq!(Shell::normalize_path("/home/user/.."), "/home");
+        assert_eq!(Shell::normalize_path("/home/user/../.."), "/");
+        assert_eq!(Shell::normalize_path("/a/b/c/../.."), "/a");
+    }
+
+    #[test]
+    fn test_normalize_path_current_directory() {
+        assert_eq!(Shell::normalize_path("/home/./user"), "/home/user");
+        assert_eq!(Shell::normalize_path("/./home/./user/."), "/home/user");
+    }
+
+    #[test]
+    fn test_normalize_path_complex() {
+        assert_eq!(
+            Shell::normalize_path("/home/user/../other/./file"),
+            "/home/other/file"
+        );
+        assert_eq!(Shell::normalize_path("/a/./b/../c"), "/a/c");
+    }
+
+    #[test]
+    fn test_normalize_path_root() {
+        assert_eq!(Shell::normalize_path("/"), "/");
+        assert_eq!(Shell::normalize_path("/.."), "/");
+        assert_eq!(Shell::normalize_path("/../.."), "/");
+    }
+
+    #[test]
+    fn test_normalize_path_empty_components() {
+        assert_eq!(Shell::normalize_path("//home///user//"), "/home/user");
+    }
+
+    #[test]
+    fn test_shell_cd_with_parent_directory() {
+        let mut shell = Shell::new(2);
+        shell.cwd = "/home/user".to_string();
+
+        let cmd = Command::new("cd".to_string(), vec!["..".to_string()]);
+        shell.execute_builtin(&cmd);
+        assert_eq!(shell.cwd, "/home");
+    }
+
+    #[test]
+    fn test_shell_cd_with_current_directory() {
+        let mut shell = Shell::new(2);
+        shell.cwd = "/home".to_string();
+
+        let cmd = Command::new("cd".to_string(), vec![".".to_string()]);
+        shell.execute_builtin(&cmd);
+        assert_eq!(shell.cwd, "/home");
     }
 }

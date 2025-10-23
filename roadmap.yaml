@@ -97,6 +97,114 @@ phases:
           - "dist/wos/index.html - Simplified menu (lines 771-786)"
           - "dist/wos/app.js - Removed dead code (line 4364)"
 
+  # PHASE 12.1: Terminal State Visibility & Vim UX Improvements (BUG FIXES - IN PROGRESS)
+  - id: phase-12-1
+    name: "Terminal State Visibility & Vim UX Improvements"
+    goal: "Fix customer-reported bugs: dynamic prompt showing CWD, improved vim error messages"
+    priority: CRITICAL
+    duration: 1_day
+    cycles: 3
+    status: in_progress
+    bug_report: "docs/qa/bug-report-cd-terminal-state-vim.md"
+    findings: "docs/qa/bug-report-findings.md"
+    tickets:
+      - id: WOS-400
+        title: "Dynamic Terminal Prompt with Current Working Directory"
+        priority: critical
+        cycle: 1
+        time_estimate: 3_hours
+        status: completed
+        completion_date: "2025-10-23"
+        customer_issue: "Cannot see current directory - prompt is hardcoded as 'wos$'"
+        test_results: "10/10 E2E tests passing + 7 unit tests passing"
+        implementation:
+          - "Added Shell field to WosWasm struct (wos/src/lib.rs:77)"
+          - "Added handle_cd() and handle_pwd() methods (wos/src/lib.rs:366-385)"
+          - "Added getCurrentWorkingDirectory() WASM export (wos/src/lib.rs:1077-1080)"
+          - "Added getCurrentUser() WASM export (wos/src/lib.rs:1082-1088)"
+          - "Updated Terminal.printCommand() to query WASM state (dist/wos/app.js:1634-1652)"
+          - "Added normalize_path() to resolve '..' and '.' (userspace/src/shell.rs:152-172)"
+          - "Updated builtin_cd() to normalize paths (userspace/src/shell.rs:130-150)"
+          - "Added 7 unit tests for path normalization (userspace/src/shell.rs:448-499)"
+          - "Added 10 E2E tests for prompt functionality (tests/e2e/prompt-test.spec.js)"
+        requirements:
+          - "Add WASM export: get_current_working_directory() -> String"
+          - "Add WASM export: get_current_user() -> String"
+          - "Update Terminal.printCommand() to query state dynamically"
+          - "Change prompt format from 'wos$' to 'user@wos:/path$'"
+          - "Ensure cd command updates prompt immediately"
+        tests:
+          - "test_prompt_shows_current_directory() [E2E]"
+          - "test_cd_command_updates_prompt() [E2E]"
+          - "test_prompt_format_user_at_host_path() [E2E]"
+          - "test_cd_absolute_path_updates_prompt() [E2E]"
+          - "test_cd_relative_path_updates_prompt() [E2E]"
+          - "test_cd_parent_directory_updates_prompt() [E2E]"
+          - "test_pwd_matches_prompt_cwd() [E2E]"
+        acceptance:
+          - "Terminal prompt shows: user@wos:/current/path$"
+          - "cd /home updates prompt to: user@wos:/home$"
+          - "pwd output matches prompt CWD"
+          - "All E2E tests pass"
+          - "Zero performance regression (<1ms overhead)"
+        complexity_target: 5
+        coverage_target: 90
+        files:
+          - "wos/src/lib.rs - Add WASM exports"
+          - "dist/wos/app.js - Update Terminal.printCommand()"
+          - "tests/e2e/prompt-test.spec.js - NEW E2E tests"
+
+      - id: WOS-401
+        title: "Vim: Improved Error Messages with Available Commands List"
+        priority: high
+        cycle: 2
+        time_estimate: 2_hours
+        status: pending
+        customer_issue: "Vim shows ':sp is not a command' with no guidance on what IS available"
+        requirements:
+          - "Add AVAILABLE_COMMANDS constant to VimEditor class"
+          - "Update error message to list available commands"
+          - "Format: 'Command not available. Available: :w, :q, :wq, :x, :q!'"
+          - "Keep Vim error code E492 for authenticity"
+        tests:
+          - "test_vim_error_shows_available_commands() [E2E]"
+          - "test_vim_unknown_command_format() [E2E]"
+          - "test_vim_known_commands_still_work() [E2E]"
+        acceptance:
+          - "Unknown vim commands show available command list"
+          - "Error message is helpful and actionable"
+          - "All known commands still work"
+          - "All E2E tests pass"
+        complexity_target: 3
+        coverage_target: 85
+        files:
+          - "dist/wos/app.js - Update VimEditor.executeCommand()"
+          - "tests/e2e/vim-error-test.spec.js - NEW E2E tests"
+
+      - id: WOS-402
+        title: "Vim: Add :help Command"
+        priority: medium
+        cycle: 3
+        time_estimate: 1_hour
+        status: pending
+        requirements:
+          - "Add :help command to VimEditor"
+          - "Display available commands with descriptions"
+          - "Show example usage"
+          - "Format: Multi-line message in vim status area"
+        tests:
+          - "test_vim_help_shows_available_commands() [E2E]"
+          - "test_vim_help_includes_examples() [E2E]"
+        acceptance:
+          - ":help command shows all available vim commands"
+          - "Help includes brief descriptions"
+          - "All E2E tests pass"
+        complexity_target: 4
+        coverage_target: 85
+        files:
+          - "dist/wos/app.js - Add :help to VimEditor.executeCommand()"
+          - "tests/e2e/vim-help-test.spec.js - NEW E2E tests"
+
   # PHASE 13: SQLite Integration with absurder-sql (NEXT)
   - id: phase-13
     name: "Persistent SQLite Database via absurder-sql"

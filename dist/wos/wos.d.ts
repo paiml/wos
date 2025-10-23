@@ -52,6 +52,10 @@ export class WosWasm {
    */
   executeSyscall(syscall_json: string, calling_pid: number): string;
   /**
+   * Get current user
+   */
+  getCurrentUser(): string;
+  /**
    * WOS-302: Jump to specific position in kernel history
    *
    * Restores kernel state to the specified history position
@@ -86,6 +90,10 @@ export class WosWasm {
    */
   exportQualityMarkdown(): string;
   /**
+   * Get current working directory
+   */
+  getCurrentWorkingDirectory(): string;
+  /**
    * Create a new WOS instance
    */
   constructor();
@@ -119,6 +127,8 @@ export interface InitOutput {
   readonly woswasm_exportQualityMarkdown: (a: number, b: number) => void;
   readonly woswasm_exportQualitySarif: (a: number, b: number) => void;
   readonly woswasm_getCurrentState: (a: number, b: number) => void;
+  readonly woswasm_getCurrentUser: (a: number, b: number) => void;
+  readonly woswasm_getCurrentWorkingDirectory: (a: number, b: number) => void;
   readonly woswasm_getKernelHistory: (a: number, b: number) => void;
   readonly woswasm_getQualityMetrics: (a: number, b: number) => void;
   readonly woswasm_getState: (a: number, b: number) => void;

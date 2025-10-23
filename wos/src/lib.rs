@@ -74,6 +74,7 @@ pub struct WosWasm {
     variables: HashMap<String, String>,
     last_exit_code: i32,
     history: KernelHistory,
+    shell: wos_userspace::Shell,
 }
 
 impl Default for WosWasm {
@@ -89,12 +90,14 @@ impl WosWasm {
     pub fn new() -> Self {
         let state = KernelState::with_init();
         let history = KernelHistory::new(state.clone());
+        let shell = wos_userspace::Shell::new(2); // PID 2 for shell process
 
         Self {
             state,
             variables: HashMap::new(),
             last_exit_code: 0,
             history,
+            shell,
         }
     }
 
@@ -146,6 +149,16 @@ impl WosWasm {
         // Check for export command
         if let Some(args) = command.strip_prefix("export ") {
             return self.handle_export(args);
+        }
+
+        // Check for cd command (shell builtin)
+        if command == "cd" || command.starts_with("cd ") {
+            return self.handle_cd(command);
+        }
+
+        // Check for pwd command (shell builtin)
+        if command == "pwd" {
+            return self.handle_pwd();
         }
 
         // Parse command pipeline
@@ -348,6 +361,27 @@ impl WosWasm {
         }
 
         result
+    }
+
+    /// Handle cd command (change directory)
+    fn handle_cd(&mut self, command: &str) -> String {
+        // Parse cd command to extract path argument
+        let cmd = wos_userspace::Shell::parse_command(command);
+
+        if let Some(parsed_cmd) = cmd {
+            // Execute cd builtin using shell
+            self.shell.execute_builtin(&parsed_cmd);
+            self.last_exit_code = 0;
+        } else {
+            self.last_exit_code = 1;
+        }
+
+        String::new() // cd produces no output
+    }
+
+    /// Handle pwd command (print working directory)
+    fn handle_pwd(&self) -> String {
+        self.shell.cwd.clone()
     }
 
     /// Execute a pipeline of commands
@@ -1036,6 +1070,21 @@ impl WosWasm {
     #[wasm_bindgen]
     pub fn reset(&mut self) {
         self.state = KernelState::with_init();
+        self.shell = wos_userspace::Shell::new(2); // Reset shell too
+    }
+
+    /// Get current working directory
+    #[wasm_bindgen(js_name = getCurrentWorkingDirectory)]
+    pub fn get_current_working_directory(&self) -> String {
+        self.shell.cwd.clone()
+    }
+
+    /// Get current user
+    #[wasm_bindgen(js_name = getCurrentUser)]
+    pub fn get_current_user(&self) -> String {
+        // For MVP, return default user "root"
+        // In full implementation, would track user state
+        "root".to_string()
     }
 
     /// Get quality metrics as JSON

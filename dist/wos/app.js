@@ -1632,7 +1632,23 @@ class Terminal {
   }
 
   printCommand(cmd) {
-    this.printLine(`wos$ ${cmd}`, 'command');
+    // WOS-400: Dynamic prompt showing current working directory
+    if (!this.wos) {
+      // Fallback if WASM not initialized
+      this.printLine(`wos$ ${cmd}`, 'command');
+      return;
+    }
+
+    try {
+      const cwd = this.wos.getCurrentWorkingDirectory();
+      const user = this.wos.getCurrentUser();
+      // Format: user@wos:/path$ command
+      this.printLine(`${user}@wos:${cwd}$ ${cmd}`, 'command');
+    } catch (error) {
+      // Fallback if getCurrentWorkingDirectory not available
+      tracer.warn('TERMINAL', 'Failed to get CWD, using static prompt', error);
+      this.printLine(`wos$ ${cmd}`, 'command');
+    }
   }
 
   scrollToBottom() {
