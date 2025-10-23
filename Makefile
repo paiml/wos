@@ -1,4 +1,4 @@
-.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-all cleanup-processes check-memory
+.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-all cleanup-processes check-memory deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
@@ -82,6 +82,15 @@ help:
 	@echo "  make cleanup-processes Kill runaway test/build processes"
 	@echo "  make check-memory     Verify system memory availability"
 	@echo ""
+	@echo "🚀 Deployment:"
+	@echo "  make deploy           Full deployment (build + upload + cache invalidation)"
+	@echo "  make deploy-config    Create .env.deploy.example configuration"
+	@echo "  make deploy-check     Verify deployment prerequisites"
+	@echo "  make deploy-build     Build production WASM"
+	@echo "  make deploy-upload    Upload to S3"
+	@echo "  make deploy-invalidate Invalidate CloudFront cache"
+	@echo ""
+	@echo "📖 See docs/DEPLOYMENT.md for detailed deployment guide"
 
 # ============================================================================
 # Build Targets
@@ -702,3 +711,47 @@ lint-all: clippy lint-frontend lint-scripts
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "✅ All linting passed (Rust + Frontend + Shell Scripts)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# ============================================================================
+# Deployment
+# ============================================================================
+
+.PHONY: deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config
+
+# Main deployment target - builds and deploys to production
+deploy: deploy-check deploy-build deploy-upload deploy-invalidate
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ Deployment complete!"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Check deployment prerequisites
+deploy-check:
+	@echo "🔍 Checking deployment prerequisites..."
+	@command -v aws >/dev/null 2>&1 || (echo "❌ AWS CLI not found. Install: https://aws.amazon.com/cli/" && exit 1)
+	@[ -f .env.deploy ] || (echo "❌ .env.deploy not found. Copy .env.deploy.example and configure." && exit 1)
+	@echo "✓ Prerequisites met"
+
+# Build production WASM
+deploy-build:
+	@echo "🏗️  Building production WASM..."
+	@make wasm
+	@echo "✓ Production build complete"
+
+# Upload to S3
+deploy-upload: .env.deploy
+	@echo "📤 Uploading to S3..."
+	@source .env.deploy && bash scripts/deploy-s3.sh
+	@echo "✓ Upload complete"
+
+# Invalidate CloudFront cache
+deploy-invalidate: .env.deploy
+	@echo "🔄 Invalidating CloudFront cache..."
+	@source .env.deploy && bash scripts/deploy-invalidate.sh
+	@echo "✓ Cache invalidation complete"
+
+# Create deployment configuration template
+deploy-config:
+	@echo "⚙️  Creating deployment configuration..."
+	@bash scripts/create-deploy-config.sh
+	@echo "✓ Configuration created: .env.deploy.example"
+	@echo "📝 Copy to .env.deploy and fill in your values"

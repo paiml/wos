@@ -25,3 +25,4 @@ target
 dist/wos/wos_bg.wasm
 dist/wos/wos.js
 dist/wos/wos_bg.wasm.d.ts
+.env.deploy
