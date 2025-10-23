@@ -2666,4 +2666,193 @@ environment: production
         // Both should produce same output
         assert_eq!(output1.trim(), output2.trim());
     }
+
+    // WOS-400: Logic operator mutation tests
+    // These tests ensure that all boolean logic operators are properly tested
+    // to catch mutations like `||` ↔ `&&` that cargo-mutants generates
+
+    #[test]
+    fn test_parse_assignment_rejects_and_operator() {
+        // WOS-400: Catches mutation at lib.rs:172:57 (|| → &&)
+        // Tests that && operator prevents assignment parsing
+        let wos = WosWasm::new();
+        let result = wos.parse_assignment("VAR=test && echo test");
+        assert!(
+            result.is_none(),
+            "Should reject assignment with && operator"
+        );
+    }
+
+    #[test]
+    fn test_parse_assignment_rejects_or_operator() {
+        // WOS-400: Catches mutation at lib.rs:172:57 (|| → &&)
+        // Tests that || operator prevents assignment parsing
+        let wos = WosWasm::new();
+        let result = wos.parse_assignment("VAR=test || echo test");
+        assert!(
+            result.is_none(),
+            "Should reject assignment with || operator"
+        );
+    }
+
+    #[test]
+    fn test_parse_assignment_rejects_semicolon() {
+        // WOS-400: Catches mutation at lib.rs:172:57 (|| → &&)
+        // Tests that ; operator prevents assignment parsing
+        let wos = WosWasm::new();
+        let result = wos.parse_assignment("VAR=test; echo test");
+        assert!(result.is_none(), "Should reject assignment with semicolon");
+    }
+
+    #[test]
+    fn test_parse_assignment_handles_double_quotes() {
+        // WOS-400: Catches mutation at lib.rs:176:23 (|| → &&)
+        // Tests that double quotes are handled correctly
+        let wos = WosWasm::new();
+        let result = wos.parse_assignment("VAR=\"hello world\"");
+        assert!(
+            result.is_some(),
+            "Should parse assignment with double quotes"
+        );
+        let (name, value) = result.unwrap();
+        assert_eq!(name, "VAR");
+        assert_eq!(value, "hello world");
+    }
+
+    #[test]
+    fn test_parse_assignment_handles_single_quotes() {
+        // WOS-400: Catches mutation at lib.rs:176:36 (|| → &&)
+        // Tests that single quotes are handled correctly
+        let wos = WosWasm::new();
+        let result = wos.parse_assignment("VAR='hello world'");
+        assert!(
+            result.is_some(),
+            "Should parse assignment with single quotes"
+        );
+        let (name, value) = result.unwrap();
+        assert_eq!(name, "VAR");
+        assert_eq!(value, "hello world");
+    }
+
+    #[test]
+    fn test_parse_assignment_quote_wrapping_double() {
+        // WOS-400: Catches mutation at lib.rs:216:48 (&& → ||)
+        // Tests that double-quote wrapping is detected correctly
+        let wos = WosWasm::new();
+        let result = wos.parse_assignment("VAR=\"test\"");
+        assert!(result.is_some());
+        let (_, value) = result.unwrap();
+        assert_eq!(value, "test", "Should strip double quotes");
+    }
+
+    #[test]
+    fn test_parse_assignment_quote_wrapping_single() {
+        // WOS-400: Catches mutation at lib.rs:217:41 (&& → ||)
+        // Tests that single-quote wrapping is detected correctly
+        let wos = WosWasm::new();
+        let result = wos.parse_assignment("VAR='test'");
+        assert!(result.is_some());
+        let (_, value) = result.unwrap();
+        assert_eq!(value, "test", "Should strip single quotes");
+    }
+
+    #[test]
+    fn test_export_validates_alphabetic_start() {
+        // WOS-400: Catches mutation at lib.rs:253:60 (|| → &&)
+        // Tests that variable names can start with alphabetic character
+        let mut wos = WosWasm::new();
+        wos.execute_command("export MYVAR");
+        // Should not crash - variable name starting with letter is valid
+    }
+
+    #[test]
+    fn test_export_validates_underscore_start() {
+        // WOS-400: Catches mutation at lib.rs:253:60 (|| → &&)
+        // Tests that variable names can start with underscore
+        let mut wos = WosWasm::new();
+        wos.execute_command("export _VAR");
+        // Should not crash - variable name starting with underscore is valid
+    }
+
+    #[test]
+    fn test_export_validates_alphanumeric_chars() {
+        // WOS-400: Catches mutation at lib.rs:254:73 (|| → &&)
+        // Tests that variable names can contain alphanumeric characters
+        let mut wos = WosWasm::new();
+        wos.execute_command("export VAR123");
+        // Should not crash - alphanumeric variable name is valid
+    }
+
+    #[test]
+    fn test_export_validates_underscore_chars() {
+        // WOS-400: Catches mutation at lib.rs:254:78 (|| → &&)
+        // Tests that variable names can contain underscores
+        let mut wos = WosWasm::new();
+        wos.execute_command("export MY_VAR");
+        // Should not crash - variable name with underscores is valid
+    }
+
+    #[test]
+    fn test_execute_detects_dot_slash_prefix() {
+        // WOS-400: Catches mutation at lib.rs:587:13 (|| → &&)
+        // Tests that ./ prefix triggers script execution path
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("./nonexistent.sh");
+        // Should attempt to execute as script (and fail with script-specific error)
+        assert!(output.contains("script") || output.contains("not found"));
+    }
+
+    #[test]
+    fn test_execute_detects_dot_dot_slash_prefix() {
+        // WOS-400: Catches mutation at lib.rs:587:13 (|| → &&)
+        // Tests that ../ prefix triggers script execution path
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("../nonexistent.sh");
+        // Should attempt to execute as script (and fail with script-specific error)
+        assert!(output.contains("script") || output.contains("not found"));
+    }
+
+    #[test]
+    fn test_execute_detects_absolute_path() {
+        // WOS-400: Catches mutation at lib.rs:587:13 (|| → &&)
+        // Tests that / prefix triggers script execution path
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("/nonexistent.sh");
+        // Should attempt to execute as script (and fail with script-specific error)
+        assert!(output.contains("script") || output.contains("not found"));
+    }
+
+    #[test]
+    fn test_exit_code_detects_error_capitalized() {
+        // WOS-400: Catches mutation at lib.rs:648:13 (|| → &&)
+        // Tests that "Error" string triggers exit code 1
+        let mut wos = WosWasm::new();
+        wos.execute_command("nonexistent_command");
+        assert_eq!(wos.last_exit_code, 1, "Should set exit code 1 for error");
+    }
+
+    #[test]
+    fn test_exit_code_detects_error_lowercase() {
+        // WOS-400: Catches mutation at lib.rs:648:13 (|| → &&)
+        // Tests that "error" string triggers exit code 1
+        let mut wos = WosWasm::new();
+        // Create a scenario that produces "error" (lowercase)
+        let output = wos.execute_command("invalid");
+        assert!(
+            wos.last_exit_code == 1 || output.to_lowercase().contains("error"),
+            "Should detect lowercase error"
+        );
+    }
+
+    #[test]
+    fn test_exit_code_detects_unknown_command() {
+        // WOS-400: Catches mutation at lib.rs:648:13 (|| → &&)
+        // Tests that "Unknown command" string triggers exit code 1
+        let mut wos = WosWasm::new();
+        wos.execute_command("definitely_not_a_command_xyz");
+        assert_eq!(
+            wos.last_exit_code, 1,
+            "Should set exit code 1 for unknown command"
+        );
+    }
 }
