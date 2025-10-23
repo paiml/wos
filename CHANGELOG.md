@@ -7,23 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Icon Toolbar Pattern**: Replaced vertical accordion with horizontal icon toolbar (8 icons: Processes, Memory, Syscalls, Files, System, Debugger, Learning, Help)
+  - Chrome DevTools / VS Code style interface
+  - Single panel display at a time (no stacking)
+  - Cyan accent color for active icon
+  - Click active icon to toggle panel visibility (gives space back to terminal)
+  - localStorage persistence for active panel state
+- **Terminal Resize Handle**: Drag handle in bottom-right corner of terminal
+  - Visual grip pattern with diagonal dots (cyan accent)
+  - Drag to resize terminal height (100-600px range)
+  - localStorage persistence across page reloads
+  - Hover effects with scale animation
+- **Pragmatic AI Labs Badge**: Branding badge in top-right corner
+  - Logo + "paiml.com" text link
+  - Opens https://paiml.com in new tab
+  - Hover effect with lift animation and cyan border glow
+  - Responsive: hides text on mobile, shows logo only
+  - z-index 10000 (above tutorial overlay)
+- **Comprehensive E2E Test Suite**: 12 new Playwright tests
+  - `toolbar-test.spec.js`: Icon toolbar visibility, panel switching, active states (4 tests)
+  - `terminal-resize-test.spec.js`: Resize functionality, persistence, constraints (5 tests)
+  - `help-menu-test.spec.js`: Simplified help menu validation (2 tests)
+  - `paiml-badge-test.spec.js`: Badge visibility and positioning (1 test)
+
+### Changed
+- **Terminal Default Height**: Increased from 140px → 200px (balanced for panel visibility)
+  - Users can resize up to 600px via drag handle
+  - Matches cloud shell ergonomics (AWS Cloud9, Google Cloud Shell)
+- **Help Menu Simplified**: Removed 404 links, single link to Pragmatic AI Labs
+  - Before: 3 links (Retake Tutorial, Documentation, Contact - all 404s)
+  - After: 1 link ("Made by Pragmatic AI Labs" → https://paiml.com)
+  - Menu title changed from "Help & Resources" → "About"
+- **Panel Layout**: Panels now fill remaining vertical space with proper scrolling
+  - file-manager uses `flex: 1` to grow dynamically
+  - Panels use absolute positioning (`top: 0, bottom: 0`) for full height
+  - Panel content properly scrollable without cutoff
+
 ### Fixed
 - System Monitor panel cutoff issue at 1080p resolution - all 4 metrics now display without vertical overflow
 - Panel layout optimization: reduced spacing, padding, and margins across all panels for better viewport utilization
+- Panel content cutoff at bottom (fixed by adjusting terminal height and panel positioning)
 - Playwright test suite: updated 3 panel layout tests to match current HTML structure
   - Fixed file actions visibility checks (changed from `.toBeVisible()` to `.count()` for disabled elements)
   - Rewrote file actions integration test to verify correct structure
   - All 6 panel layout optimization tests now passing
 
-### Changed
-- CSS spacing optimizations in `dist/wos/style.css`:
-  - `.file-manager` gap: 20px → 10px
-  - `.file-panel-header` padding: 12px 20px → 8px 15px
-  - `.panel-content` padding: 15px → 10px
-  - `.system-monitor-grid` gap: 15px → 10px, padding: 15px → 0
-  - `.monitor-card` padding: 15px → 10px
-  - `.monitor-value` font-size: 28px → 22px
-  - `.monitor-label` and `.monitor-value` margins reduced to 5px
+### Removed
+- Accordion pattern (vertical stacking of 9 panels)
+- Old accordion CSS rules (`.collapsed`, `.file-panel-tab`, etc.)
+- Retake Tutorial button from help menu
+- 404 documentation and contact links
 
 ## [0.1.0] - 2025-10-18
 

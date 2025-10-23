@@ -80,7 +80,7 @@ main {
   flex: 1;
   display: flex;
   flex-direction: column; /* Stack panels vertically for accordion */
-  gap: 20px;
+  gap: 8px; /* Reduced from 20px to fit panels (9 panels × 8px gaps) */
   padding: 20px;
   min-height: 0;
   height: calc(100vh - 60px); /* Fixed height - no scrolling */
@@ -90,24 +90,24 @@ main {
 /* WOS-307: Responsive Design - Desktop (≥1280px) */
 @media (min-width: 1280px) {
   main {
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); /* Wider panels on desktop */
-    gap: 16px;
+    /* Accordion layout - flexbox column stacking */
+    gap: 8px; /* Consistent with base gap for accordion spacing */
   }
 }
 
 /* WOS-307: Responsive Design - Laptop (1024-1279px) */
 @media (min-width: 1024px) and (max-width: 1279px) {
   main {
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); /* Medium panels on laptop */
-    gap: 16px;
+    /* Accordion layout - flexbox column stacking */
+    gap: 8px; /* Consistent with base gap for accordion spacing */
   }
 }
 
 /* WOS-307: Responsive Design - Tablet (768-1023px) */
 @media (min-width: 768px) and (max-width: 1023px) {
   main {
-    grid-template-columns: 1fr 1fr; /* 2-panel layout */
-    gap: 12px;
+    /* Accordion layout - flexbox column stacking */
+    gap: 8px; /* Consistent with base gap for accordion spacing */
     padding: 16px;
   }
 }
@@ -115,8 +115,8 @@ main {
 /* WOS-307: Responsive Design - Mobile (≤767px) */
 @media (max-width: 767px) {
   main {
-    grid-template-columns: 1fr; /* Single column layout */
-    gap: 12px;
+    /* Accordion layout - flexbox column stacking */
+    gap: 8px; /* Consistent with base gap for accordion spacing */
     padding: 12px;
   }
 }
@@ -159,7 +159,70 @@ main {
   border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* Terminal default height - balanced for panel visibility */
+  flex: 0 0 200px; /* Default 200px height - resizable via drag handle */
+  max-height: 600px; /* Maximum resize height */
+  min-height: 100px; /* Minimum for usability */
+  position: relative; /* For absolute positioning of resize handle */
+}
+
+/* Resize Handle - Corner drag handle (bottom-right like cloud shells) */
+.resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  z-index: 10;
+  opacity: 0.5;
+  transition: all 0.2s ease;
+}
+
+.resize-handle:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.resize-handle:active {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+/* Visual indicator - diagonal dots grip pattern (like VS Code, Chrome DevTools) */
+.resize-handle::before {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  width: 14px;
+  height: 14px;
+  background-image:
+    radial-gradient(circle, var(--accent) 1.5px, transparent 1.5px),
+    radial-gradient(circle, var(--accent) 1.5px, transparent 1.5px),
+    radial-gradient(circle, var(--accent) 1.5px, transparent 1.5px),
+    radial-gradient(circle, var(--accent) 1.5px, transparent 1.5px),
+    radial-gradient(circle, var(--accent) 1.5px, transparent 1.5px),
+    radial-gradient(circle, var(--accent) 1.5px, transparent 1.5px);
+  background-size: 4px 4px;
+  background-position:
+    0px 12px,
+    4px 12px,
+    8px 12px,
+    4px 8px,
+    8px 8px,
+    12px 12px;
+  background-repeat: no-repeat;
+}
+
+.resize-handle:hover::before {
+  background-image:
+    radial-gradient(circle, var(--accent) 2px, transparent 2px),
+    radial-gradient(circle, var(--accent) 2px, transparent 2px),
+    radial-gradient(circle, var(--accent) 2px, transparent 2px),
+    radial-gradient(circle, var(--accent) 2px, transparent 2px),
+    radial-gradient(circle, var(--accent) 2px, transparent 2px),
+    radial-gradient(circle, var(--accent) 2px, transparent 2px);
 }
 
 .terminal-header {
@@ -264,27 +327,83 @@ main {
   color: var(--bg-terminal);
 }
 
-/* File Manager - Mathematical Layout */
-.file-manager {
+/* Panel Toolbar - Icon-based panel switcher */
+.panel-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; /* Don't shrink toolbar */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.toolbar-icon {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  height: 100%;
-  min-height: 0;
-  /* Remove overflow-y: auto to prevent scrolling */
-  /* Panels will size themselves mathematically */
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+.toolbar-icon:hover {
+  background: var(--bg-terminal);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.toolbar-icon.active {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.toolbar-icon svg {
+  flex-shrink: 0;
+}
+
+.toolbar-label {
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* File Manager - Single panel display */
+.file-manager {
+  flex: 1; /* Grow to fill remaining vertical space */
+  min-height: 0; /* Allow flexbox shrinking */
+  overflow: hidden; /* Prevent scrolling */
+  position: relative;
 }
 
 .file-panel {
   background: var(--bg-secondary);
   border-radius: 8px;
   border: 1px solid var(--border);
-  overflow: hidden;
-  /* ACCORDION: Expanded panel grows to fill space */
-  flex: 1 1 auto; /* Expanded panel grows */
-  min-height: 50px;
-  display: flex;
+  /* TOOLBAR PATTERN: Hide all panels by default, show only active */
+  display: none; /* Hidden by default */
   flex-direction: column;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0;
+  margin: 0;
+  overflow-y: auto; /* Allow scrolling within panel */
+}
+
+.file-panel.active {
+  display: flex; /* Show active panel - fills entire file-manager container */
 }
 
 .file-panel-header {
@@ -824,10 +943,12 @@ footer a:hover {
   /* Content scrolls within mathematically calculated space */
 }
 
-.file-panel.collapsed {
-  flex: 0 0 50px; /* Collapsed: fixed 50px, don't grow */
-  max-height: 50px;
-}
+/* REMOVED: Old accordion collapse - toolbar pattern doesn't use this */
+/* .file-panel.collapsed {
+  flex: 0 0 25px;
+  max-height: 25px;
+  transition: flex 0.3s ease;
+} */
 
 /* Collapsed state handled by lines 1955-1960 with transitions */
 
@@ -1948,7 +2069,7 @@ footer a:hover {
   overflow-y: auto;
   opacity: 1;
   visibility: visible;
-  max-height: none; /* Explicit: allow full height when expanded */
+  max-height: 5000px; /* FIXED: needs explicit value for transition (was: none) */
   display: flex; /* Ensure display is set */
   flex-direction: column;
 }
@@ -2118,5 +2239,56 @@ label.terminal-prompt {
   button {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
+  }
+}
+
+/* Pragmatic AI Labs Badge - Top Right Corner */
+.paiml-badge {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  z-index: 10000; /* Above tutorial overlay */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.paiml-badge:hover {
+  background: var(--bg-terminal);
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 212, 170, 0.2);
+}
+
+.paiml-logo {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.paiml-text {
+  font-family: var(--font-mono);
+  letter-spacing: 0.5px;
+}
+
+/* Responsive: Hide text on small screens */
+@media (max-width: 768px) {
+  .paiml-badge {
+    padding: 8px;
+  }
+
+  .paiml-text {
+    display: none;
   }
 }

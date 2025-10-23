@@ -50,6 +50,60 @@
               />
             </div>
           </div>
+          <!-- Resize Handle - Corner drag to resize terminal -->
+          <div class="resize-handle" data-resize="terminal" title="Drag to resize terminal" role="separator" aria-label="Resize terminal"></div>
+        </div>
+
+        <!-- Panel Toolbar - Icon-based panel switcher -->
+        <div class="panel-toolbar" role="toolbar" aria-label="Panel switcher">
+          <button class="toolbar-icon" data-panel-toggle="process_list" title="Process List" aria-label="Show Process List">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
+            </svg>
+            <span class="toolbar-label">Processes</span>
+          </button>
+          <button class="toolbar-icon" data-panel-toggle="memory_map" title="Memory Map" aria-label="Show Memory Map">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M20 6h-2.18c.11-.31.18-.65.18-1 0-1.66-1.34-3-3-3-1.05 0-1.96.54-2.5 1.35l-.5.67-.5-.68C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm11 15H4v-2h16v2zm0-5H4V8h5.08L7 10.83 8.62 12 11 8.76l1-1.36 1 1.36L15.38 12 17 10.83 14.92 8H20v6z"/>
+            </svg>
+            <span class="toolbar-label">Memory</span>
+          </button>
+          <button class="toolbar-icon" data-panel-toggle="syscall_trace" title="System Call Trace" aria-label="Show System Call Trace">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-5 14H4v-4h11v4zm0-5H4V9h11v4zm5 5h-4V9h4v9z"/>
+            </svg>
+            <span class="toolbar-label">Syscalls</span>
+          </button>
+          <button class="toolbar-icon" data-panel-toggle="filesystem" title="Files" aria-label="Show File System">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/>
+            </svg>
+            <span class="toolbar-label">Files</span>
+          </button>
+          <button class="toolbar-icon" data-panel-toggle="system_monitor" title="System Info" aria-label="Show System Monitor">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M13 2.05v3.03c3.39.49 6 3.39 6 6.92 0 .9-.18 1.75-.48 2.54l2.6 1.53c.56-1.24.88-2.62.88-4.07 0-5.18-3.95-9.45-9-9.95zM12 19c-3.87 0-7-3.13-7-7 0-3.53 2.61-6.43 6-6.92V2.05c-5.06.5-9 4.76-9 9.95 0 5.52 4.47 10 9.99 10 3.31 0 6.24-1.61 8.06-4.09l-2.6-1.53C16.17 17.98 14.21 19 12 19z"/>
+            </svg>
+            <span class="toolbar-label">System</span>
+          </button>
+          <button class="toolbar-icon" data-panel-toggle="time_travel_debugger" title="Time-Travel Debugger" aria-label="Show Time-Travel Debugger">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm4.2 14.2L11 13V7h1.5v5.2l4.5 2.7-.8 1.3z"/>
+            </svg>
+            <span class="toolbar-label">Debugger</span>
+          </button>
+          <button class="toolbar-icon active" data-panel-toggle="learning_objectives" title="Learning Objectives" aria-label="Show Learning Objectives">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3L1 9l11 6 9-4.91V17h2V9L12 3z"/>
+            </svg>
+            <span class="toolbar-label">Learning</span>
+          </button>
+          <button class="toolbar-icon" data-panel-toggle="help" title="Help" aria-label="Show Help">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/>
+            </svg>
+            <span class="toolbar-label">Help</span>
+          </button>
         </div>
 
         <div class="file-manager">
@@ -717,35 +771,25 @@
     <!-- Help menu dropdown -->
     <div id="help-menu" class="help-menu hidden">
       <div class="help-menu-content">
-        <h3>Help & Resources</h3>
+        <h3>About</h3>
         <ul class="help-menu-list">
           <li>
-            <button id="btn-retake-tutorial-menu" class="help-menu-item">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-              </svg>
-              Retake Tutorial
-            </button>
-          </li>
-          <li>
-            <a href="https://docs.wos.dev" target="_blank" class="help-menu-item">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
-              </svg>
-              Documentation
-            </a>
-          </li>
-          <li>
-            <a href="https://github.com/paiml/wos/issues" target="_blank" class="help-menu-item">
+            <a href="https://paiml.com" target="_blank" rel="noopener noreferrer" class="help-menu-item">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
               </svg>
-              Report Issue
+              Made by Pragmatic AI Labs
             </a>
           </li>
         </ul>
       </div>
     </div>
+
+    <!-- Pragmatic AI Labs Badge - Top Right Corner -->
+    <a href="https://paiml.com" target="_blank" rel="noopener noreferrer" class="paiml-badge" title="Made by Pragmatic AI Labs" aria-label="Made by Pragmatic AI Labs">
+      <img src="paiml-logo.svg" alt="Pragmatic AI Labs" class="paiml-logo">
+      <span class="paiml-text">paiml.com</span>
+    </a>
 
     <script type="module" src="app.js"></script>
   </body>

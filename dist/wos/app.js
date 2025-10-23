@@ -373,23 +373,14 @@ class PanelManager {
         config: panelConfig
       };
 
-      // Apply initial visibility
-      if (panelConfig.visible === false) {
-        panelEl.style.display = 'none';
-      }
-
-      // WOS-306: Apply initial collapsed state and create tabs
-      if (panelConfig.collapsed === true) {
-        panelEl.classList.add('collapsed');
-        // CSS handles hiding via opacity and max-height transitions
-        // Create tab for collapsed panel
-        this.createPanelTab(panelName, panelEl);
-      }
+      // TOOLBAR PATTERN: Don't apply collapsed class or create tabs
+      // Visibility is controlled by toolbar via .active class
+      // (Old accordion code removed)
     });
   }
 
   setupEventListeners() {
-    // Add click listeners to all collapse buttons
+    // Add click listeners to all collapse buttons (legacy accordion support)
     document.querySelectorAll('.btn-collapse').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const panel = e.target.closest('[data-panel]');
@@ -399,6 +390,139 @@ class PanelManager {
         }
       });
     });
+
+    // TOOLBAR PATTERN: Add click listeners to toolbar icons
+    document.querySelectorAll('.toolbar-icon').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const panelName = btn.dataset.panelToggle;
+        if (panelName) {
+          this.activatePanel(panelName);
+        }
+      });
+    });
+
+    // Initialize: Show only the active panel (learning_objectives by default)
+    this.initializeToolbarPanels();
+
+    // Setup resize handle for terminal
+    this.setupResizeHandle();
+  }
+
+  initializeToolbarPanels() {
+    // Hide all panels first
+    Object.keys(this.panels).forEach(panelName => {
+      this.panels[panelName].element.classList.remove('active');
+    });
+
+    // Show the default panel (learning_objectives)
+    const defaultPanel = 'learning_objectives';
+    if (this.panels[defaultPanel]) {
+      this.panels[defaultPanel].element.classList.add('active');
+    }
+  }
+
+  activatePanel(panelName) {
+    // TOGGLE BEHAVIOR: If clicking already-active panel, hide it (give space to terminal)
+    const currentlyActive = this.panels[panelName]?.element.classList.contains('active');
+
+    if (currentlyActive) {
+      // Hide the active panel
+      this.panels[panelName].element.classList.remove('active');
+
+      // Deactivate all toolbar buttons
+      document.querySelectorAll('.toolbar-icon').forEach(btn => {
+        btn.classList.remove('active');
+      });
+
+      // Save state: no panel active
+      localStorage.setItem('wos-active-panel', 'none');
+      return;
+    }
+
+    // Hide all panels
+    Object.keys(this.panels).forEach(name => {
+      this.panels[name].element.classList.remove('active');
+    });
+
+    // Show selected panel
+    if (this.panels[panelName]) {
+      this.panels[panelName].element.classList.add('active');
+    }
+
+    // Update toolbar button active states
+    document.querySelectorAll('.toolbar-icon').forEach(btn => {
+      if (btn.dataset.panelToggle === panelName) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    // Save state to localStorage
+    localStorage.setItem('wos-active-panel', panelName);
+  }
+
+  setupResizeHandle() {
+    const resizeHandle = document.querySelector('.resize-handle');
+    const terminalContainer = document.querySelector('.terminal-container');
+
+    if (!resizeHandle || !terminalContainer) return;
+
+    let isResizing = false;
+    let startY = 0;
+    let startHeight = 0;
+
+    const onMouseDown = (e) => {
+      isResizing = true;
+      startY = e.clientY;
+      startHeight = terminalContainer.offsetHeight;
+
+      // Prevent text selection during drag
+      e.preventDefault();
+
+      // Add visual feedback
+      document.body.style.cursor = 'nwse-resize';
+      resizeHandle.style.opacity = '1';
+    };
+
+    const onMouseMove = (e) => {
+      if (!isResizing) return;
+
+      const deltaY = e.clientY - startY;
+      const newHeight = startHeight + deltaY;
+
+      // Enforce min/max constraints (100px - 600px)
+      const minHeight = 100;
+      const maxHeight = 600;
+      const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+
+      // Update terminal height
+      terminalContainer.style.flex = `0 0 ${clampedHeight}px`;
+
+      // Save to localStorage for persistence
+      localStorage.setItem('wos-terminal-height', clampedHeight);
+    };
+
+    const onMouseUp = () => {
+      if (!isResizing) return;
+
+      isResizing = false;
+
+      // Remove visual feedback
+      document.body.style.cursor = '';
+      resizeHandle.style.opacity = '';
+    };
+
+    // Add event listeners
+    resizeHandle.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+
+    // Restore saved height from localStorage
+    const savedHeight = localStorage.getItem('wos-terminal-height');
+    if (savedHeight) {
+      terminalContainer.style.flex = `0 0 ${savedHeight}px`;
+    }
   }
 
   toggleCollapse(panelName) {
@@ -4237,13 +4361,7 @@ class InteractiveTutorial {
       });
     }
 
-    // Retake from help menu
-    const retakeMenuButton = document.getElementById('btn-retake-tutorial-menu');
-    if (retakeMenuButton) {
-      retakeMenuButton.addEventListener('click', () => {
-        this.retake();
-      });
-    }
+    // Retake from help menu - removed (simplified to just "Made by Pragmatic AI Labs" link)
 
     // Close help menu when clicking outside
     document.addEventListener('click', (e) => {
