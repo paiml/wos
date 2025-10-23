@@ -30,6 +30,197 @@ meta:
     infrastructure: zero_infrastructure
 
 phases:
+  # PHASE 12: UX Overhaul - Icon Toolbar & Resize (COMPLETED 2025-10-23)
+  - id: phase-12
+    name: "UX Overhaul: Icon Toolbar & Terminal Resize"
+    goal: "Replace accordion with professional icon toolbar interface, add terminal resize handle, and PAIML branding"
+    priority: HIGH
+    duration: 1_day
+    cycles: 4
+    status: completed
+    completion_date: "2025-10-23"
+    commit: "be9efabcac8d26a21be2e54e53683bcd809d5275"
+    test_results: "12/12 Playwright tests passing (100%)"
+    tickets:
+      - id: WOS-UX-01
+        title: "Icon Toolbar Pattern (Chrome DevTools Style)"
+        status: completed
+        test_results: "4/4 tests passing (toolbar-test.spec.js)"
+        features:
+          - "8 icons in horizontal toolbar (Processes, Memory, Syscalls, Files, System, Debugger, Learning, Help)"
+          - "Single panel display (no stacking)"
+          - "Click active icon to toggle panel visibility"
+          - "localStorage persistence for active panel state"
+          - "Cyan accent color for active state"
+        files:
+          - "dist/wos/index.html - Toolbar HTML (lines 58-105)"
+          - "dist/wos/style.css - Toolbar CSS (lines 270-409)"
+          - "dist/wos/app.js - Panel activation logic (lines 391-463)"
+
+      - id: WOS-UX-02
+        title: "Terminal Resize Handle"
+        status: completed
+        test_results: "5/5 tests passing (terminal-resize-test.spec.js)"
+        features:
+          - "Bottom-right corner drag handle with diagonal dots pattern"
+          - "Resize range: 100-600px (default 200px)"
+          - "localStorage persistence across page reloads"
+          - "Visual feedback (hover, scale animation)"
+        files:
+          - "dist/wos/index.html - Resize handle HTML (line 54)"
+          - "dist/wos/style.css - Resize handle CSS (lines 169-226)"
+          - "dist/wos/app.js - Drag behavior (lines 465-526)"
+
+      - id: WOS-UX-03
+        title: "Pragmatic AI Labs Badge"
+        status: completed
+        test_results: "1/1 tests passing (paiml-badge-test.spec.js)"
+        features:
+          - "Top-right corner badge with logo + paiml.com link"
+          - "Opens https://paiml.com in new tab"
+          - "Responsive design (text hides on mobile)"
+          - "z-index 10000 (above tutorial overlay)"
+        files:
+          - "dist/wos/index.html - Badge HTML (lines 788-792)"
+          - "dist/wos/style.css - Badge CSS (lines 2245-2294)"
+          - "dist/wos/paiml-logo.svg - NEW logo asset"
+
+      - id: WOS-UX-04
+        title: "Help Menu Simplification"
+        status: completed
+        test_results: "2/2 tests passing (help-menu-test.spec.js)"
+        changes:
+          - "Removed 404 links (Retake Tutorial, Documentation, Contact)"
+          - "Single link: 'Made by Pragmatic AI Labs' → https://paiml.com"
+          - "Menu title: 'Help & Resources' → 'About'"
+        files:
+          - "dist/wos/index.html - Simplified menu (lines 771-786)"
+          - "dist/wos/app.js - Removed dead code (line 4364)"
+
+  # PHASE 13: SQLite Integration with absurder-sql (NEXT)
+  - id: phase-13
+    name: "Persistent SQLite Database via absurder-sql"
+    goal: "Integrate absurder-sql for persistent IndexedDB-backed SQLite databases in browser"
+    priority: HIGH
+    duration: 1_week
+    cycles: 5
+    status: pending
+    dependencies:
+      - "npm package: @npiesco/absurder-sql"
+      - "WASM binary: ~1.3MB uncompressed, ~595KB gzipped"
+    spec_reference: "https://github.com/npiesco/absurder-sql"
+    tickets:
+      - id: WOS-SQL-01
+        title: "absurder-sql Integration & Initialization"
+        priority: critical
+        cycle: 1
+        time_estimate: 4_hours
+        status: pending
+        requirements:
+          - "Install @npiesco/absurder-sql via npm"
+          - "Initialize WASM module with await init()"
+          - "Create Database.newDatabase() wrapper"
+          - "Add to WASM imports in index.html"
+        tests:
+          - "test_absurder_sql_initialization"
+          - "test_database_creation"
+          - "test_wasm_module_loads"
+        acceptance:
+          - "absurder-sql WASM loads successfully"
+          - "Database creation works"
+          - "No console errors"
+        complexity_target: 8
+        coverage_target: 90
+
+      - id: WOS-SQL-02
+        title: "SQL Command Integration (CREATE, INSERT, SELECT)"
+        priority: critical
+        cycle: 2
+        time_estimate: 5_hours
+        status: pending
+        requirements:
+          - "Add 'sql' command to shell"
+          - "Execute SQL statements via absurder-sql"
+          - "Display query results in terminal"
+          - "Handle SQL errors gracefully"
+        tests:
+          - "test_sql_create_table"
+          - "test_sql_insert_data"
+          - "test_sql_select_query"
+          - "test_sql_syntax_error"
+        acceptance:
+          - "SQL commands execute successfully"
+          - "Results displayed in terminal"
+          - "Error messages are clear"
+        complexity_target: 10
+        coverage_target: 85
+
+      - id: WOS-SQL-03
+        title: "Database Export/Import"
+        priority: high
+        cycle: 3
+        time_estimate: 4_hours
+        status: pending
+        requirements:
+          - "Export database as SQLite file"
+          - "Import SQLite file into IndexedDB"
+          - "Add 'db-export' and 'db-import' commands"
+          - "Handle file download/upload"
+        tests:
+          - "test_database_export"
+          - "test_database_import"
+          - "test_export_import_roundtrip"
+        acceptance:
+          - "Export creates valid SQLite file"
+          - "Import restores database state"
+          - "Data portability verified"
+        complexity_target: 12
+        coverage_target: 85
+
+      - id: WOS-SQL-04
+        title: "Multi-Tab Coordination"
+        priority: medium
+        cycle: 4
+        time_estimate: 3_hours
+        status: pending
+        requirements:
+          - "Leader election via BroadcastChannel"
+          - "Prevent write conflicts across tabs"
+          - "Sync database state"
+        tests:
+          - "test_leader_election"
+          - "test_multi_tab_writes"
+          - "test_broadcast_coordination"
+        acceptance:
+          - "Only one tab can write at a time"
+          - "No data corruption"
+          - "Leader election works"
+        complexity_target: 10
+        coverage_target: 80
+
+      - id: WOS-SQL-05
+        title: "SQLite Panel UI & E2E Tests"
+        priority: high
+        cycle: 5
+        time_estimate: 4_hours
+        status: pending
+        requirements:
+          - "Add 'Database' icon to toolbar"
+          - "Create SQLite panel with query editor"
+          - "Display query results in table"
+          - "Add Playwright E2E tests"
+        tests:
+          - "test_database_panel_visible"
+          - "test_sql_query_execution_ui"
+          - "test_results_table_display"
+        acceptance:
+          - "Database panel accessible via toolbar"
+          - "Query editor functional"
+          - "Results display correctly"
+          - "E2E tests pass"
+        complexity_target: 12
+        coverage_target: 85
+
   # PHASE 9: Shell Script Execution (HIGHEST PRIORITY - NEW)
   # Based on docs/specifications/running-shell-scripts.md
   - id: phase-9
@@ -2041,8 +2232,29 @@ completion_status:
     browser_interface: "✅ Fully functional"
     quality_gates: "✅ All passing"
     educational_content: "✅ Comprehensive documentation"
+    production_deployment: "✅ Live at https://interactive.paiml.com/wos/"
+    catalog_integration: "✅ Added to interactive.paiml.com catalog (2025-10-23)"
+    demo_video: "✅ 30-second showcase (docs/webos-showcase-demo.webm)"
+
+  deployment_details:
+    deployment_date: "2025-10-23"
+    deployment_method: "Symlink workflow for rapid iteration"
+    production_url: "https://interactive.paiml.com/wos/"
+    s3_bucket: "interactive.paiml.com-production-mces4cme"
+    cloudfront_distribution: "ELY820FVFXAFF"
+    catalog_entry:
+      icon: "🖥️"
+      title: "WebOS - Browser Operating System"
+      description: "Interactive WASM-powered operating system running entirely in your browser. Explore systems programming with Rust."
+      link: "./wos/index.html"
+    rapid_iteration_workflow:
+      setup: "make link-dev (one-time symlink creation)"
+      development: "cd /home/noah/src/wos && make build"
+      deployment: "cd /home/noah/src/interactive.paiml.com && make deploy"
+      symlink_path: "/home/noah/src/interactive.paiml.com/dist/wos → /home/noah/src/wos/dist/wos"
 
   post_mvp_recommendations:
     option_1: "Production documentation (user guides, tutorials, videos)"
     option_2: "Advanced features (WOS-022+: priority scheduling, network, etc.)"
     option_3: "Performance optimization (WASM size, runtime, memory)"
+    option_4: "Enhanced demo videos (feature-specific showcases)"
