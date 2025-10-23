@@ -159,7 +159,13 @@ phases:
         priority: high
         cycle: 2
         time_estimate: 2_hours
-        status: pending
+        status: completed
+        completion_date: "2025-10-23"
+        test_results: "10/10 E2E tests passing"
+        implementation:
+          - "Added AVAILABLE_COMMANDS constant (dist/wos/app.js:1135)"
+          - "Updated error message to list commands (dist/wos/app.js:1162)"
+          - "Added 10 E2E tests (tests/e2e/vim-error-messages-test.spec.js)"
         customer_issue: "Vim shows ':sp is not a command' with no guidance on what IS available"
         requirements:
           - "Add AVAILABLE_COMMANDS constant to VimEditor class"
@@ -186,7 +192,13 @@ phases:
         priority: medium
         cycle: 3
         time_estimate: 1_hour
-        status: pending
+        status: completed
+        completion_date: "2025-10-23"
+        test_results: "5/5 E2E tests passing"
+        implementation:
+          - "Added :help command handler (dist/wos/app.js:1151-1159)"
+          - "Help lists all commands with descriptions"
+          - "Added 5 E2E tests (tests/e2e/vim-help-test.spec.js)"
         requirements:
           - "Add :help command to VimEditor"
           - "Display available commands with descriptions"

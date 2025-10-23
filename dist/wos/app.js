@@ -1131,6 +1131,9 @@ class VimEditor {
   executeCommand(cmd) {
     cmd = cmd.slice(1); // Remove leading ':'
 
+    // WOS-401: List of available vim commands for helpful error messages
+    const AVAILABLE_COMMANDS = [':w', ':write', ':q', ':quit', ':q!', ':quit!', ':wq', ':x', ':help'];
+
     if (cmd === 'w' || cmd === 'write') {
       this.save();
       this.message = `"${this.fileName}" ${this.lines.length}L written`;
@@ -1145,8 +1148,18 @@ class VimEditor {
     } else if (cmd === 'wq' || cmd === 'x') {
       this.save();
       this.close();
+    } else if (cmd === 'help') {
+      // WOS-402: Vim :help command
+      this.message = `WOS Vim Commands:
+:w, :write - Save file
+:q, :quit - Quit (fails if modified)
+:q!, :quit! - Quit without saving
+:wq, :x - Save and quit
+:help - Show this help
+Press Escape to clear this message`;
     } else {
-      this.message = `E492: Not an editor command: ${cmd}`;
+      // WOS-401: Improved error message with available command list
+      this.message = `E492: Not an editor command: ${cmd}. Available commands: ${AVAILABLE_COMMANDS.join(', ')}`;
     }
   }
 
