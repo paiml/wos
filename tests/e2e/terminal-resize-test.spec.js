@@ -16,13 +16,13 @@ test.describe('Terminal Resize UX', () => {
     }
   });
 
-  test('terminal starts at 250px height', async ({ page }) => {
+  test('terminal starts at 200px height', async ({ page }) => {
     const terminal = page.locator('.terminal-container');
     const box = await terminal.boundingBox();
 
     console.log(`Terminal height: ${box?.height}px`);
-    expect(box?.height).toBeGreaterThanOrEqual(240); // Allow 10px tolerance
-    expect(box?.height).toBeLessThanOrEqual(260);
+    expect(box?.height).toBeGreaterThanOrEqual(190); // Allow 10px tolerance
+    expect(box?.height).toBeLessThanOrEqual(210);
 
     await page.screenshot({
       path: 'tests/e2e/screenshots/RESIZE-01-initial.png',
