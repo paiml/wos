@@ -16,7 +16,7 @@ An educational microkernel operating system written in pure Rust that compiles t
 - **🔍 Time-Travel Debugging**: Bidirectional execution replay with full state snapshots
 - **📊 Quality Metrics**: Real-time TDG dashboard (99.3/100 A+) with JSON/HTML export
 
-## Quick Start
+## Installation
 
 ### Prerequisites
 
@@ -71,6 +71,52 @@ make mutants
 # Run benchmarks
 make bench-all
 ```
+
+## Usage
+
+Once WOS is running in your browser (after `make serve`), you can interact with the terminal:
+
+### Basic Commands
+
+```bash
+help        # Show available commands
+ps          # List processes
+ls [path]   # List files
+cat <file>  # Display file contents
+echo <msg>  # Echo message
+grep <pat>  # Search for pattern (supports stdin)
+wc [file]   # Count lines/words/bytes (supports stdin)
+touch <f>   # Create empty file
+mkdir <dir> # Create directory
+rm <file>   # Remove file
+vim [file]  # Open vim editor (MVP)
+version     # Show WOS version
+state       # Show kernel state
+reset       # Reset system
+```
+
+### Advanced Features
+
+```bash
+# Pipeline operators
+cmd1 | cmd2         # Pipe stdout to stdin
+cmd1 && cmd2        # Execute cmd2 if cmd1 succeeds
+cmd1 || cmd2        # Execute cmd2 if cmd1 fails
+cmd1 ; cmd2         # Execute both regardless
+
+# I/O redirection
+cmd > file          # Redirect stdout to file (overwrite)
+cmd >> file         # Redirect stdout to file (append)
+cmd < file          # Redirect file to stdin
+
+# Variables
+VAR=value           # Set variable
+echo $VAR           # Expand variable
+export VAR=value    # Export variable
+echo $?             # Last exit code
+```
+
+For complete command documentation, see the [Terminal Commands](#terminal-commands) section below.
 
 ## Architecture
 
