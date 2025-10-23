@@ -313,7 +313,7 @@ pmat-dead-code:
 
 pmat-gates:
 	@echo "🔍 Running PMAT quality gates..."
-	@pmat quality-gates --project-dir . --config .pmat-gates.toml || (echo "❌ PMAT quality gates failed" && exit 1)
+	@pmat quality-gate --project-path . --fail-on-violation || (echo "❌ PMAT quality gates failed" && exit 1)
 	@echo "✓ PMAT gates passed"
 
 pmat-roadmap-status:

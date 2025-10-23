@@ -129,7 +129,9 @@ ignore_patterns = [
     "**/target/**",
     "**/dist/**",
     "**/.git/**",
-    "**/*.wasm"
+    "**/*.wasm",
+    "**/e2e/**",  # TypeScript E2E tests (not Rust code)
+    "**/*.spec.ts"  # TypeScript test files
 ]
 
 [validation]

@@ -1,0 +1,24 @@
+# PMAT ignore patterns
+# Exclude files from quality gate analysis
+
+# Build artifacts
+/target
+/dist
+
+# Version control
+/.git
+
+# WASM binaries
+*.wasm
+
+# TypeScript E2E tests (not part of Rust codebase)
+/e2e
+**/*.spec.ts
+**/*.spec.js
+
+# Node modules
+/node_modules
+
+# Temporary files
+*.tmp
+*.log
