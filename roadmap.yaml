@@ -104,7 +104,10 @@ phases:
     priority: CRITICAL
     duration: 1_day
     cycles: 3
-    status: in_progress
+    status: completed
+    completion_date: "2025-10-23"
+    session_doc: "docs/sessions/session-2025-10-23-bug-fixes.md"
+    commits: ["56f15ba", "8232894", "615b87b"]
     bug_report: "docs/qa/bug-report-cd-terminal-state-vim.md"
     findings: "docs/qa/bug-report-findings.md"
     tickets:
