@@ -79,11 +79,12 @@ header h1 {
 main {
   flex: 1;
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
   padding: 20px;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* WOS-307: Responsive Design - Desktop (≥1280px) */
@@ -278,10 +279,10 @@ main {
   background: var(--bg-secondary);
   border-radius: 8px;
   border: 1px solid var(--border);
-  overflow: hidden;
-  /* Mathematical sizing: Each panel gets equal flex space */
-  flex: 1 1 0;
-  min-height: 0;
+  overflow: visible;
+  /* Grid item sizing */
+  min-height: 400px;
+  max-height: 800px;
   display: flex;
   flex-direction: column;
 }
