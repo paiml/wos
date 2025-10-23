@@ -1,0 +1,75 @@
+
+Running 6 tests using 1 worker
+
+Screenshot saved: 01-initial-state.png
+  ✓  1 tests/e2e/ux-visual-test.spec.js:22:3 › WOS Panel UX Visual Testing › screenshot initial state - all panels (2.9s)
+Screenshot saved: 02-all-collapsed.png
+  ✓  2 tests/e2e/ux-visual-test.spec.js:32:3 › WOS Panel UX Visual Testing › screenshot collapsed panels (5.1s)
+Screenshot saved: 03-first-panel-expanded.png
+  ✓  3 tests/e2e/ux-visual-test.spec.js:49:3 › WOS Panel UX Visual Testing › screenshot expand first panel (4.0s)
+Screenshot saved: 04-panel-1-process_list.png
+Screenshot saved: 04-panel-2-memory_map.png
+Screenshot saved: 04-panel-3-syscall_trace.png
+  ✓  4 tests/e2e/ux-visual-test.spec.js:71:3 › WOS Panel UX Visual Testing › screenshot expand different panels sequentially (3.8s)
+Panel measurements: [
+  {
+    "panel": "process_list",
+    "collapsed": true,
+    "height": 50,
+    "y": 190.59375
+  },
+  {
+    "panel": "memory_map",
+    "collapsed": true,
+    "height": 50,
+    "y": 250.59375
+  },
+  {
+    "panel": "syscall_trace",
+    "collapsed": true,
+    "height": 50,
+    "y": 310.59375
+  },
+  {
+    "panel": "filesystem",
+    "collapsed": true,
+    "height": 50,
+    "y": 370.59375
+  },
+  {
+    "panel": "system_monitor",
+    "collapsed": true,
+    "height": 50,
+    "y": 430.59375
+  },
+  {
+    "panel": "system_monitor_detailed",
+    "collapsed": true,
+    "height": 50,
+    "y": 490.59375
+  },
+  {
+    "panel": "time_travel_debugger",
+    "collapsed": true,
+    "height": 50,
+    "y": 550.59375
+  },
+  {
+    "panel": "learning_objectives",
+    "collapsed": false,
+    "height": 50,
+    "y": 610.59375
+  },
+  {
+    "panel": "help",
+    "collapsed": true,
+    "height": 50,
+    "y": 670.59375
+  }
+]
+PROBLEM: Panels extending off-screen: [ { panel: [32m'help'[39m, collapsed: [33mtrue[39m, height: [33m50[39m, y: [33m670.59375[39m } ]
+  ✓  5 tests/e2e/ux-visual-test.spec.js:92:3 › WOS Panel UX Visual Testing › measure panel heights and spacing (2.8s)
+Process list collapsed after expanding memory map: [33mtrue[39m
+  ✓  6 tests/e2e/ux-visual-test.spec.js:120:3 › WOS Panel UX Visual Testing › test accordion behavior visually (3.4s)
+
+  6 passed (22.6s)

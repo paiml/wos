@@ -1,0 +1,28 @@
+{
+  "name": "wos",
+  "version": "1.0.0",
+  "description": "[![TDG Grade](https://img.shields.io/badge/TDG%20Grade-A%2B%20(99.3%2F100)-brightgreen)](PROGRESS.md) [![Test Coverage](https://img.shields.io/badge/Coverage-85%25%2B-brightgreen)](PROGRESS.md) [![Tests](https://img.shields.io/badge/Tests-546%20unit%20%7C%20211%20E2E-brightgreen)](PROGRESS.md) [![Quality Gates](https://img.shields.io/badge/Quality%20Gates-6%2F6%20passing-brightgreen)](Makefile)",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paiml/wos.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/paiml/wos/issues"
+  },
+  "homepage": "https://github.com/paiml/wos#readme",
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}
