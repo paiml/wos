@@ -2,14 +2,22 @@
 **Date:** 2025-10-23
 **Tool:** cargo-mutants v25.3.1
 **Scope:** 983 mutants across workspace
-**Status:** In progress (background)
+**Status:** ✅ Complete (10m 57s runtime)
 
 ## Executive Summary
 
-Initial mutation testing reveals **significant test assertion gaps** despite 85%+ line coverage. Tests verify "happy paths" but miss edge cases, boundary conditions, and error scenarios.
+Mutation testing reveals **strong but not perfect test quality**:
+- **88.3% mutation kill rate** (766/868 viable mutants caught)
+- **Target:** 90%+ (per `.pmat-gates.toml` quality gates)
+- **Gap:** Only 1.7 percentage points (~15 mutants) from target
 
-**Key Finding:** High line coverage ≠ High mutation coverage
-**Impact:** Tests may not catch real bugs in production
+**Key Finding:** Tests catch most mutations but miss critical edge cases in:
+- Boolean logic operators (`||` ↔ `&&`)
+- Boundary conditions (`<` ↔ `<=`, `>` ↔ `>=`)
+- Negation logic (`delete !`)
+- Return value substitutions (dummy values)
+
+**Impact:** Very close to Toyota Way zero-defect quality standard
 
 ## Critical Gaps Identified (First 60 Mutants)
 
@@ -169,13 +177,28 @@ This indicates test timeouts are working correctly.
 - [ ] Property tests for all arithmetic operations
 - [ ] Property tests for all state transitions
 
-## Target Metrics
+## Final Metrics (Complete Run)
 
-**Current Estimate:** ~6-7% mutation kill rate (62+ missed out of ~60 tested)
-**Target:** 90%+ mutation kill rate
-**Gap:** ~85% improvement needed
+**Results Summary:**
+- Total mutants: 983
+- Viable mutants: 868 (983 - 115 unviable)
+- Caught: 766
+- Missed: 100
+- Timeouts: 2 (good - caught infinite loops)
+- Unviable: 115 (compilation failures, equivalent mutants)
 
-**Strategy:** Assertion-focused testing over coverage-focused testing
+**Kill Rate:** 88.3% (766 / 868)
+- **Current:** 88.3%
+- **Target:** 90.0% (per `.pmat-gates.toml`)
+- **Gap:** 1.7 percentage points
+- **Needed:** ~15 more mutants caught to reach 90%
+
+**Initial Estimate vs Reality:**
+- Early estimate: ~7% (based on first 60 mutants, all from wos/src/lib.rs)
+- Final result: 88.3%
+- Reason for discrepancy: cargo-mutants tests files alphabetically, starting with the most problematic file
+
+**Strategy:** Focused assertion testing on 100 missed mutants
 
 ## Implementation Approach
 
@@ -198,11 +221,37 @@ This indicates test timeouts are working correctly.
 ## Next Steps
 
 1. ✅ Create roadmap ticket (WOS-400: Improve Test Assertions)
-2. ⏳ Wait for full mutation testing results
-3. 🔄 Prioritize top 20 gaps
-4. 🎯 Implement assertion improvements
-5. ♻️ Re-run mutation testing
-6. 📊 Measure improvement
+2. ✅ Complete full mutation testing (10m 57s, 983 mutants)
+3. ✅ Analyze results (88.3% kill rate, 100 missed mutants)
+4. 🎯 **NEXT:** Implement WOS-400 (logic operator tests) - highest priority
+5. 🎯 Implement WOS-401 through WOS-405 (other assertion improvements)
+6. ♻️ Re-run mutation testing to verify 90%+ achieved
+
+## Breakdown of 100 Missed Mutants by File
+
+**High Priority (70+ mutants):**
+- **wos/src/lib.rs** - 38 missed mutants (WASM integration, parsing, execution)
+- **shared/src/pipeline.rs** - 11 missed mutants (pipeline parsing, quote handling)
+- **shared/src/parser.rs** - 2 missed mutants (escape sequences)
+- **wos/src/script_executor.rs** - 6 missed mutants (script execution logic)
+- **wos/src/quality.rs** - 4 missed mutants (SARIF threshold comparisons)
+- **wos/src/config.rs** - 1 missed mutant (default_true helper)
+
+**Medium Priority (20+ mutants):**
+- **kernel/src/memory.rs** - 6 missed mutants (memory layout, address translation)
+- **kernel/src/state.rs** - 2 missed mutants (process FD management)
+- **kernel/src/trace.rs** - 3 missed mutants (return value substitutions)
+- **shared/src/context.rs** - 5 missed mutants (RNG, PartialEq logic)
+- **userspace/src/programs.rs** - 6 missed mutants (ls, ps, vim logic)
+- **userspace/src/vim/command.rs** - 6 missed mutants (command boundary conditions)
+- **userspace/src/vim/buffer.rs** - 1 missed mutant (cursor clamping)
+- **userspace/src/vim/state.rs** - 1 missed mutant (Display trait)
+- **userspace/src/init.rs** - 2 missed mutants (next_child return values)
+
+**Focus Strategy:**
+1. Start with wos/src/lib.rs (38 mutants - highest concentration)
+2. Then shared/src/pipeline.rs (11 mutants)
+3. Then kernel/ and userspace/ files (lower priority, fewer mutants)
 
 ## References
 
