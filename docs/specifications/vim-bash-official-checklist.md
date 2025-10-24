@@ -74,15 +74,15 @@
 | Variable assignment (`VAR=value`) | ✅ | - | existing tests | Basic assignment |
 | Variable expansion (`$VAR`) | ✅ | SC2086 | existing tests | With quoting |
 | Braced expansion (`${VAR}`) | ✅ | SC2086 | existing tests | Explicit form |
-| Default value (`${VAR:-default}`) | ❌ | - | - | Use default if unset |
-| Assign default (`${VAR:=default}`) | ❌ | - | - | Set if unset |
-| Error if unset (`${VAR:?error}`) | ❌ | - | - | Error message |
-| Use alternate (`${VAR:+alt}`) | ❌ | - | - | Use if set |
-| String length (`${#VAR}`) | ❌ | - | - | Character count |
-| Substring (`${VAR:offset:len}`) | ❌ | - | - | Extract portion |
-| Pattern removal (`${VAR#pattern}`) | ❌ | - | - | Remove prefix |
-| Pattern removal (`${VAR%pattern}`) | ❌ | - | - | Remove suffix |
-| Case modification (`${VAR^}`, `${VAR,,}`) | ❌ | - | - | Upper/lowercase |
+| Default value (`${VAR:-default}`) | ✅ | - | bash-parameter-expansion-test.spec.js | WOS-BASH-05 |
+| Assign default (`${VAR:=default}`) | 🔄 | - | bash-parameter-expansion-test.spec.js | Returns default, doesn't assign (read-only) |
+| Error if unset (`${VAR:?error}`) | ✅ | - | bash-parameter-expansion-test.spec.js | WOS-BASH-05 |
+| Use alternate (`${VAR:+alt}`) | ✅ | - | bash-parameter-expansion-test.spec.js | WOS-BASH-05 |
+| String length (`${#VAR}`) | ✅ | - | bash-parameter-expansion-test.spec.js | WOS-BASH-05 |
+| Substring (`${VAR:offset:len}`) | ✅ | - | bash-parameter-expansion-test.spec.js | WOS-BASH-05 |
+| Pattern removal (`${VAR#pattern}`) | ✅ | - | bash-parameter-expansion-test.spec.js | WOS-BASH-05 |
+| Pattern removal (`${VAR%pattern}`) | 🔄 | - | bash-parameter-expansion-test.spec.js | Longest works, shortest has regex issue |
+| Case modification (`${VAR^}`, `${VAR,,}`) | ✅ | - | bash-parameter-expansion-test.spec.js | WOS-BASH-05 |
 
 **bashrs Integration**: Validate variable quoting, detect unset variables
 

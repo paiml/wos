@@ -841,6 +841,201 @@ impl WosWasm {
         value.to_string()
     }
 
+    /// Expand glob patterns in an argument
+    /// Returns Vec of matching paths, or vec![arg] if no glob or no matches
+    fn expand_glob(&self, arg: &str) -> Vec<String> {
+        // Check if argument contains glob characters
+        let has_glob = arg.contains('*') || arg.contains('?') || arg.contains('[');
+
+        if !has_glob {
+            return vec![arg.to_string()];
+        }
+
+        // Parse the pattern - split into directory and pattern
+        let path_str = arg;
+        let (dir, pattern) = if let Some(last_slash) = path_str.rfind('/') {
+            (&path_str[..last_slash + 1], &path_str[last_slash + 1..])
+        } else {
+            ("", path_str)
+        };
+
+        // Get all files from VFS
+        let all_files = self.state.vfs.list_files();
+
+        // Filter files that match the glob pattern
+        let mut matches: Vec<String> = all_files
+            .iter()
+            .filter_map(|path| {
+                let path_str = path.to_string_lossy();
+
+                // Check if path starts with the directory part
+                if !dir.is_empty() && !path_str.starts_with(dir) {
+                    return None;
+                }
+
+                // Extract filename part
+                let filename = if !dir.is_empty() {
+                    &path_str[dir.len()..]
+                } else {
+                    path_str.as_ref()
+                };
+
+                // Skip if filename contains '/' (subdirectory)
+                if filename.contains('/') {
+                    return None;
+                }
+
+                // Match against pattern
+                if self.matches_glob(filename, pattern) {
+                    Some(path.to_string_lossy().to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Sort matches alphabetically (Bash behavior)
+        matches.sort();
+
+        // If no matches, return original pattern (Bash behavior)
+        if matches.is_empty() {
+            vec![arg.to_string()]
+        } else {
+            matches
+        }
+    }
+
+    /// Check if a filename matches a glob pattern
+    fn matches_glob(&self, filename: &str, pattern: &str) -> bool {
+        // Handle dot files - don't match unless pattern starts with dot
+        if filename.starts_with('.') && !pattern.starts_with('.') {
+            return false;
+        }
+
+        self.matches_glob_internal(filename, pattern)
+    }
+
+    /// Internal glob matching implementation
+    fn matches_glob_internal(&self, text: &str, pattern: &str) -> bool {
+        let text_chars: Vec<char> = text.chars().collect();
+        let pattern_chars: Vec<char> = pattern.chars().collect();
+
+        self.match_glob_recursive(&text_chars, 0, &pattern_chars, 0)
+    }
+
+    /// Recursive glob matching
+    fn match_glob_recursive(
+        &self,
+        text: &[char],
+        t_idx: usize,
+        pattern: &[char],
+        p_idx: usize,
+    ) -> bool {
+        // Base cases
+        if p_idx == pattern.len() && t_idx == text.len() {
+            return true; // Both exhausted - match
+        }
+        if p_idx == pattern.len() {
+            return false; // Pattern exhausted but text remains - no match
+        }
+
+        let p_char = pattern[p_idx];
+
+        match p_char {
+            '*' => {
+                // * matches zero or more characters
+                // Try matching zero characters (skip *)
+                if self.match_glob_recursive(text, t_idx, pattern, p_idx + 1) {
+                    return true;
+                }
+                // Try matching one or more characters
+                for i in t_idx..text.len() {
+                    if self.match_glob_recursive(text, i + 1, pattern, p_idx + 1) {
+                        return true;
+                    }
+                }
+                false
+            }
+            '?' => {
+                // ? matches exactly one character
+                if t_idx >= text.len() {
+                    return false;
+                }
+                self.match_glob_recursive(text, t_idx + 1, pattern, p_idx + 1)
+            }
+            '[' => {
+                // Character class [abc], [a-z], [!abc], [^abc]
+                if t_idx >= text.len() {
+                    return false;
+                }
+
+                // Find the closing ]
+                let mut end = p_idx + 1;
+                while end < pattern.len() && pattern[end] != ']' {
+                    end += 1;
+                }
+                if end >= pattern.len() {
+                    // No closing ] - treat [ as literal
+                    if t_idx < text.len() && text[t_idx] == '[' {
+                        return self.match_glob_recursive(text, t_idx + 1, pattern, p_idx + 1);
+                    }
+                    return false;
+                }
+
+                // Extract character class content
+                let class_content: Vec<char> = pattern[p_idx + 1..end].to_vec();
+                let text_char = text[t_idx];
+
+                // Check for negation
+                let (negated, class_chars) = if !class_content.is_empty()
+                    && (class_content[0] == '!' || class_content[0] == '^')
+                {
+                    (true, &class_content[1..])
+                } else {
+                    (false, &class_content[..])
+                };
+
+                // Check if character matches the class
+                let mut matches = false;
+                let mut i = 0;
+                while i < class_chars.len() {
+                    // Check for range (a-z)
+                    if i + 2 < class_chars.len() && class_chars[i + 1] == '-' {
+                        let start = class_chars[i];
+                        let end_char = class_chars[i + 2];
+                        if text_char >= start && text_char <= end_char {
+                            matches = true;
+                            break;
+                        }
+                        i += 3;
+                    } else {
+                        if text_char == class_chars[i] {
+                            matches = true;
+                            break;
+                        }
+                        i += 1;
+                    }
+                }
+
+                // Apply negation if needed
+                let final_match = if negated { !matches } else { matches };
+
+                if final_match {
+                    self.match_glob_recursive(text, t_idx + 1, pattern, end + 1)
+                } else {
+                    false
+                }
+            }
+            _ => {
+                // Literal character
+                if t_idx >= text.len() || text[t_idx] != p_char {
+                    return false;
+                }
+                self.match_glob_recursive(text, t_idx + 1, pattern, p_idx + 1)
+            }
+        }
+    }
+
     /// Handle cd command (change directory)
     fn handle_cd(&mut self, command: &str) -> String {
         // Parse cd command to extract path argument
@@ -898,6 +1093,13 @@ impl WosWasm {
             let expanded_args: Vec<String> =
                 args.iter().map(|arg| self.expand_variables(arg)).collect();
 
+            // Expand glob patterns in arguments
+            let mut globbed_args: Vec<String> = Vec::new();
+            for arg in &expanded_args {
+                let expanded = self.expand_glob(arg);
+                globbed_args.extend(expanded);
+            }
+
             // Process input redirection (<) - read from file and use as stdin
             let mut stdin_override = output.clone();
             for redir in &stage.command.redirections {
@@ -932,7 +1134,7 @@ impl WosWasm {
             // Execute this command only if we should
             let (cmd_output, executed) = if should_execute_next {
                 let result =
-                    self.execute_single_command(&expanded_cmd, &expanded_args, &stdin_override);
+                    self.execute_single_command(&expanded_cmd, &globbed_args, &stdin_override);
                 (result, true)
             } else {
                 // Skip execution, use empty output and preserve last exit code
@@ -1223,19 +1425,50 @@ impl WosWasm {
         output
     }
 
-    fn cmd_ls(&self, _args: Vec<String>) -> String {
-        // List all files from VFS
-        let files = self.state.vfs.list_files();
+    fn cmd_ls(&self, args: Vec<String>) -> String {
+        // If args provided (glob-expanded paths), list only those
+        // Otherwise list all files from VFS
+        if !args.is_empty() {
+            // Check if arg is a directory path (ends with /)
+            // If so, list files in that directory
+            if args.len() == 1 && args[0].ends_with('/') {
+                let dir = &args[0];
+                let files = self.state.vfs.list_files();
+                let matching: Vec<_> = files
+                    .iter()
+                    .filter(|p| {
+                        let path_str = p.to_string_lossy();
+                        // File is in this directory if it starts with dir and has no further slashes
+                        if !path_str.starts_with(dir) {
+                            return false;
+                        }
+                        let remainder = &path_str[dir.len()..];
+                        !remainder.contains('/')
+                    })
+                    .map(|p| p.display().to_string())
+                    .collect();
 
-        if files.is_empty() {
-            String::new()
+                if matching.is_empty() {
+                    String::new()
+                } else {
+                    matching.join("\n") + "\n"
+                }
+            } else {
+                // Args are already glob-expanded - just list them
+                args.join("\n") + "\n"
+            }
         } else {
-            files
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
-                + "\n"
+            let files = self.state.vfs.list_files();
+            if files.is_empty() {
+                String::new()
+            } else {
+                files
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    + "\n"
+            }
         }
     }
 
@@ -1273,12 +1506,20 @@ impl WosWasm {
             return stdin.to_string();
         }
 
-        // Original file-based cat
-        let path = std::path::PathBuf::from(&args[0]);
-        match self.state.vfs.read_file(&path) {
-            Ok(contents) => String::from_utf8_lossy(&contents).to_string(),
-            Err(_) => format!("cat: {}: No such file or directory\n", args[0]),
+        // Concatenate all provided files
+        let mut output = String::new();
+        for arg in args {
+            let path = std::path::PathBuf::from(&arg);
+            match self.state.vfs.read_file(&path) {
+                Ok(contents) => {
+                    output.push_str(&String::from_utf8_lossy(&contents));
+                }
+                Err(_) => {
+                    output.push_str(&format!("cat: {}: No such file or directory\n", arg));
+                }
+            }
         }
+        output
     }
 
     fn cmd_pwd(&self) -> String {
@@ -1318,14 +1559,18 @@ impl WosWasm {
             return "rm: missing operand\n".to_string();
         }
 
-        let path = std::path::PathBuf::from(&args[0]);
-        match self.state.vfs.delete_file(&path) {
-            Ok(()) => String::new(),
-            Err(_) => format!(
-                "rm: cannot remove '{}': No such file or directory\n",
-                args[0]
-            ),
+        // Remove all specified files
+        let mut output = String::new();
+        for arg in args {
+            let path = std::path::PathBuf::from(&arg);
+            if self.state.vfs.delete_file(&path).is_err() {
+                output.push_str(&format!(
+                    "rm: cannot remove '{}': No such file or directory\n",
+                    arg
+                ));
+            }
         }
+        output
     }
 
     fn cmd_grep(&self, args: Vec<String>, stdin: &str) -> String {
