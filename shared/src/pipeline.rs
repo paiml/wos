@@ -376,6 +376,7 @@ fn process_split_char(
     in_single: &mut bool,
     in_double: &mut bool,
     result: &mut Vec<(String, Option<Operator>)>,
+    paren_depth: usize,
 ) -> bool {
     // Check for quote state change
     let (new_single, new_double) = update_quote_state(ch, *in_single, *in_double);
@@ -391,10 +392,12 @@ fn process_split_char(
         return true;
     }
 
-    // Check for operator
-    if let Some(op) = detect_operator(chars, ch, *in_single, *in_double) {
-        complete_command(current, result, Some(op));
-        return true;
+    // Check for operator (skip if inside $(...) or $((...)))
+    if paren_depth == 0 {
+        if let Some(op) = detect_operator(chars, ch, *in_single, *in_double) {
+            complete_command(current, result, Some(op));
+            return true;
+        }
     }
 
     false
@@ -409,8 +412,31 @@ fn split_by_operators(input: &str) -> Vec<(String, Option<Operator>)> {
     let mut chars = input.chars().peekable();
     let mut in_single_quote = false;
     let mut in_double_quote = false;
+    let mut paren_depth = 0; // Track $(...) and $((...)) nesting
 
     while let Some(ch) = chars.next() {
+        // Check for $((  - start of arithmetic expansion
+        if ch == '$' && chars.peek() == Some(&'(') && !in_single_quote {
+            current.push(ch);
+            current.push(chars.next().unwrap()); // consume first '('
+
+            // Check if this is $(( (arithmetic) or just $( (command substitution)
+            if chars.peek() == Some(&'(') {
+                current.push(chars.next().unwrap()); // consume second '('
+                paren_depth += 2; // Track both opening parens
+            } else {
+                paren_depth += 1;
+            }
+            continue;
+        }
+
+        // Track closing ) when inside $(...) or $((...))
+        if ch == ')' && paren_depth > 0 && !in_single_quote {
+            current.push(ch);
+            paren_depth -= 1;
+            continue;
+        }
+
         let handled = process_split_char(
             ch,
             &mut chars,
@@ -418,6 +444,7 @@ fn split_by_operators(input: &str) -> Vec<(String, Option<Operator>)> {
             &mut in_single_quote,
             &mut in_double_quote,
             &mut result,
+            paren_depth,
         );
 
         if !handled {
@@ -846,5 +873,29 @@ mod tests {
         let (in_single, in_double) = update_quote_state('\'', true, false);
         assert_eq!(in_single, false);
         assert_eq!(in_double, false);
+    }
+}
+
+#[cfg(test)]
+mod arith_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_pipeline_arithmetic_expression() {
+        let input = "echo $((2 + 3))";
+        let pipeline = parse_pipeline(input);
+
+        assert_eq!(pipeline.stages.len(), 1, "Should have one stage");
+        let stage = &pipeline.stages[0];
+        assert_eq!(stage.command.name, "echo", "Command should be 'echo'");
+        assert_eq!(
+            stage.command.args.len(),
+            1,
+            "Should have exactly one argument"
+        );
+        assert_eq!(
+            stage.command.args[0], "$((2 + 3))",
+            "Argument should preserve arithmetic expression intact"
+        );
     }
 }

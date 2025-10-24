@@ -165,8 +165,14 @@ impl WosWasm {
             return self.handle_pwd();
         }
 
-        // Parse command pipeline
-        let pipeline = wos_shared::parse_pipeline(command);
+        // CRITICAL ORDERING: Arithmetic expansion MUST happen before parse_pipeline
+        // to prevent operators like < and > inside $((...)) from being interpreted as shell redirects.
+        // However, variable expansion must happen AFTER pipeline parsing to support
+        // patterns like "VAR=value && echo $VAR" where the variable is set in the same pipeline.
+        let expanded = self.expand_arithmetic(command);
+
+        // Parse command pipeline AFTER arithmetic expansion but BEFORE variable expansion
+        let pipeline = wos_shared::parse_pipeline(&expanded);
 
         if pipeline.stages.is_empty() {
             return String::new();
@@ -301,6 +307,12 @@ impl WosWasm {
                 // Not escaping $, output the backslash
                 result.push(ch);
             } else if ch == '$' {
+                // Check for $(( or $( patterns - these should be handled by
+                // expand_arithmetic() and expand_command_substitution() respectively
+                if chars.peek() == Some(&'(') {
+                    result.push('$'); // Keep the $
+                    continue; // Don't consume the (, let it pass through
+                }
                 // Check for ${VAR} syntax
                 if chars.peek() == Some(&'{') {
                     chars.next(); // consume '{'
@@ -1047,8 +1059,12 @@ impl WosWasm {
         let mut i = 0;
 
         while i < chars.len() {
-            // Look for $(
-            if i + 1 < chars.len() && chars[i] == '$' && chars[i + 1] == '(' {
+            // Look for $( but NOT $(( (which is arithmetic expansion)
+            if i + 1 < chars.len()
+                && chars[i] == '$'
+                && chars[i + 1] == '('
+                && !(i + 2 < chars.len() && chars[i + 2] == '(')
+            {
                 // Find matching closing paren (handle nesting)
                 let start = i + 2;
                 let mut depth = 1;
@@ -1101,6 +1117,437 @@ impl WosWasm {
         result
     }
 
+    /// Expand arithmetic expressions $((expr))
+    /// Supports operators: +, -, *, /, %, <, >, <=, >=, ==, !=, &&, ||, !, &, |, ^, ~, <<, >>, ? :
+    /// Supports variables (with or without $ prefix)
+    fn expand_arithmetic(&self, input: &str) -> String {
+        let chars: Vec<char> = input.chars().collect();
+        let mut result = String::new();
+        let mut i = 0;
+
+        while i < chars.len() {
+            // Look for $(( pattern
+            if i + 3 < chars.len() && chars[i] == '$' && chars[i + 1] == '(' && chars[i + 2] == '('
+            {
+                // Find matching ))
+                let mut depth = 0;
+                let mut j = i + 2;
+                let expr_start = i + 3;
+
+                while j < chars.len() {
+                    if chars[j] == '(' {
+                        depth += 1;
+                    } else if chars[j] == ')' {
+                        if depth > 0 {
+                            depth -= 1;
+                        }
+
+                        // After decrementing, check if we're at depth 0
+                        if depth == 0 {
+                            // Found first closing )
+                            if j + 1 < chars.len() && chars[j + 1] == ')' {
+                                // Found matching ))
+                                let expr_end = j;
+                                let expr: String = chars[expr_start..expr_end].iter().collect();
+
+                                // Evaluate the arithmetic expression
+                                match self.parse_ternary(expr.trim()) {
+                                    Ok(value) => {
+                                        result.push_str(&value.to_string());
+                                    }
+                                    Err(e) => {
+                                        result.push_str(&e); // Include error message
+                                    }
+                                }
+
+                                i = j + 2; // Skip past ))
+                                break;
+                            }
+                        }
+                    }
+                    j += 1;
+                }
+
+                if j >= chars.len() {
+                    // No matching )) found, treat as literal
+                    result.push(chars[i]);
+                    i += 1;
+                }
+            } else {
+                result.push(chars[i]);
+                i += 1;
+            }
+        }
+
+        result
+    }
+
+    /// Parse ternary operator (lowest precedence): expr ? expr : expr
+    fn parse_ternary(&self, expr: &str) -> Result<i64, String> {
+        let parts: Vec<&str> = expr.split('?').collect();
+        if parts.len() == 2 {
+            // Found ternary
+            let condition = self.parse_logical_or(parts[0].trim())?;
+            let branches: Vec<&str> = parts[1].split(':').collect();
+            if branches.len() == 2 {
+                if condition != 0 {
+                    self.parse_logical_or(branches[0].trim())
+                } else {
+                    self.parse_logical_or(branches[1].trim())
+                }
+            } else {
+                self.parse_logical_or(expr)
+            }
+        } else {
+            self.parse_logical_or(expr)
+        }
+    }
+
+    /// Parse logical OR (||)
+    fn parse_logical_or(&self, expr: &str) -> Result<i64, String> {
+        let parts: Vec<&str> = expr.split("||").collect();
+        if parts.len() > 1 {
+            let mut result = self.parse_logical_and(parts[0].trim())?;
+            for part in &parts[1..] {
+                let right = self.parse_logical_and(part.trim())?;
+                result = if result != 0 || right != 0 { 1 } else { 0 };
+            }
+            Ok(result)
+        } else {
+            self.parse_logical_and(expr)
+        }
+    }
+
+    /// Parse logical AND (&&)
+    fn parse_logical_and(&self, expr: &str) -> Result<i64, String> {
+        let parts: Vec<&str> = expr.split("&&").collect();
+        if parts.len() > 1 {
+            let mut result = self.parse_bitwise_or(parts[0].trim())?;
+            for part in &parts[1..] {
+                let right = self.parse_bitwise_or(part.trim())?;
+                result = if result != 0 && right != 0 { 1 } else { 0 };
+            }
+            Ok(result)
+        } else {
+            self.parse_bitwise_or(expr)
+        }
+    }
+
+    /// Parse bitwise OR (|)
+    fn parse_bitwise_or(&self, expr: &str) -> Result<i64, String> {
+        let parts: Vec<&str> = expr.split('|').collect();
+        if parts.len() > 1 && !expr.contains("||") {
+            let mut result = self.parse_bitwise_xor(parts[0].trim())?;
+            for part in &parts[1..] {
+                let right = self.parse_bitwise_xor(part.trim())?;
+                result |= right;
+            }
+            Ok(result)
+        } else {
+            self.parse_bitwise_xor(expr)
+        }
+    }
+
+    /// Parse bitwise XOR (^)
+    fn parse_bitwise_xor(&self, expr: &str) -> Result<i64, String> {
+        let parts: Vec<&str> = expr.split('^').collect();
+        if parts.len() > 1 {
+            let mut result = self.parse_bitwise_and(parts[0].trim())?;
+            for part in &parts[1..] {
+                let right = self.parse_bitwise_and(part.trim())?;
+                result ^= right;
+            }
+            Ok(result)
+        } else {
+            self.parse_bitwise_and(expr)
+        }
+    }
+
+    /// Parse bitwise AND (&)
+    fn parse_bitwise_and(&self, expr: &str) -> Result<i64, String> {
+        let parts: Vec<&str> = expr.split('&').collect();
+        if parts.len() > 1 && !expr.contains("&&") {
+            let mut result = self.parse_equality(parts[0].trim())?;
+            for part in &parts[1..] {
+                let right = self.parse_equality(part.trim())?;
+                result &= right;
+            }
+            Ok(result)
+        } else {
+            self.parse_equality(expr)
+        }
+    }
+
+    /// Parse equality operators (==, !=)
+    fn parse_equality(&self, expr: &str) -> Result<i64, String> {
+        if let Some(pos) = expr.find("==") {
+            let left = self.parse_comparison(expr[..pos].trim())?;
+            let right = self.parse_comparison(expr[pos + 2..].trim())?;
+            Ok(if left == right { 1 } else { 0 })
+        } else if let Some(pos) = expr.find("!=") {
+            let left = self.parse_comparison(expr[..pos].trim())?;
+            let right = self.parse_comparison(expr[pos + 2..].trim())?;
+            Ok(if left != right { 1 } else { 0 })
+        } else {
+            self.parse_comparison(expr)
+        }
+    }
+
+    /// Parse comparison operators (<, >, <=, >=)
+    fn parse_comparison(&self, expr: &str) -> Result<i64, String> {
+        let chars: Vec<char> = expr.chars().collect();
+        let mut paren_depth = 0;
+        let mut last_op_pos = None;
+        let mut op_len = 0;
+
+        // Find rightmost comparison operator outside parentheses
+        // Check 2-char operators first (<=, >=) then 1-char (<, >)
+        for i in (1..chars.len()).rev() {
+            if chars[i] == ')' {
+                paren_depth += 1;
+            } else if chars[i] == '(' {
+                paren_depth -= 1;
+            } else if paren_depth == 0
+                && i > 0
+                && chars[i] == '='
+                && (chars[i - 1] == '<' || chars[i - 1] == '>')
+            {
+                last_op_pos = Some(i - 1);
+                op_len = 2;
+                break;
+            }
+        }
+
+        // If no 2-char operator found, look for 1-char < or >
+        // But skip << and >> (those are shift operators, handled by parse_shift)
+        if last_op_pos.is_none() {
+            paren_depth = 0;
+            for i in (0..chars.len()).rev() {
+                if chars[i] == ')' {
+                    paren_depth += 1;
+                } else if chars[i] == '(' {
+                    paren_depth -= 1;
+                } else if paren_depth == 0 && (chars[i] == '<' || chars[i] == '>') {
+                    // Check that it's not part of << or >>
+                    let is_shift_op = if i > 0 {
+                        (chars[i] == '<' && chars[i - 1] == '<')
+                            || (chars[i] == '>' && chars[i - 1] == '>')
+                    } else {
+                        false
+                    };
+                    let is_shift_op_next = if i + 1 < chars.len() {
+                        (chars[i] == '<' && chars[i + 1] == '<')
+                            || (chars[i] == '>' && chars[i + 1] == '>')
+                    } else {
+                        false
+                    };
+
+                    if !is_shift_op && !is_shift_op_next {
+                        last_op_pos = Some(i);
+                        op_len = 1;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(pos) = last_op_pos {
+            let left = self.parse_comparison(expr[..pos].trim())?;
+            let right = self.parse_shift(expr[pos + op_len..].trim())?;
+            let op = &expr[pos..pos + op_len];
+            match op {
+                "<=" => Ok(if left <= right { 1 } else { 0 }),
+                ">=" => Ok(if left >= right { 1 } else { 0 }),
+                "<" => Ok(if left < right { 1 } else { 0 }),
+                ">" => Ok(if left > right { 1 } else { 0 }),
+                _ => unreachable!(),
+            }
+        } else {
+            self.parse_shift(expr)
+        }
+    }
+
+    /// Parse shift operators (<<, >>)
+    fn parse_shift(&self, expr: &str) -> Result<i64, String> {
+        let chars: Vec<char> = expr.chars().collect();
+        let mut paren_depth = 0;
+        let mut last_op_pos = None;
+        let mut op_len = 0;
+
+        // Find rightmost << or >> outside parentheses
+        for i in (1..chars.len()).rev() {
+            if chars[i] == ')' {
+                paren_depth += 1;
+            } else if chars[i] == '(' {
+                paren_depth -= 1;
+            } else if paren_depth == 0
+                && i > 0
+                && ((chars[i] == '<' && chars[i - 1] == '<')
+                    || (chars[i] == '>' && chars[i - 1] == '>'))
+            {
+                last_op_pos = Some(i - 1);
+                op_len = 2;
+                break;
+            }
+        }
+
+        if let Some(pos) = last_op_pos {
+            let left = self.parse_shift(expr[..pos].trim())?;
+            let right = self.parse_additive(expr[pos + op_len..].trim())?;
+            if &expr[pos..pos + op_len] == "<<" {
+                Ok(left << right)
+            } else {
+                Ok(left >> right)
+            }
+        } else {
+            self.parse_additive(expr)
+        }
+    }
+
+    /// Parse additive operators (+, -)
+    fn parse_additive(&self, expr: &str) -> Result<i64, String> {
+        let chars: Vec<char> = expr.chars().collect();
+        let mut paren_depth = 0;
+        let mut last_op_pos = None;
+
+        // Find rightmost +/- outside parentheses
+        for i in (0..chars.len()).rev() {
+            if chars[i] == ')' {
+                paren_depth += 1;
+            } else if chars[i] == '(' {
+                paren_depth -= 1;
+            } else if paren_depth == 0 && (chars[i] == '+' || chars[i] == '-') {
+                // Check if this is a unary minus (skip whitespace to find prev non-whitespace char)
+                if chars[i] == '-' && i > 0 {
+                    // Skip backwards past whitespace
+                    let mut j = i - 1;
+                    while j > 0 && chars[j].is_whitespace() {
+                        j -= 1;
+                    }
+                    let prev = chars[j];
+                    if prev.is_alphanumeric() || prev == ')' || prev.is_whitespace() {
+                        last_op_pos = Some(i);
+                        break;
+                    }
+                } else if chars[i] == '+' {
+                    last_op_pos = Some(i);
+                    break;
+                }
+            }
+        }
+
+        if let Some(pos) = last_op_pos {
+            let left = self.parse_additive(expr[..pos].trim())?;
+            let right = self.parse_multiplicative(expr[pos + 1..].trim())?;
+            if chars[pos] == '+' {
+                Ok(left + right)
+            } else {
+                Ok(left - right)
+            }
+        } else {
+            self.parse_multiplicative(expr)
+        }
+    }
+
+    /// Parse multiplicative operators (*, /, %)
+    fn parse_multiplicative(&self, expr: &str) -> Result<i64, String> {
+        let chars: Vec<char> = expr.chars().collect();
+        let mut paren_depth = 0;
+        let mut last_op_pos = None;
+
+        // Find rightmost */% outside parentheses
+        for i in (0..chars.len()).rev() {
+            if chars[i] == ')' {
+                paren_depth += 1;
+            } else if chars[i] == '(' {
+                paren_depth -= 1;
+            } else if paren_depth == 0 && (chars[i] == '*' || chars[i] == '/' || chars[i] == '%') {
+                last_op_pos = Some(i);
+                break;
+            }
+        }
+
+        if let Some(pos) = last_op_pos {
+            let left = self.parse_multiplicative(expr[..pos].trim())?;
+            let right = self.parse_unary(expr[pos + 1..].trim())?;
+
+            if chars[pos] == '*' {
+                Ok(left * right)
+            } else if chars[pos] == '/' {
+                if right == 0 {
+                    Err("division by zero".to_string())
+                } else {
+                    Ok(left / right)
+                }
+            } else {
+                // modulo
+                if right == 0 {
+                    Err("division by zero".to_string())
+                } else {
+                    Ok(left % right)
+                }
+            }
+        } else {
+            self.parse_unary(expr)
+        }
+    }
+
+    /// Parse unary operators (!, ~, -)
+    fn parse_unary(&self, expr: &str) -> Result<i64, String> {
+        let expr = expr.trim();
+
+        if let Some(rest) = expr.strip_prefix('!') {
+            let val = self.parse_unary(rest.trim())?;
+            Ok(if val == 0 { 1 } else { 0 })
+        } else if let Some(rest) = expr.strip_prefix('~') {
+            let val = self.parse_unary(rest.trim())?;
+            Ok(!val)
+        } else if expr.starts_with('-') && !expr.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
+        {
+            let val = self.parse_unary(expr[1..].trim())?;
+            Ok(-val)
+        } else {
+            self.parse_primary(expr)
+        }
+    }
+
+    /// Parse primary expression (number, variable, parentheses)
+    fn parse_primary(&self, expr: &str) -> Result<i64, String> {
+        let expr = expr.trim();
+
+        // Empty expression = 0
+        if expr.is_empty() {
+            return Ok(0);
+        }
+
+        // Parentheses
+        if expr.starts_with('(') && expr.ends_with(')') {
+            return self.parse_ternary(&expr[1..expr.len() - 1]);
+        }
+
+        // Variable expansion
+        if let Some(var_name) = expr.strip_prefix('$') {
+            let value = self.variables.get(var_name).cloned().unwrap_or_default();
+            return value.parse::<i64>().or(Ok(0));
+        }
+
+        // Try number literal first
+        if let Ok(num) = expr.parse::<i64>() {
+            return Ok(num);
+        }
+
+        // Bare variable (without $)
+        if expr.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            if let Some(value) = self.variables.get(expr) {
+                return value.parse::<i64>().or(Ok(0));
+            }
+            // Undefined variable = 0
+            return Ok(0);
+        }
+
+        Err(format!("Invalid expression: {}", expr))
+    }
+
     /// Handle cd command (change directory)
     fn handle_cd(&mut self, command: &str) -> String {
         // Parse cd command to extract path argument
@@ -1148,7 +1595,9 @@ impl WosWasm {
                     let expanded_value = self.expand_variables(&value);
                     // Expand command substitutions in the value
                     let subst_value = self.expand_command_substitution(&expanded_value);
-                    self.variables.insert(name, subst_value);
+                    // Expand arithmetic in the value
+                    let arith_value = self.expand_arithmetic(&subst_value);
+                    self.variables.insert(name, arith_value);
                     _last_exit_code = 0;
                 }
                 // Assignment produces no output, continue to next stage
@@ -1167,9 +1616,16 @@ impl WosWasm {
                 .map(|arg| self.expand_command_substitution(arg))
                 .collect();
 
+            // Expand arithmetic in command name and args
+            let arith_cmd = self.expand_arithmetic(&subst_cmd);
+            let arith_args: Vec<String> = subst_args
+                .iter()
+                .map(|arg| self.expand_arithmetic(arg))
+                .collect();
+
             // Expand glob patterns in arguments
             let mut globbed_args: Vec<String> = Vec::new();
-            for arg in &subst_args {
+            for arg in &arith_args {
                 let expanded = self.expand_glob(arg);
                 globbed_args.extend(expanded);
             }
@@ -1208,7 +1664,7 @@ impl WosWasm {
             // Execute this command only if we should
             let (cmd_output, executed) = if should_execute_next {
                 let result =
-                    self.execute_single_command(&subst_cmd, &globbed_args, &stdin_override);
+                    self.execute_single_command(&arith_cmd, &globbed_args, &stdin_override);
                 (result, true)
             } else {
                 // Skip execution, use empty output and preserve last exit code
@@ -2314,7 +2770,6 @@ mod tests {
         let mut wos = WosWasm::new();
         let output = wos.execute_command("echo first && echo second");
 
-        eprintln!("DEBUG: output = {:?}", output);
         assert!(output.contains("first"), "Should contain 'first'");
         assert!(output.contains("second"), "Should contain 'second'");
     }
@@ -2564,8 +3019,6 @@ mod tests {
 
         let output = wos.execute_command("VAR=test && echo $VAR");
 
-        eprintln!("DEBUG: output = {:?}", output);
-        eprintln!("DEBUG: variables = {:?}", wos.variables);
         assert!(
             output.contains("test"),
             "Should expand variable set in pipeline"
@@ -3709,6 +4162,43 @@ environment: production
         assert_eq!(
             wos.last_exit_code, 1,
             "Should set exit code 1 for unknown command"
+        );
+    }
+
+    #[test]
+    fn test_arithmetic_expansion_echo() {
+        // WOS-BASH-09: Test arithmetic expansion through execute_command
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("echo $((2 + 3))");
+        eprintln!("execute_command output: '{}'", output);
+        assert_eq!(
+            output.trim(),
+            "5",
+            "Arithmetic expansion should evaluate $((2 + 3)) to 5"
+        );
+    }
+
+    #[test]
+    fn test_arithmetic_shift_left() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("echo $((3 << 2))");
+        eprintln!("Left shift: 3 << 2 = '{}'", output);
+        assert_eq!(
+            output.trim(),
+            "12",
+            "Left shift should evaluate $((3 << 2)) to 12"
+        );
+    }
+
+    #[test]
+    fn test_arithmetic_shift_right() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("echo $((12 >> 2))");
+        eprintln!("Right shift: 12 >> 2 = '{}'", output);
+        assert_eq!(
+            output.trim(),
+            "3",
+            "Right shift should evaluate $((12 >> 2)) to 3"
         );
     }
 }

@@ -791,6 +791,10 @@
       <span class="paiml-text">paiml.com</span>
     </a>
 
-    <script type="module" src="app.js"></script>
+    <script type="module">
+      // Cache-bust app.js to ensure latest version loads
+      const cacheBuster = Date.now();
+      import(`./app.js?v=${cacheBuster}`);
+    </script>
   </body>
 </html>

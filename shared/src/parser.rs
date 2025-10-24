@@ -151,18 +151,25 @@ fn tokenize(input: &str) -> Vec<String> {
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut had_quotes = false;
-    let mut paren_depth = 0; // Track $(...) nesting
+    let mut paren_depth = 0; // Track $(...) and $((...)) nesting
 
     while let Some(ch) = chars.next() {
-        // Check for $(  - start of command substitution
+        // Check for $((  - start of arithmetic expansion
         if ch == '$' && chars.peek() == Some(&'(') && !in_single_quote {
             current_token.push(ch);
-            current_token.push(chars.next().unwrap()); // consume '('
-            paren_depth += 1;
+            current_token.push(chars.next().unwrap()); // consume first '('
+
+            // Check if this is $(( (arithmetic) or just $( (command substitution)
+            if chars.peek() == Some(&'(') {
+                current_token.push(chars.next().unwrap()); // consume second '('
+                paren_depth += 2; // Track both opening parens
+            } else {
+                paren_depth += 1;
+            }
             continue;
         }
 
-        // Track closing ) when inside $(...)
+        // Track closing ) when inside $(...) or $((...))
         if ch == ')' && paren_depth > 0 && !in_single_quote {
             current_token.push(ch);
             paren_depth -= 1;

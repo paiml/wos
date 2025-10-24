@@ -4740,12 +4740,13 @@ async function initApp() {
     tracer.debug('INIT', 'Setting status to Loading WASM...');
     statusElement.innerHTML = '<span class="loading"></span> Loading WASM...';
 
-    // Initialize WASM module
-    tracer.info('WASM', 'Calling init()');
+    // Initialize WASM module with cache-busting
+    tracer.info('WASM', 'Calling init() with cache-busting');
     const initStart = performance.now();
-    await init();
+    const cacheBuster = Date.now();
+    await init(`wos_bg.wasm?v=${cacheBuster}`);
     const initDuration = performance.now() - initStart;
-    tracer.info('WASM', `init() completed in ${initDuration.toFixed(2)}ms`);
+    tracer.info('WASM', `init() completed in ${initDuration.toFixed(2)}ms (cache-busted: ${cacheBuster})`);
 
     // Create ConfigManager AFTER WASM is initialized
     tracer.debug('INIT', 'Creating ConfigManager');
