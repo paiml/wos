@@ -1,0 +1,15 @@
+
+Running 1 test using 1 worker
+
+
+=== ACCORDION EXCLUSIVITY TEST ===
+
+Initially expanded panels: 1
+Expanded panel names: learning_objectives
+After expanding process_list: 1 expanded (process_list)
+After expanding memory_map: 1 expanded (memory_map)
+After expanding syscall_trace: 1 expanded (syscall_trace)
+✅ Accordion exclusivity verified - always exactly 1 panel expanded
+  ✓  1 tests/e2e/ux-visual-test.spec.js:160:3 › WOS Panel UX Visual Testing › verify accordion exclusivity - only one panel expanded (3.9s)
+
+  1 passed (4.5s)

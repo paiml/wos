@@ -1,23 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * Load UX layout configuration from YAML with fallback to default
- *
- * Never fails - returns default config if YAML is invalid.
- * Returns the config as JSON string.
- */
-export function loadConfigFromYamlWithFallback(yaml: string): string;
-/**
- * Validate a UX layout configuration YAML string
- *
- * Returns Ok(()) if valid, Err(message) if invalid
- */
-export function validateConfig(yaml: string): void;
-/**
- * Get the default UX layout configuration as JSON string
- */
-export function getDefaultConfig(): string;
-/**
  * Load UX layout configuration from YAML string
  *
  * Returns the config as JSON string on success, or error message on failure
@@ -27,6 +10,23 @@ export function loadConfigFromYaml(yaml: string): string;
  * Get WOS version
  */
 export function wos_version(): string;
+/**
+ * Get the default UX layout configuration as JSON string
+ */
+export function getDefaultConfig(): string;
+/**
+ * Validate a UX layout configuration YAML string
+ *
+ * Returns Ok(()) if valid, Err(message) if invalid
+ */
+export function validateConfig(yaml: string): void;
+/**
+ * Load UX layout configuration from YAML with fallback to default
+ *
+ * Never fails - returns default config if YAML is invalid.
+ * Returns the config as JSON string.
+ */
+export function loadConfigFromYamlWithFallback(yaml: string): string;
 /**
  * WASM-bindgen wrapper for WOS kernel
  */

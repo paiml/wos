@@ -1,0 +1,241 @@
+
+Running 8 tests using 1 worker
+
+Screenshot saved: 01-initial-state.png
+  ✓  1 tests/e2e/ux-visual-test.spec.js:22:3 › WOS Panel UX Visual Testing › screenshot initial state - all panels (2.8s)
+Screenshot saved: 02-all-collapsed.png
+  ✓  2 tests/e2e/ux-visual-test.spec.js:32:3 › WOS Panel UX Visual Testing › screenshot collapsed panels (4.9s)
+Screenshot saved: 03-first-panel-expanded.png
+  ✓  3 tests/e2e/ux-visual-test.spec.js:49:3 › WOS Panel UX Visual Testing › screenshot expand first panel (3.8s)
+Screenshot saved: 04-panel-1-process_list.png
+Screenshot saved: 04-panel-2-memory_map.png
+Screenshot saved: 04-panel-3-syscall_trace.png
+  ✓  4 tests/e2e/ux-visual-test.spec.js:71:3 › WOS Panel UX Visual Testing › screenshot expand different panels sequentially (3.8s)
+Panel measurements: [
+  {
+    "panel": "process_list",
+    "collapsed": true,
+    "height": 25,
+    "y": 312.140625
+  },
+  {
+    "panel": "memory_map",
+    "collapsed": true,
+    "height": 25,
+    "y": 341.140625
+  },
+  {
+    "panel": "syscall_trace",
+    "collapsed": true,
+    "height": 25,
+    "y": 370.140625
+  },
+  {
+    "panel": "filesystem",
+    "collapsed": true,
+    "height": 25,
+    "y": 399.140625
+  },
+  {
+    "panel": "system_monitor",
+    "collapsed": true,
+    "height": 25,
+    "y": 428.140625
+  },
+  {
+    "panel": "system_monitor_detailed",
+    "collapsed": true,
+    "height": 25,
+    "y": 457.140625
+  },
+  {
+    "panel": "time_travel_debugger",
+    "collapsed": true,
+    "height": 25,
+    "y": 486.140625
+  },
+  {
+    "panel": "learning_objectives",
+    "collapsed": false,
+    "height": 155.859375,
+    "y": 515.140625
+  },
+  {
+    "panel": "help",
+    "collapsed": true,
+    "height": 25,
+    "y": 675
+  }
+]
+  ✓  5 tests/e2e/ux-visual-test.spec.js:92:3 › WOS Panel UX Visual Testing › measure panel heights and spacing (2.8s)
+Process list collapsed after expanding memory map: [33mtrue[39m
+  ✓  6 tests/e2e/ux-visual-test.spec.js:120:3 › WOS Panel UX Visual Testing › test accordion behavior visually (3.4s)
+
+=== CONTENT VISIBILITY ANALYSIS ===
+
+Process List Panel:
+  Panel height: 155.859375px
+  Content scroll height: 107px
+  Content client height: 107px
+  Is scrollable: false
+  Process rows: 2
+  ✓  7 tests/e2e/ux-visual-test.spec.js:152:3 › WOS Panel UX Visual Testing › analyze content visibility and scrollability (3.0s)
+
+=== COMPUTED CSS INSPECTION ===
+
+
+Panel: process_list
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 312.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: memory_map
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 341.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: syscall_trace
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 370.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: filesystem
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 399.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: system_monitor
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 428.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: system_monitor_detailed
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 457.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: time_travel_debugger
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 486.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: learning_objectives
+  Collapsed: false
+  Actual dimensions: 1240x155.859375
+  Position: (20, 515.140625)
+  Computed styles:
+    flex: 1 1 600px
+    flex-grow: 1
+    flex-shrink: 1
+    flex-basis: 600px
+    height: 155.859px
+    min-height: 25px
+    max-height: none
+    overflow: hidden
+
+Panel: help
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 675)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+.terminal-container:
+  Actual dimensions: 1240x140
+  Position: (20, 164.140625)
+  Computed styles:
+    flex: 0 0 140px
+    height: 140px
+    max-height: 140px
+    min-height: 100px
+
+.file-manager:
+  Actual dimensions: 1240x387.859375
+  Position: (20, 312.140625)
+  Computed styles:
+    flex: 1 1 0%
+    height: 387.859px
+    gap: 4px
+
+<main> container:
+  Actual dimensions: 1280x575.859375
+  Computed styles:
+    display: flex
+    flex-direction: column
+    height: 575.859px
+    min-height: 0px
+    overflow: hidden
+    gap: 8px
+  ✓  8 tests/e2e/ux-visual-test.spec.js:183:3 › WOS Panel UX Visual Testing › inspect computed CSS styles of panels (2.8s)
+
+  8 passed (27.9s)

@@ -1,0 +1,15 @@
+
+Running 1 test using 1 worker
+
+
+=== CONTENT VISIBILITY ANALYSIS ===
+
+Process List Panel:
+  Panel height: 155.859375px
+  Content scroll height: 107px
+  Content client height: 107px
+  Is scrollable: false
+  Process rows: 2
+  ✓  1 tests/e2e/ux-visual-test.spec.js:152:3 › WOS Panel UX Visual Testing › analyze content visibility and scrollability (3.2s)
+
+  1 passed (3.8s)

@@ -1,0 +1,145 @@
+
+Running 1 test using 1 worker
+
+
+=== COMPUTED CSS INSPECTION ===
+
+
+Panel: process_list
+  Collapsed: true
+  Actual dimensions: 1240x40
+  Position: (20, 280.59375)
+  Computed styles:
+    flex: 0 0 40px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 40px
+    height: 40px
+    min-height: 40px
+    max-height: 40px
+    overflow: hidden
+
+Panel: memory_map
+  Collapsed: true
+  Actual dimensions: 1240x40
+  Position: (20, 330.59375)
+  Computed styles:
+    flex: 0 0 40px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 40px
+    height: 40px
+    min-height: 40px
+    max-height: 40px
+    overflow: hidden
+
+Panel: syscall_trace
+  Collapsed: true
+  Actual dimensions: 1240x40
+  Position: (20, 380.59375)
+  Computed styles:
+    flex: 0 0 40px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 40px
+    height: 40px
+    min-height: 40px
+    max-height: 40px
+    overflow: hidden
+
+Panel: filesystem
+  Collapsed: true
+  Actual dimensions: 1240x40
+  Position: (20, 430.59375)
+  Computed styles:
+    flex: 0 0 40px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 40px
+    height: 40px
+    min-height: 40px
+    max-height: 40px
+    overflow: hidden
+
+Panel: system_monitor
+  Collapsed: true
+  Actual dimensions: 1240x40
+  Position: (20, 480.59375)
+  Computed styles:
+    flex: 0 0 40px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 40px
+    height: 40px
+    min-height: 40px
+    max-height: 40px
+    overflow: hidden
+
+Panel: system_monitor_detailed
+  Collapsed: true
+  Actual dimensions: 1240x40
+  Position: (20, 530.59375)
+  Computed styles:
+    flex: 0 0 40px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 40px
+    height: 40px
+    min-height: 40px
+    max-height: 40px
+    overflow: hidden
+
+Panel: time_travel_debugger
+  Collapsed: true
+  Actual dimensions: 1240x40
+  Position: (20, 580.59375)
+  Computed styles:
+    flex: 0 0 40px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 40px
+    height: 40px
+    min-height: 40px
+    max-height: 40px
+    overflow: hidden
+
+Panel: learning_objectives
+  Collapsed: false
+  Actual dimensions: 1240x40
+  Position: (20, 630.59375)
+  Computed styles:
+    flex: 1 1 600px
+    flex-grow: 1
+    flex-shrink: 1
+    flex-basis: 600px
+    height: 40px
+    min-height: 40px
+    max-height: none
+    overflow: hidden
+
+Panel: help
+  Collapsed: true
+  Actual dimensions: 1240x40
+  Position: (20, 680.59375)
+  Computed styles:
+    flex: 0 0 40px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 40px
+    height: 40px
+    min-height: 40px
+    max-height: 40px
+    overflow: hidden
+
+<main> container:
+  Actual dimensions: 1280x575.859375
+  Computed styles:
+    display: flex
+    flex-direction: column
+    height: 575.859px
+    min-height: 0px
+    overflow: hidden
+    gap: 16px
+  ✓  1 tests/e2e/ux-visual-test.spec.js:152:3 › WOS Panel UX Visual Testing › inspect computed CSS styles of panels (3.0s)
+
+  1 passed (3.6s)

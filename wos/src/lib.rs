@@ -302,32 +302,71 @@ impl WosWasm {
                 // Check for ${VAR} syntax
                 if chars.peek() == Some(&'{') {
                     chars.next(); // consume '{'
+
+                    // Handle ${#VAR} - string length
+                    if chars.peek() == Some(&'#') {
+                        chars.next(); // consume '#'
+                        let mut var_name = String::new();
+
+                        // Collect variable name
+                        while let Some(&next_ch) = chars.peek() {
+                            if next_ch == '}' {
+                                chars.next(); // consume '}'
+                                break;
+                            } else if next_ch.is_alphanumeric() || next_ch == '_' {
+                                var_name.push(next_ch);
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+
+                        if !var_name.is_empty() {
+                            let length =
+                                self.variables.get(&var_name).map(|v| v.len()).unwrap_or(0);
+                            result.push_str(&length.to_string());
+                        } else {
+                            result.push('0');
+                        }
+                        continue;
+                    }
+
                     let mut var_name = String::new();
 
-                    // Collect variable name until '}'
+                    // Collect variable name until we hit an operator or '}'
                     while let Some(&next_ch) = chars.peek() {
                         if next_ch == '}' {
                             chars.next(); // consume '}'
+
+                            // Simple variable expansion
+                            if !var_name.is_empty() {
+                                if let Some(value) = self.variables.get(&var_name) {
+                                    result.push_str(value);
+                                }
+                            }
                             break;
                         } else if next_ch.is_alphanumeric() || next_ch == '_' {
                             var_name.push(next_ch);
                             chars.next();
+                        } else if next_ch == ':'
+                            || next_ch == '#'
+                            || next_ch == '%'
+                            || next_ch == '/'
+                            || next_ch == '^'
+                            || next_ch == ','
+                        {
+                            // Parameter expansion operator detected
+                            let expanded = self.handle_parameter_expansion(&mut chars, &var_name);
+                            result.push_str(&expanded);
+                            break;
                         } else {
-                            // Invalid character in braces, treat as literal
+                            // Invalid character, treat as literal
                             result.push_str("${");
                             result.push_str(&var_name);
                             result.push(next_ch);
                             chars.next();
                             break;
                         }
-                    }
-
-                    if !var_name.is_empty() {
-                        // Look up variable value
-                        if let Some(value) = self.variables.get(&var_name) {
-                            result.push_str(value);
-                        }
-                        // If undefined, expand to empty string
                     }
                 } else if chars.peek() == Some(&'?') {
                     // Special variable $? - exit status
@@ -392,6 +431,414 @@ impl WosWasm {
         }
 
         result
+    }
+
+    /// Handle parameter expansion operators like ${VAR:-default}, ${VAR#pattern}, etc.
+    fn handle_parameter_expansion(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        var_name: &str,
+    ) -> String {
+        let var_value = self.variables.get(var_name);
+        let is_set = var_value.is_some();
+        let is_empty = var_value.map(|v| v.is_empty()).unwrap_or(false);
+
+        let first_op = chars.next(); // Consume operator character
+
+        match first_op {
+            Some(':') => {
+                // Could be :-, :=, :?, :+, or :offset:length
+                if let Some(&second_ch) = chars.peek() {
+                    match second_ch {
+                        '-' => {
+                            // ${VAR:-default} - use default if unset or empty
+                            chars.next(); // consume '-'
+                            let default = self.collect_until_close_brace(chars);
+                            if is_set && !is_empty {
+                                var_value.unwrap().clone()
+                            } else {
+                                default
+                            }
+                        }
+                        '=' => {
+                            // ${VAR:=default} - assign default if unset or empty (read-only for now)
+                            chars.next(); // consume '='
+                            let default = self.collect_until_close_brace(chars);
+                            if is_set && !is_empty {
+                                var_value.unwrap().clone()
+                            } else {
+                                // Note: Should assign to variable, but shell state is immutable here
+                                default
+                            }
+                        }
+                        '?' => {
+                            // ${VAR:?error} - error if unset or empty
+                            chars.next(); // consume '?'
+                            let error_msg = self.collect_until_close_brace(chars);
+                            if is_set && !is_empty {
+                                var_value.unwrap().clone()
+                            } else if error_msg.is_empty() {
+                                format!("bash: {}: parameter null or not set", var_name)
+                            } else {
+                                format!("bash: {}: {}", var_name, error_msg)
+                            }
+                        }
+                        '+' => {
+                            // ${VAR:+alternate} - use alternate if set and non-empty
+                            chars.next(); // consume '+'
+                            let alternate = self.collect_until_close_brace(chars);
+                            if is_set && !is_empty {
+                                alternate
+                            } else {
+                                String::new()
+                            }
+                        }
+                        _ if second_ch.is_ascii_digit() || second_ch == '-' || second_ch == ' ' => {
+                            // ${VAR:offset} or ${VAR:offset:length} or ${VAR: -offset} - substring expansion
+                            let offset_str = self.collect_until(chars, &[':', '}']);
+                            let offset: isize = offset_str.trim().parse().unwrap_or(0);
+
+                            let length = if chars.peek() == Some(&':') {
+                                chars.next(); // consume ':'
+                                let length_str = self.collect_until_close_brace(chars);
+                                length_str.parse().ok()
+                            } else {
+                                chars.next(); // consume '}'
+                                None
+                            };
+
+                            if let Some(value) = var_value {
+                                self.substring_expansion(value, offset, length)
+                            } else {
+                                String::new()
+                            }
+                        }
+                        _ => {
+                            // Unknown operator after :
+                            self.collect_until_close_brace(chars);
+                            String::new()
+                        }
+                    }
+                } else {
+                    String::new()
+                }
+            }
+            Some('#') => {
+                // Could be # (shortest prefix) or ## (longest prefix)
+                if chars.peek() == Some(&'#') {
+                    chars.next(); // consume second '#'
+                    let pattern = self.collect_until_close_brace(chars);
+                    if let Some(value) = var_value {
+                        self.remove_longest_prefix(value, &pattern)
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    let pattern = self.collect_until_close_brace(chars);
+                    if let Some(value) = var_value {
+                        self.remove_shortest_prefix(value, &pattern)
+                    } else {
+                        String::new()
+                    }
+                }
+            }
+            Some('%') => {
+                // Could be % (shortest suffix) or %% (longest suffix)
+                if chars.peek() == Some(&'%') {
+                    chars.next(); // consume second '%'
+                    let pattern = self.collect_until_close_brace(chars);
+                    if let Some(value) = var_value {
+                        self.remove_longest_suffix(value, &pattern)
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    let pattern = self.collect_until_close_brace(chars);
+                    if let Some(value) = var_value {
+                        self.remove_shortest_suffix(value, &pattern)
+                    } else {
+                        String::new()
+                    }
+                }
+            }
+            Some('/') => {
+                // Pattern substitution: /pattern/replacement, //pattern/replacement, /#pattern/replacement, /%pattern/replacement
+                let mut is_global = false;
+                let mut anchor_start = false;
+                let mut anchor_end = false;
+
+                if chars.peek() == Some(&'/') {
+                    chars.next(); // consume second '/'
+                    is_global = true;
+                } else if chars.peek() == Some(&'#') {
+                    chars.next(); // consume '#'
+                    anchor_start = true;
+                } else if chars.peek() == Some(&'%') {
+                    chars.next(); // consume '%'
+                    anchor_end = true;
+                }
+
+                let (pattern, replacement) = self.collect_pattern_replacement(chars);
+
+                if let Some(value) = var_value {
+                    if anchor_start {
+                        // Replace only at beginning
+                        if value.starts_with(&pattern) {
+                            replacement.clone() + &value[pattern.len()..]
+                        } else {
+                            value.clone()
+                        }
+                    } else if anchor_end {
+                        // Replace only at end
+                        if value.ends_with(&pattern) {
+                            value[..value.len() - pattern.len()].to_string() + &replacement
+                        } else {
+                            value.clone()
+                        }
+                    } else if is_global {
+                        value.replace(&pattern, &replacement)
+                    } else {
+                        value.replacen(&pattern, &replacement, 1)
+                    }
+                } else {
+                    String::new()
+                }
+            }
+            Some('^') => {
+                // Case modification - uppercase
+                if chars.peek() == Some(&'^') {
+                    chars.next(); // consume second '^'
+                    self.collect_until_close_brace(chars); // consume to }
+                    if let Some(value) = var_value {
+                        value.to_uppercase()
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    self.collect_until_close_brace(chars); // consume to }
+                    if let Some(value) = var_value {
+                        let mut chars_iter = value.chars();
+                        if let Some(first) = chars_iter.next() {
+                            first.to_uppercase().collect::<String>() + chars_iter.as_str()
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    }
+                }
+            }
+            Some(',') => {
+                // Case modification - lowercase
+                if chars.peek() == Some(&',') {
+                    chars.next(); // consume second ','
+                    self.collect_until_close_brace(chars); // consume to }
+                    if let Some(value) = var_value {
+                        value.to_lowercase()
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    self.collect_until_close_brace(chars); // consume to }
+                    if let Some(value) = var_value {
+                        let mut chars_iter = value.chars();
+                        if let Some(first) = chars_iter.next() {
+                            first.to_lowercase().collect::<String>() + chars_iter.as_str()
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    }
+                }
+            }
+            _ => {
+                // Unknown operator
+                self.collect_until_close_brace(chars);
+                String::new()
+            }
+        }
+    }
+
+    /// Collect characters until closing brace
+    fn collect_until_close_brace(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+    ) -> String {
+        let mut result = String::new();
+        while let Some(&ch) = chars.peek() {
+            if ch == '}' {
+                chars.next(); // consume '}'
+                break;
+            }
+            result.push(ch);
+            chars.next();
+        }
+        result
+    }
+
+    /// Collect characters until one of the specified delimiters
+    fn collect_until(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        delimiters: &[char],
+    ) -> String {
+        let mut result = String::new();
+        while let Some(&ch) = chars.peek() {
+            if delimiters.contains(&ch) {
+                break;
+            }
+            result.push(ch);
+            chars.next();
+        }
+        result
+    }
+
+    /// Collect pattern and replacement for substitution
+    fn collect_pattern_replacement(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+    ) -> (String, String) {
+        let mut pattern = String::new();
+        let mut replacement = String::new();
+
+        // Collect pattern until '/'
+        while let Some(&ch) = chars.peek() {
+            if ch == '/' {
+                chars.next(); // consume '/'
+                break;
+            }
+            if ch == '}' {
+                // Pattern only, no replacement
+                chars.next(); // consume '}'
+                return (pattern, replacement);
+            }
+            pattern.push(ch);
+            chars.next();
+        }
+
+        // Collect replacement until '}'
+        while let Some(&ch) = chars.peek() {
+            if ch == '}' {
+                chars.next(); // consume '}'
+                break;
+            }
+            replacement.push(ch);
+            chars.next();
+        }
+
+        (pattern, replacement)
+    }
+
+    /// Extract substring from value
+    fn substring_expansion(&self, value: &str, offset: isize, length: Option<usize>) -> String {
+        let len = value.len() as isize;
+
+        // Handle negative offset (count from end)
+        let start = if offset < 0 {
+            ((len + offset).max(0)) as usize
+        } else {
+            offset.min(len) as usize
+        };
+
+        if let Some(length) = length {
+            value.chars().skip(start).take(length).collect()
+        } else {
+            value.chars().skip(start).collect()
+        }
+    }
+
+    /// Convert glob pattern to regex (escape special regex chars, keep * as wildcard)
+    fn glob_to_regex(&self, pattern: &str, greedy: bool) -> String {
+        let mut result = String::new();
+        for ch in pattern.chars() {
+            match ch {
+                '*' => {
+                    if greedy {
+                        result.push_str(".*");
+                    } else {
+                        result.push_str(".*?");
+                    }
+                }
+                '.' | '+' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '^' | '$' | '\\' | '?' => {
+                    result.push('\\');
+                    result.push(ch);
+                }
+                _ => result.push(ch),
+            }
+        }
+        result
+    }
+
+    /// Remove shortest matching prefix
+    fn remove_shortest_prefix(&self, value: &str, pattern: &str) -> String {
+        // Simple glob matching - convert * to regex
+        if pattern.contains('*') {
+            let regex_pattern = self.glob_to_regex(pattern, false);
+            if let Ok(re) = regex::Regex::new(&format!("^{}", regex_pattern)) {
+                if let Some(m) = re.find(value) {
+                    return value[m.end()..].to_string();
+                }
+            }
+        } else if let Some(stripped) = value.strip_prefix(pattern) {
+            return stripped.to_string();
+        }
+        value.to_string()
+    }
+
+    /// Remove longest matching prefix
+    fn remove_longest_prefix(&self, value: &str, pattern: &str) -> String {
+        // Simple glob matching - convert * to greedy regex
+        if pattern.contains('*') {
+            let regex_pattern = self.glob_to_regex(pattern, true);
+            if let Ok(re) = regex::Regex::new(&format!("^{}", regex_pattern)) {
+                if let Some(m) = re.find(value) {
+                    return value[m.end()..].to_string();
+                }
+            }
+        } else if let Some(stripped) = value.strip_prefix(pattern) {
+            return stripped.to_string();
+        }
+        value.to_string()
+    }
+
+    /// Remove shortest matching suffix
+    fn remove_shortest_suffix(&self, value: &str, pattern: &str) -> String {
+        // Simple glob matching - convert * to regex
+        if pattern.contains('*') {
+            let regex_pattern = self.glob_to_regex(pattern, false);
+            if let Ok(re) = regex::Regex::new(&format!("{}$", regex_pattern)) {
+                // Find all matches and use the shortest (rightmost start position)
+                let mut shortest_start = None;
+                for m in re.find_iter(value) {
+                    if shortest_start.is_none() || m.start() > shortest_start.unwrap() {
+                        shortest_start = Some(m.start());
+                    }
+                }
+                if let Some(start) = shortest_start {
+                    return value[..start].to_string();
+                }
+            }
+        } else if let Some(stripped) = value.strip_suffix(pattern) {
+            return stripped.to_string();
+        }
+        value.to_string()
+    }
+
+    /// Remove longest matching suffix
+    fn remove_longest_suffix(&self, value: &str, pattern: &str) -> String {
+        // Simple glob matching - convert * to greedy regex
+        if pattern.contains('*') {
+            let regex_pattern = self.glob_to_regex(pattern, true);
+            if let Ok(re) = regex::Regex::new(&format!("{}$", regex_pattern)) {
+                if let Some(m) = re.find(value) {
+                    return value[..m.start()].to_string();
+                }
+            }
+        } else if let Some(stripped) = value.strip_suffix(pattern) {
+            return stripped.to_string();
+        }
+        value.to_string()
     }
 
     /// Handle cd command (change directory)

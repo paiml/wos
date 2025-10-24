@@ -18,6 +18,7 @@ serde_json.workspace = true
 serde_yaml.workspace = true
 wasm-bindgen.workspace = true
 web-sys.workspace = true
+regex = "1.10"
 
 [dev-dependencies]
 proptest.workspace = true

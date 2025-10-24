@@ -1,0 +1,375 @@
+
+Running 7 tests using 1 worker
+
+Screenshot saved: 01-initial-state.png
+  ✓  1 tests/e2e/ux-visual-test.spec.js:22:3 › WOS Panel UX Visual Testing › screenshot initial state - all panels (3.0s)
+  ✘  2 tests/e2e/ux-visual-test.spec.js:32:3 › WOS Panel UX Visual Testing › screenshot collapsed panels (30.0s)
+  ✘  3 tests/e2e/ux-visual-test.spec.js:49:3 › WOS Panel UX Visual Testing › screenshot expand first panel (30.0s)
+Screenshot saved: 04-panel-1-process_list.png
+Screenshot saved: 04-panel-2-memory_map.png
+Screenshot saved: 04-panel-3-syscall_trace.png
+  ✓  4 tests/e2e/ux-visual-test.spec.js:71:3 › WOS Panel UX Visual Testing › screenshot expand different panels sequentially (4.0s)
+Panel measurements: [
+  {
+    "panel": "process_list",
+    "collapsed": true,
+    "height": 25,
+    "y": 312.140625
+  },
+  {
+    "panel": "memory_map",
+    "collapsed": true,
+    "height": 25,
+    "y": 341.140625
+  },
+  {
+    "panel": "syscall_trace",
+    "collapsed": true,
+    "height": 25,
+    "y": 370.140625
+  },
+  {
+    "panel": "filesystem",
+    "collapsed": true,
+    "height": 25,
+    "y": 399.140625
+  },
+  {
+    "panel": "system_monitor",
+    "collapsed": true,
+    "height": 25,
+    "y": 428.140625
+  },
+  {
+    "panel": "system_monitor_detailed",
+    "collapsed": true,
+    "height": 25,
+    "y": 457.140625
+  },
+  {
+    "panel": "time_travel_debugger",
+    "collapsed": true,
+    "height": 25,
+    "y": 486.140625
+  },
+  {
+    "panel": "learning_objectives",
+    "collapsed": false,
+    "height": 155.859375,
+    "y": 515.140625
+  },
+  {
+    "panel": "help",
+    "collapsed": true,
+    "height": 25,
+    "y": 675
+  }
+]
+  ✓  5 tests/e2e/ux-visual-test.spec.js:92:3 › WOS Panel UX Visual Testing › measure panel heights and spacing (2.8s)
+Process list collapsed after expanding memory map: [33mtrue[39m
+  ✓  6 tests/e2e/ux-visual-test.spec.js:120:3 › WOS Panel UX Visual Testing › test accordion behavior visually (3.4s)
+
+=== COMPUTED CSS INSPECTION ===
+
+
+Panel: process_list
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 312.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: memory_map
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 341.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: syscall_trace
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 370.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: filesystem
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 399.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: system_monitor
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 428.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: system_monitor_detailed
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 457.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: time_travel_debugger
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 486.140625)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+Panel: learning_objectives
+  Collapsed: false
+  Actual dimensions: 1240x155.859375
+  Position: (20, 515.140625)
+  Computed styles:
+    flex: 1 1 600px
+    flex-grow: 1
+    flex-shrink: 1
+    flex-basis: 600px
+    height: 155.859px
+    min-height: 25px
+    max-height: none
+    overflow: hidden
+
+Panel: help
+  Collapsed: true
+  Actual dimensions: 1240x25
+  Position: (20, 675)
+  Computed styles:
+    flex: 0 0 25px
+    flex-grow: 0
+    flex-shrink: 0
+    flex-basis: 25px
+    height: 25px
+    min-height: 25px
+    max-height: 25px
+    overflow: hidden
+
+.terminal-container:
+  Actual dimensions: 1240x140
+  Position: (20, 164.140625)
+  Computed styles:
+    flex: 0 0 140px
+    height: 140px
+    max-height: 140px
+    min-height: 100px
+
+.file-manager:
+  Actual dimensions: 1240x387.859375
+  Position: (20, 312.140625)
+  Computed styles:
+    flex: 1 1 0%
+    height: 387.859px
+    gap: 4px
+
+<main> container:
+  Actual dimensions: 1280x575.859375
+  Computed styles:
+    display: flex
+    flex-direction: column
+    height: 575.859px
+    min-height: 0px
+    overflow: hidden
+    gap: 8px
+  ✓  7 tests/e2e/ux-visual-test.spec.js:152:3 › WOS Panel UX Visual Testing › inspect computed CSS styles of panels (2.8s)
+
+
+  1) tests/e2e/ux-visual-test.spec.js:32:3 › WOS Panel UX Visual Testing › screenshot collapsed panels 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('.btn-collapse').nth(5)[22m
+    [2m    - locator resolved to <button aria-expanded="true" class="btn-icon btn-collapse" title="Collapse/Expand panel" aria-label="Collapse or expand Learning Objectives panel">…</button>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> intercepts pointer events[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    - waiting for element to be visible, enabled and stable[22m
+    [2m    - element is visible, enabled and stable[22m
+    [2m    - scrolling into view if needed[22m
+    [2m    - done scrolling[22m
+    [2m    - <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> intercepts pointer events[22m
+    [2m  2 × retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m      - waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - <svg width="20" height="20" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">…</svg> from <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> subtree intercepts pointer events[22m
+    [2m  12 × retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m       - waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> intercepts pointer events[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m       - waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> intercepts pointer events[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m       - waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <svg width="20" height="20" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">…</svg> from <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> subtree intercepts pointer events[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m       - waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <svg width="20" height="20" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">…</svg> from <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> subtree intercepts pointer events[22m
+    [2m  - retrying click action[22m
+    [2m    - waiting 500ms[22m
+
+
+      35 |
+      36 |     for (const btn of collapseButtons) {
+    > 37 |       await btn.click();
+         |                 ^
+      38 |       await page.waitForTimeout(300); // Wait for animation
+      39 |     }
+      40 |
+        at /home/noah/src/wos/tests/e2e/ux-visual-test.spec.js:37:17
+
+    Error Context: test-results/tests-e2e-ux-visual-test-W-66f20-screenshot-collapsed-panels/error-context.md
+
+  2) tests/e2e/ux-visual-test.spec.js:49:3 › WOS Panel UX Visual Testing › screenshot expand first panel 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('.btn-collapse').nth(5)[22m
+    [2m    - locator resolved to <button aria-expanded="true" class="btn-icon btn-collapse" title="Collapse/Expand panel" aria-label="Collapse or expand Learning Objectives panel">…</button>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> intercepts pointer events[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    - waiting for element to be visible, enabled and stable[22m
+    [2m    - element is visible, enabled and stable[22m
+    [2m    - scrolling into view if needed[22m
+    [2m    - done scrolling[22m
+    [2m    - <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> intercepts pointer events[22m
+    [2m  2 × retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m      - waiting for element to be visible, enabled and stable[22m
+    [2m      - element is visible, enabled and stable[22m
+    [2m      - scrolling into view if needed[22m
+    [2m      - done scrolling[22m
+    [2m      - <svg width="20" height="20" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">…</svg> from <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> subtree intercepts pointer events[22m
+    [2m  12 × retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m       - waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> intercepts pointer events[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m       - waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> intercepts pointer events[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m       - waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <svg width="20" height="20" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">…</svg> from <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> subtree intercepts pointer events[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+    [2m       - waiting for element to be visible, enabled and stable[22m
+    [2m       - element is visible, enabled and stable[22m
+    [2m       - scrolling into view if needed[22m
+    [2m       - done scrolling[22m
+    [2m       - <svg width="20" height="20" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">…</svg> from <button title="Help" id="btn-help" aria-label="Help menu" class="btn-icon btn-help">…</button> subtree intercepts pointer events[22m
+    [2m  - retrying click action[22m
+    [2m    - waiting 500ms[22m
+
+
+      51 |     const collapseButtons = await page.locator('.btn-collapse').all();
+      52 |     for (const btn of collapseButtons) {
+    > 53 |       await btn.click();
+         |                 ^
+      54 |       await page.waitForTimeout(100);
+      55 |     }
+      56 |
+        at /home/noah/src/wos/tests/e2e/ux-visual-test.spec.js:53:17
+
+    Error Context: test-results/tests-e2e-ux-visual-test-W-2d170-reenshot-expand-first-panel/error-context.md
+
+  2 failed
+    tests/e2e/ux-visual-test.spec.js:32:3 › WOS Panel UX Visual Testing › screenshot collapsed panels 
+    tests/e2e/ux-visual-test.spec.js:49:3 › WOS Panel UX Visual Testing › screenshot expand first panel 
+  5 passed (1.3m)

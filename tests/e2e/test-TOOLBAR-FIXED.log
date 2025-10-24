@@ -1,0 +1,13 @@
+
+Running 4 tests using 1 worker
+
+Toolbar icons: 8
+  ✓  1 tests/e2e/toolbar-test.spec.js:19:3 › Icon Toolbar UX › toolbar visible with all icons (2.9s)
+Visible panels: 1 (learning_objectives)
+  ✓  2 tests/e2e/toolbar-test.spec.js:35:3 › Icon Toolbar UX › only one panel visible at a time (2.7s)
+✅ Toolbar panel switching working
+  ✓  3 tests/e2e/toolbar-test.spec.js:54:3 › Icon Toolbar UX › clicking toolbar switches panels (3.4s)
+✅ Toolbar active state management working
+  ✓  4 tests/e2e/toolbar-test.spec.js:85:3 › Icon Toolbar UX › active toolbar button highlighted (3.0s)
+
+  4 passed (12.7s)
