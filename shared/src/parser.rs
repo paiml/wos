@@ -88,8 +88,13 @@ fn handle_quote_toggle(
 }
 
 /// Helper: Check if character should end current token
-fn should_end_token(ch: char, in_single_quote: bool, in_double_quote: bool) -> bool {
-    (ch == ' ' || ch == '\t') && !in_single_quote && !in_double_quote
+fn should_end_token(
+    ch: char,
+    in_single_quote: bool,
+    in_double_quote: bool,
+    paren_depth: usize,
+) -> bool {
+    (ch == ' ' || ch == '\t') && !in_single_quote && !in_double_quote && paren_depth == 0
 }
 
 /// Complete current token and add to tokens list
@@ -103,6 +108,7 @@ fn complete_token(current: &mut String, tokens: &mut Vec<String>, had_quotes: &m
 
 /// Process a single character in tokenization
 /// Returns true if character was handled (no need to push to token)
+#[allow(clippy::too_many_arguments)]
 fn process_token_char(
     ch: char,
     chars: &mut std::iter::Peekable<std::str::Chars>,
@@ -111,6 +117,7 @@ fn process_token_char(
     in_double: &mut bool,
     had_quotes: &mut bool,
     tokens: &mut Vec<String>,
+    paren_depth: usize,
 ) -> bool {
     // Handle escape sequences
     if ch == '\\' && !*in_single {
@@ -128,7 +135,7 @@ fn process_token_char(
     }
 
     // Handle token-ending whitespace
-    if should_end_token(ch, *in_single, *in_double) {
+    if should_end_token(ch, *in_single, *in_double, paren_depth) {
         complete_token(current_token, tokens, had_quotes);
         return true;
     }
@@ -144,8 +151,24 @@ fn tokenize(input: &str) -> Vec<String> {
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut had_quotes = false;
+    let mut paren_depth = 0; // Track $(...) nesting
 
     while let Some(ch) = chars.next() {
+        // Check for $(  - start of command substitution
+        if ch == '$' && chars.peek() == Some(&'(') && !in_single_quote {
+            current_token.push(ch);
+            current_token.push(chars.next().unwrap()); // consume '('
+            paren_depth += 1;
+            continue;
+        }
+
+        // Track closing ) when inside $(...)
+        if ch == ')' && paren_depth > 0 && !in_single_quote {
+            current_token.push(ch);
+            paren_depth -= 1;
+            continue;
+        }
+
         let handled = process_token_char(
             ch,
             &mut chars,
@@ -154,6 +177,7 @@ fn tokenize(input: &str) -> Vec<String> {
             &mut in_double_quote,
             &mut had_quotes,
             &mut tokens,
+            paren_depth,
         );
 
         if !handled {
@@ -452,13 +476,22 @@ mod tests {
 
     #[test]
     fn test_should_end_token_whitespace() {
-        assert_eq!(should_end_token(' ', false, false), true);
-        assert_eq!(should_end_token('\t', false, false), true);
+        assert_eq!(should_end_token(' ', false, false, 0), true);
+        assert_eq!(should_end_token('\t', false, false, 0), true);
     }
 
     #[test]
     fn test_should_end_token_in_quotes() {
-        assert_eq!(should_end_token(' ', true, false), false);
-        assert_eq!(should_end_token(' ', false, true), false);
+        assert_eq!(should_end_token(' ', true, false, 0), false);
+        assert_eq!(should_end_token(' ', false, true, 0), false);
+    }
+
+    #[test]
+    fn test_should_end_token_in_command_substitution() {
+        // Space inside $(...)  should not end token
+        assert_eq!(should_end_token(' ', false, false, 1), false);
+        assert_eq!(should_end_token('\t', false, false, 1), false);
+        // Space outside $(...)  should end token
+        assert_eq!(should_end_token(' ', false, false, 0), true);
     }
 }

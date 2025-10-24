@@ -108,9 +108,9 @@
 
 | Feature | Status | bashrs Rule | Test File | Notes |
 |---------|--------|-------------|-----------|-------|
-| Modern form (`$(cmd)`) | ❌ | SC2046 | - | Preferred syntax |
-| Legacy form (`` `cmd` ``) | ❌ | SC2046 | - | Deprecated |
-| Nested substitution | ❌ | SC2046 | - | `$(cmd1 $(cmd2))` |
+| Modern form (`$(cmd)`) | ✅ | SC2046 | bash-command-substitution-test.spec.js | WOS-BASH-03 (19/28 tests - 68%) |
+| Legacy form (`` `cmd` ``) | ❌ | SC2046 | - | Deprecated (won't implement) |
+| Nested substitution | ✅ | SC2046 | bash-command-substitution-test.spec.js | WOS-BASH-03 (19/28 tests - 68%) |
 
 **bashrs Rule SC2046**: "Quote command substitution to prevent word splitting"
 **bashrs Rule SC2116**: "Useless echo; just use $result directly"

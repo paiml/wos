@@ -143,7 +143,9 @@ impl WosWasm {
         if let Some((name, value)) = self.parse_assignment(command) {
             // Expand variables in the value
             let expanded_value = self.expand_variables(&value);
-            self.variables.insert(name, expanded_value);
+            // Expand command substitutions in the value
+            let subst_value = self.expand_command_substitution(&expanded_value);
+            self.variables.insert(name, subst_value);
             self.last_exit_code = 0;
             return String::new(); // Assignment produces no output
         }
@@ -1036,6 +1038,69 @@ impl WosWasm {
         }
     }
 
+    /// Expand command substitution $(cmd) in a string
+    /// Executes commands within $(...) and replaces them with their output
+    /// Handles nested substitutions recursively
+    fn expand_command_substitution(&mut self, text: &str) -> String {
+        let mut result = String::new();
+        let chars = text.chars().collect::<Vec<_>>();
+        let mut i = 0;
+
+        while i < chars.len() {
+            // Look for $(
+            if i + 1 < chars.len() && chars[i] == '$' && chars[i + 1] == '(' {
+                // Find matching closing paren (handle nesting)
+                let start = i + 2;
+                let mut depth = 1;
+                let mut end = start;
+
+                while end < chars.len() && depth > 0 {
+                    if end + 1 < chars.len() && chars[end] == '$' && chars[end + 1] == '(' {
+                        depth += 1;
+                        end += 2;
+                    } else if chars[end] == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                        end += 1;
+                    } else {
+                        end += 1;
+                    }
+                }
+
+                if depth == 0 {
+                    // Found matching paren - extract command
+                    let cmd_str: String = chars[start..end].iter().collect();
+
+                    // Recursively expand nested substitutions first
+                    let expanded_cmd = self.expand_command_substitution(&cmd_str);
+
+                    // Execute the command and capture output
+                    let output = self.execute_command(&expanded_cmd);
+
+                    // Strip trailing newlines (Bash behavior)
+                    let trimmed = output.trim_end_matches('\n');
+
+                    // Replace internal newlines with spaces (Bash behavior)
+                    let collapsed = trimmed.replace('\n', " ");
+
+                    result.push_str(&collapsed);
+                    i = end + 1; // Skip past closing paren
+                } else {
+                    // No matching paren - treat as literal
+                    result.push(chars[i]);
+                    i += 1;
+                }
+            } else {
+                result.push(chars[i]);
+                i += 1;
+            }
+        }
+
+        result
+    }
+
     /// Handle cd command (change directory)
     fn handle_cd(&mut self, command: &str) -> String {
         // Parse cd command to extract path argument
@@ -1081,7 +1146,9 @@ impl WosWasm {
                 if should_execute_next {
                     // Expand variables in the value
                     let expanded_value = self.expand_variables(&value);
-                    self.variables.insert(name, expanded_value);
+                    // Expand command substitutions in the value
+                    let subst_value = self.expand_command_substitution(&expanded_value);
+                    self.variables.insert(name, subst_value);
                     _last_exit_code = 0;
                 }
                 // Assignment produces no output, continue to next stage
@@ -1093,9 +1160,16 @@ impl WosWasm {
             let expanded_args: Vec<String> =
                 args.iter().map(|arg| self.expand_variables(arg)).collect();
 
+            // Expand command substitutions in command name and args
+            let subst_cmd = self.expand_command_substitution(&expanded_cmd);
+            let subst_args: Vec<String> = expanded_args
+                .iter()
+                .map(|arg| self.expand_command_substitution(arg))
+                .collect();
+
             // Expand glob patterns in arguments
             let mut globbed_args: Vec<String> = Vec::new();
-            for arg in &expanded_args {
+            for arg in &subst_args {
                 let expanded = self.expand_glob(arg);
                 globbed_args.extend(expanded);
             }
@@ -1134,7 +1208,7 @@ impl WosWasm {
             // Execute this command only if we should
             let (cmd_output, executed) = if should_execute_next {
                 let result =
-                    self.execute_single_command(&expanded_cmd, &globbed_args, &stdin_override);
+                    self.execute_single_command(&subst_cmd, &globbed_args, &stdin_override);
                 (result, true)
             } else {
                 // Skip execution, use empty output and preserve last exit code
