@@ -92,14 +92,14 @@
 
 | Variable | Status | bashrs Rule | Test File | Notes |
 |----------|--------|-------------|-----------|-------|
-| `$?` | ✅ | - | existing tests | Exit status |
-| `$$` | ❌ | - | - | Process ID |
+| `$?` | ✅ | - | bash-special-vars-test.spec.js | Exit status (WOS-BASH-04) |
+| `$$` | ✅ | - | bash-special-vars-test.spec.js | Process ID (WOS-BASH-04) |
 | `$!` | 🚫 | - | - | Background PID (no job control) |
-| `$0` | ❌ | - | - | Script name |
-| `$1`, `$2`, ... | ❌ | - | - | Positional params |
-| `$#` | ❌ | - | - | Argument count |
-| `$*` | ❌ | - | - | All args (single word) |
-| `$@` | ❌ | - | - | All args (separate) |
+| `$0` | ✅ | - | bash-special-vars-test.spec.js | Shell name (WOS-BASH-04) |
+| `$1`, `$2`, ... | 🔄 | - | bash-special-vars-test.spec.js | Positional params (needs WOS-BASH-05) |
+| `$#` | 🔄 | - | bash-special-vars-test.spec.js | Argument count (needs WOS-BASH-05) |
+| `$*` | 🔄 | - | bash-special-vars-test.spec.js | All args (needs WOS-BASH-05) |
+| `$@` | 🔄 | - | bash-special-vars-test.spec.js | All args (needs WOS-BASH-05) |
 | `$-` | 🚫 | - | - | Current options |
 
 ---
