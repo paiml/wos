@@ -127,8 +127,8 @@
 | Tilde expansion (`~`) | ❌ | - | - | Home directory |
 | Tilde user (`~user`) | 🚫 | - | - | Multi-user (out of scope) |
 | Arithmetic expansion (`$((expr))`) | ❌ | - | - | Math evaluation |
-| Glob patterns (`*.txt`) | ❌ | - | - | Filename matching |
-| Glob char class (`[abc]`) | ❌ | - | - | Character ranges |
+| Glob patterns (`*.txt`) | ✅ | - | bash-globbing-test.spec.js | Filename matching (WOS-BASH-08) |
+| Glob char class (`[abc]`) | ✅ | - | bash-globbing-test.spec.js | Character ranges (WOS-BASH-08) |
 | Word splitting (IFS) | 🔄 | SC2086 | - | Partial: needs validation |
 
 **bashrs Integration**: Validate globbing safety, prevent accidental expansion
