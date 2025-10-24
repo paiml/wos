@@ -141,7 +141,9 @@ impl WosWasm {
 
         // Check for variable assignment (VAR=value)
         if let Some((name, value)) = self.parse_assignment(command) {
-            self.variables.insert(name, value);
+            // Expand variables in the value
+            let expanded_value = self.expand_variables(&value);
+            self.variables.insert(name, expanded_value);
             self.last_exit_code = 0;
             return String::new(); // Assignment produces no output
         }
@@ -251,8 +253,9 @@ impl WosWasm {
 
         for part in parts {
             if let Some((name, value)) = self.parse_assignment(part) {
-                // export VAR=value
-                self.variables.insert(name, value);
+                // export VAR=value - expand variables in value
+                let expanded_value = self.expand_variables(&value);
+                self.variables.insert(name, expanded_value);
             } else {
                 // export VAR (without value) - just marks as exported
                 // For MVP, we treat this as a no-op since we don't track exported state
@@ -330,6 +333,34 @@ impl WosWasm {
                     // Special variable $? - exit status
                     chars.next(); // consume '?'
                     result.push_str(&self.last_exit_code.to_string());
+                } else if chars.peek() == Some(&'$') {
+                    // Special variable $$ - process ID
+                    chars.next(); // consume second '$'
+                    result.push_str(&self.shell.pid.to_string());
+                } else if chars.peek() == Some(&'0') {
+                    // Special variable $0 - shell name
+                    chars.next(); // consume '0'
+                    result.push_str("wos"); // Shell name
+                } else if chars.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                    // Special variables $1-$9 - positional parameters
+                    let digit_ch = chars.next().unwrap();
+                    let pos = (digit_ch as u8 - b'0') as usize;
+                    // For now, positional params expand to empty (will be filled in bash scripts)
+                    // In shell context, there are no arguments, so expand to empty
+                    let _ = pos; // Suppress unused warning
+                } else if chars.peek() == Some(&'#') {
+                    // Special variable $# - number of positional parameters
+                    chars.next(); // consume '#'
+                                  // In shell context, no arguments, so $# = 0
+                    result.push('0');
+                } else if chars.peek() == Some(&'@') {
+                    // Special variable $@ - all positional parameters
+                    chars.next(); // consume '@'
+                                  // In shell context, no arguments, so $@ expands to empty
+                } else if chars.peek() == Some(&'*') {
+                    // Special variable $* - all positional parameters as single word
+                    chars.next(); // consume '*'
+                                  // In shell context, no arguments, so $* expands to empty
                 } else {
                     // Regular $VAR syntax
                     let mut var_name = String::new();
@@ -406,7 +437,9 @@ impl WosWasm {
             if let Some((name, value)) = self.parse_assignment(&full_command) {
                 // This stage is a variable assignment
                 if should_execute_next {
-                    self.variables.insert(name, value);
+                    // Expand variables in the value
+                    let expanded_value = self.expand_variables(&value);
+                    self.variables.insert(name, expanded_value);
                     _last_exit_code = 0;
                 }
                 // Assignment produces no output, continue to next stage
@@ -670,6 +703,8 @@ impl WosWasm {
                     self.reset();
                     "System reset complete".to_string()
                 }
+                "true" => String::new(),
+                "false" => String::new(),
                 _ => format!(
                     "Unknown command: {}\nType 'help' for available commands",
                     cmd_name
@@ -678,9 +713,15 @@ impl WosWasm {
         };
 
         // Determine exit code (0 = success, 1 = error)
-        let exit_code = if output.contains("Error")
+        let exit_code = if cmd_name == "true" {
+            0
+        } else if cmd_name == "false"
+            || output.contains("Error")
             || output.contains("error")
             || output.contains("Unknown command")
+            || output.contains("cannot")
+            || output.contains("not found")
+            || output.contains("No such")
         {
             1
         } else {
