@@ -126,7 +126,7 @@
 | Brace range (`{1..10}`) | ❌ | - | - | Numeric/alpha ranges |
 | Tilde expansion (`~`) | ❌ | - | - | Home directory |
 | Tilde user (`~user`) | 🚫 | - | - | Multi-user (out of scope) |
-| Arithmetic expansion (`$((expr))`) | 🔄 | - | bash-arithmetic-test.spec.js | WOS-BASH-09 (in progress) |
+| Arithmetic expansion (`$((expr))`) | ✅ | - | bash-arithmetic-test.spec.js | WOS-BASH-09 (48/48 tests passing - 100%) |
 | Glob patterns (`*.txt`) | ✅ | - | bash-globbing-test.spec.js | Filename matching (WOS-BASH-08) |
 | Glob char class (`[abc]`) | ✅ | - | bash-globbing-test.spec.js | Character ranges (WOS-BASH-08) |
 | Word splitting (IFS) | 🔄 | SC2086 | - | Partial: needs validation |
