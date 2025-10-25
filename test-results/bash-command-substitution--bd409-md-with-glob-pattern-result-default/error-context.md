@@ -1,0 +1,112 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - link "Skip to terminal" [ref=e2] [cursor=pointer]:
+    - /url: "#terminal-input"
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - heading "WOS" [level=1] [ref=e5]
+      - paragraph [ref=e6]: Rust + WASM | ↑/↓ History | Ctrl+L Clear
+    - main [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: Terminal
+          - generic [ref=e11]:
+            - button "Clear terminal" [ref=e12] [cursor=pointer]: Clear
+            - button "Reset OS state" [ref=e13] [cursor=pointer]: Reset
+            - button "Save state" [ref=e14] [cursor=pointer]: Save
+            - button "Load state" [ref=e15] [cursor=pointer]: Load
+        - generic [ref=e16]:
+          - log [ref=e17]:
+            - generic [ref=e18]: WOS - WebAssembly Operating System
+            - generic [ref=e19]: Educational microkernel v0.1.0
+            - generic [ref=e20]: Type "help" for available commands
+            - generic [ref=e21]: root@wos:/$ touch /tmp/x1.txt /tmp/x2.txt
+            - generic [ref=e22]: root@wos:/$ PATTERN=$(echo "/tmp/x*.txt")
+            - generic [ref=e23]: root@wos:/$ ls $PATTERN
+            - generic [ref=e24]: /tmp/x1.txt
+          - generic [ref=e25]:
+            - generic [ref=e26]: wos$
+            - textbox "Terminal command input" [active] [ref=e27]
+        - separator "Resize terminal" [ref=e28]
+      - toolbar "Panel switcher" [ref=e29]:
+        - button "Show Process List" [ref=e30] [cursor=pointer]:
+          - img [ref=e31]
+          - generic [ref=e33]: Processes
+        - button "Show Memory Map" [ref=e34] [cursor=pointer]:
+          - img [ref=e35]
+          - generic [ref=e37]: Memory
+        - button "Show System Call Trace" [ref=e38] [cursor=pointer]:
+          - img [ref=e39]
+          - generic [ref=e41]: Syscalls
+        - button "Show File System" [ref=e42] [cursor=pointer]:
+          - img [ref=e43]
+          - generic [ref=e45]: Files
+        - button "Show System Monitor" [ref=e46] [cursor=pointer]:
+          - img [ref=e47]
+          - generic [ref=e49]: System
+        - button "Show Time-Travel Debugger" [ref=e50] [cursor=pointer]:
+          - img [ref=e51]
+          - generic [ref=e53]: Debugger
+        - button "Show Learning Objectives" [ref=e54] [cursor=pointer]:
+          - img [ref=e55]
+          - generic [ref=e57]: Learning
+        - button "Show Help" [ref=e58] [cursor=pointer]:
+          - img [ref=e59]
+          - generic [ref=e61]: Help
+      - generic [ref=e62]:
+        - text: ↕ ↕ ↕ ↕ ↕ ↕
+        - generic [ref=e63]:
+          - generic [ref=e64]:
+            - heading "Learning Objectives & Tests" [level=3] [ref=e65]
+            - button "Collapse or expand Learning Objectives panel" [expanded] [ref=e67] [cursor=pointer]:
+              - img [ref=e68]
+          - generic [ref=e70]:
+            - generic [ref=e71]:
+              - heading "Phase Progress" [level=4] [ref=e73]
+              - generic [ref=e74]:
+                - generic [ref=e75] [cursor=pointer]:
+                  - generic [ref=e76]:
+                    - generic [ref=e77]: ✓
+                    - generic [ref=e78]: Foundation
+                  - generic [ref=e81]:
+                    - generic [ref=e82]: 2/2 tasks
+                    - generic [ref=e83]: 100%
+                - generic [ref=e84] [cursor=pointer]:
+                  - generic [ref=e85]:
+                    - generic [ref=e86]: →
+                    - generic [ref=e87]: Enhanced Integrated Learning Environment
+                  - generic [ref=e90]:
+                    - generic [ref=e91]: 3/7 tasks
+                    - generic [ref=e92]: 43%
+            - generic [ref=e93]:
+              - heading "Foundation" [level=4] [ref=e95]
+              - generic [ref=e96]:
+                - generic [ref=e98] [cursor=pointer]:
+                  - generic [ref=e99]: ✓
+                  - generic [ref=e100]: WOS-001
+                  - generic [ref=e101]: Project scaffolding and quality gate infrastructure
+                  - generic [ref=e102]: 3/3
+                  - generic [ref=e103]: 4_hours
+                - generic [ref=e105] [cursor=pointer]:
+                  - generic [ref=e106]: ✓
+                  - generic [ref=e107]: WOS-002
+                  - generic [ref=e108]: Kernel state types and serialization
+                  - generic [ref=e109]: 3/3
+                  - generic [ref=e110]: 3_hours
+            - generic [ref=e111]:
+              - generic [ref=e112]:
+                - heading "Test Runner" [level=4] [ref=e113]
+                - button "Run all tests for current phase" [ref=e115] [cursor=pointer]:
+                  - img [ref=e116]
+              - generic [ref=e118]:
+                - generic [ref=e120]: No tests running
+                - generic [ref=e123]: Error Details
+  - button "Help menu" [ref=e125] [cursor=pointer]:
+    - img [ref=e126]
+  - link "Made by Pragmatic AI Labs" [ref=e128] [cursor=pointer]:
+    - /url: https://paiml.com
+    - img "Pragmatic AI Labs" [ref=e129]
+    - generic [ref=e130]: paiml.com
+```
