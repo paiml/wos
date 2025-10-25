@@ -93,8 +93,13 @@ fn should_end_token(
     in_single_quote: bool,
     in_double_quote: bool,
     paren_depth: usize,
+    brace_depth: usize,
 ) -> bool {
-    (ch == ' ' || ch == '\t') && !in_single_quote && !in_double_quote && paren_depth == 0
+    (ch == ' ' || ch == '\t')
+        && !in_single_quote
+        && !in_double_quote
+        && paren_depth == 0
+        && brace_depth == 0
 }
 
 /// Complete current token and add to tokens list
@@ -118,6 +123,7 @@ fn process_token_char(
     had_quotes: &mut bool,
     tokens: &mut Vec<String>,
     paren_depth: usize,
+    brace_depth: usize,
 ) -> bool {
     // Handle escape sequences
     if ch == '\\' && !*in_single {
@@ -135,7 +141,7 @@ fn process_token_char(
     }
 
     // Handle token-ending whitespace
-    if should_end_token(ch, *in_single, *in_double, paren_depth) {
+    if should_end_token(ch, *in_single, *in_double, paren_depth, brace_depth) {
         complete_token(current_token, tokens, had_quotes);
         return true;
     }
@@ -152,8 +158,17 @@ fn tokenize(input: &str) -> Vec<String> {
     let mut in_double_quote = false;
     let mut had_quotes = false;
     let mut paren_depth = 0; // Track $(...) and $((...)) nesting
+    let mut brace_depth = 0; // Track ${...} nesting
 
     while let Some(ch) = chars.next() {
+        // Check for ${  - start of parameter expansion
+        if ch == '$' && chars.peek() == Some(&'{') && !in_single_quote {
+            current_token.push(ch);
+            current_token.push(chars.next().unwrap()); // consume '{'
+            brace_depth += 1;
+            continue;
+        }
+
         // Check for $((  - start of arithmetic expansion
         if ch == '$' && chars.peek() == Some(&'(') && !in_single_quote {
             current_token.push(ch);
@@ -166,6 +181,13 @@ fn tokenize(input: &str) -> Vec<String> {
             } else {
                 paren_depth += 1;
             }
+            continue;
+        }
+
+        // Track closing } when inside ${...}
+        if ch == '}' && brace_depth > 0 && !in_single_quote {
+            current_token.push(ch);
+            brace_depth -= 1;
             continue;
         }
 
@@ -185,6 +207,7 @@ fn tokenize(input: &str) -> Vec<String> {
             &mut had_quotes,
             &mut tokens,
             paren_depth,
+            brace_depth,
         );
 
         if !handled {
@@ -483,22 +506,31 @@ mod tests {
 
     #[test]
     fn test_should_end_token_whitespace() {
-        assert_eq!(should_end_token(' ', false, false, 0), true);
-        assert_eq!(should_end_token('\t', false, false, 0), true);
+        assert_eq!(should_end_token(' ', false, false, 0, 0), true);
+        assert_eq!(should_end_token('\t', false, false, 0, 0), true);
     }
 
     #[test]
     fn test_should_end_token_in_quotes() {
-        assert_eq!(should_end_token(' ', true, false, 0), false);
-        assert_eq!(should_end_token(' ', false, true, 0), false);
+        assert_eq!(should_end_token(' ', true, false, 0, 0), false);
+        assert_eq!(should_end_token(' ', false, true, 0, 0), false);
     }
 
     #[test]
     fn test_should_end_token_in_command_substitution() {
         // Space inside $(...)  should not end token
-        assert_eq!(should_end_token(' ', false, false, 1), false);
-        assert_eq!(should_end_token('\t', false, false, 1), false);
+        assert_eq!(should_end_token(' ', false, false, 1, 0), false);
+        assert_eq!(should_end_token('\t', false, false, 1, 0), false);
         // Space outside $(...)  should end token
-        assert_eq!(should_end_token(' ', false, false, 0), true);
+        assert_eq!(should_end_token(' ', false, false, 0, 0), true);
+    }
+
+    #[test]
+    fn test_should_end_token_in_parameter_expansion() {
+        // Space inside ${...} should not end token
+        assert_eq!(should_end_token(' ', false, false, 0, 1), false);
+        assert_eq!(should_end_token('\t', false, false, 0, 1), false);
+        // Space outside ${...} should end token
+        assert_eq!(should_end_token(' ', false, false, 0, 0), true);
     }
 }

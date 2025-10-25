@@ -289,7 +289,7 @@ impl WosWasm {
     }
 
     /// Expand variables in a string ($VAR or ${VAR} -> value)
-    fn expand_variables(&self, text: &str) -> String {
+    fn expand_variables(&mut self, text: &str) -> String {
         let mut result = String::new();
         let mut chars = text.chars().peekable();
 
@@ -449,7 +449,7 @@ impl WosWasm {
 
     /// Handle parameter expansion operators like ${VAR:-default}, ${VAR#pattern}, etc.
     fn handle_parameter_expansion(
-        &self,
+        &mut self,
         chars: &mut std::iter::Peekable<std::str::Chars>,
         var_name: &str,
     ) -> String {
@@ -475,13 +475,14 @@ impl WosWasm {
                             }
                         }
                         '=' => {
-                            // ${VAR:=default} - assign default if unset or empty (read-only for now)
+                            // ${VAR:=default} - assign default if unset or empty
                             chars.next(); // consume '='
                             let default = self.collect_until_close_brace(chars);
                             if is_set && !is_empty {
                                 var_value.unwrap().clone()
                             } else {
-                                // Note: Should assign to variable, but shell state is immutable here
+                                // Assign the default value to the variable
+                                self.variables.insert(var_name.to_string(), default.clone());
                                 default
                             }
                         }
@@ -507,8 +508,30 @@ impl WosWasm {
                                 String::new()
                             }
                         }
-                        _ if second_ch.is_ascii_digit() || second_ch == '-' || second_ch == ' ' => {
-                            // ${VAR:offset} or ${VAR:offset:length} or ${VAR: -offset} - substring expansion
+                        ' ' => {
+                            // ${VAR: offset} - space before offset for substring expansion
+                            // This handles both positive and negative offsets after the space
+                            chars.next(); // consume the space
+                            let offset_str = self.collect_until(chars, &[':', '}']);
+                            let offset: isize = offset_str.trim().parse().unwrap_or(0);
+
+                            let length = if chars.peek() == Some(&':') {
+                                chars.next(); // consume ':'
+                                let length_str = self.collect_until_close_brace(chars);
+                                length_str.parse().ok()
+                            } else {
+                                chars.next(); // consume '}'
+                                None
+                            };
+
+                            if let Some(value) = var_value {
+                                self.substring_expansion(value, offset, length)
+                            } else {
+                                String::new()
+                            }
+                        }
+                        _ if second_ch.is_ascii_digit() || second_ch == '-' => {
+                            // ${VAR:offset} or ${VAR:offset:length} - substring expansion
                             let offset_str = self.collect_until(chars, &[':', '}']);
                             let offset: isize = offset_str.trim().parse().unwrap_or(0);
 
@@ -818,19 +841,17 @@ impl WosWasm {
 
     /// Remove shortest matching suffix
     fn remove_shortest_suffix(&self, value: &str, pattern: &str) -> String {
-        // Simple glob matching - convert * to regex
+        // Simple glob matching - convert * to non-greedy regex
         if pattern.contains('*') {
             let regex_pattern = self.glob_to_regex(pattern, false);
             if let Ok(re) = regex::Regex::new(&format!("{}$", regex_pattern)) {
-                // Find all matches and use the shortest (rightmost start position)
-                let mut shortest_start = None;
-                for m in re.find_iter(value) {
-                    if shortest_start.is_none() || m.start() > shortest_start.unwrap() {
-                        shortest_start = Some(m.start());
+                // For shortest suffix, find the rightmost (closest to end) match
+                // by iterating through all possible suffixes from right to left
+                for i in (0..=value.len()).rev() {
+                    let suffix = &value[i..];
+                    if re.is_match(suffix) {
+                        return value[..i].to_string();
                     }
-                }
-                if let Some(start) = shortest_start {
-                    return value[..start].to_string();
                 }
             }
         } else if let Some(stripped) = value.strip_suffix(pattern) {
@@ -4199,6 +4220,112 @@ environment: production
             output.trim(),
             "3",
             "Right shift should evaluate $((12 >> 2)) to 3"
+        );
+    }
+
+    // RED TEST: WOS-BASH-05 - Parameter expansion with space before negative offset
+    #[test]
+    fn test_param_expansion_negative_offset_with_space() {
+        let mut wos = WosWasm::new();
+        // Set variable
+        wos.execute_command("TEXT=hello_world");
+
+        // Test ${var: -offset} - space before minus is REQUIRED in bash
+        let output = wos.execute_command("echo ${TEXT: -5}");
+        eprintln!("[RED TEST] ${{TEXT: -5}} = '{}'", output.trim());
+
+        assert_eq!(
+            output.trim(),
+            "world",
+            "Failed: ${{TEXT: -5}} with TEXT=hello_world should return 'world', got '{}'",
+            output.trim()
+        );
+    }
+
+    #[test]
+    fn test_param_expansion_negative_offset_without_space() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello_world");
+
+        // ${VAR:-default} means "use default if unset" (different operator!)
+        let output = wos.execute_command("echo ${TEXT:-5}");
+        eprintln!("[TEST] ${{TEXT:-5}} = '{}'", output.trim());
+
+        // Since TEXT is set, should return variable value
+        assert_eq!(
+            output.trim(),
+            "hello_world",
+            "Failed: ${{TEXT:-5}} should return variable value when set"
+        );
+    }
+
+    // RED TEST: WOS-BASH-05 - Shortest suffix removal ${var%pattern}
+    #[test]
+    fn test_param_expansion_shortest_suffix_removal() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("FILE=document.txt.bak");
+
+        let output = wos.execute_command("echo ${FILE%.*}");
+        eprintln!("[RED TEST] ${{FILE%.*}} = '{}'", output.trim());
+
+        // Should remove shortest suffix matching .* (i.e., .bak)
+        // Expected: "document.txt"
+        // Bug: probably returns "document" (removes longest suffix)
+        assert_eq!(
+            output.trim(),
+            "document.txt",
+            "Failed: ${{FILE%.*}} should remove shortest suffix '.bak', got '{}'",
+            output.trim()
+        );
+    }
+
+    // RED TEST: WOS-BASH-05 - Variable assignment ${var:=default}
+    #[test]
+    fn test_param_expansion_assign_default() {
+        let mut wos = WosWasm::new();
+
+        // Test ${var:=default} - should assign default when unset
+        let output = wos.execute_command("echo ${UNSET:=hello}");
+        eprintln!("[TEST] ${{UNSET:=hello}} = '{}'", output.trim());
+        assert_eq!(
+            output.trim(),
+            "hello",
+            "Failed: ${{UNSET:=hello}} should return 'hello', got '{}'",
+            output.trim()
+        );
+
+        // Verify assignment actually happened
+        let output2 = wos.execute_command("echo $UNSET");
+        eprintln!("[TEST] After assignment, $UNSET = '{}'", output2.trim());
+        assert_eq!(
+            output2.trim(),
+            "hello",
+            "Failed: $UNSET should be 'hello' after assignment, got '{}'",
+            output2.trim()
+        );
+
+        // Test that :=  does NOT assign when variable is already set
+        wos.execute_command("MYVAR=original");
+        let output3 = wos.execute_command("echo ${MYVAR:=replacement}");
+        eprintln!(
+            "[TEST] ${{MYVAR:=replacement}} with MYVAR=original = '{}'",
+            output3.trim()
+        );
+        assert_eq!(
+            output3.trim(),
+            "original",
+            "Failed: ${{MYVAR:=replacement}} should return 'original', got '{}'",
+            output3.trim()
+        );
+
+        // Verify no assignment happened
+        let output4 = wos.execute_command("echo $MYVAR");
+        eprintln!("[TEST] After :=, MYVAR still = '{}'", output4.trim());
+        assert_eq!(
+            output4.trim(),
+            "original",
+            "Failed: MYVAR should still be 'original', got '{}'",
+            output4.trim()
         );
     }
 }
