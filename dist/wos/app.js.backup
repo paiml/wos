@@ -297,6 +297,7 @@ class ConfigManager {
           system_monitor: { visible: true, collapsed: true }, // WOS-306: Collapsed for progressive disclosure
           system_monitor_detailed: { visible: true, collapsed: true }, // WOS-306: Collapsed by default for progressive disclosure
           time_travel_debugger: { visible: true, collapsed: true }, // WOS-306: Collapsed by default for progressive disclosure
+          learning_objectives: { visible: true, collapsed: false }, // WOS-306: Expanded by default
           help: { visible: true, collapsed: true } // WOS-306: Collapsed for progressive disclosure
         }
       }
@@ -413,8 +414,8 @@ class PanelManager {
       this.panels[panelName].element.classList.remove('active');
     });
 
-    // Show the default panel (help)
-    const defaultPanel = 'help';
+    // Show the default panel (learning_objectives)
+    const defaultPanel = 'learning_objectives';
     if (this.panels[defaultPanel]) {
       this.panels[defaultPanel].element.classList.add('active');
     }
@@ -663,15 +664,6 @@ class FileManager {
 
     this.setupEventListeners();
     this.refreshFileList();
-
-    // WOS-FILE-EDIT-01: Auto-refresh file list every 600ms
-    this.startFileSystemObserver();
-  }
-
-  startFileSystemObserver() {
-    setInterval(() => {
-      this.refreshFileList();
-    }, 600);
   }
 
   setupEventListeners() {
@@ -766,9 +758,6 @@ class FileManager {
   }
 
   refreshFileList() {
-    // Track files before refresh to detect new ones
-    const previousFiles = new Set(this.files.keys());
-
     // Load files from localStorage
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -784,13 +773,6 @@ class FileManager {
           });
         }
       }
-    }
-
-    // WOS-FILE-EDIT-01: Auto-select newly created files
-    const newFiles = Array.from(this.files.keys()).filter(name => !previousFiles.has(name));
-    if (newFiles.length > 0 && !this.selectedFile) {
-      // Auto-select the first new file if nothing is currently selected
-      this.selectFile(newFiles[0]);
     }
 
     this.renderFileList();
@@ -1993,6 +1975,12 @@ class Terminal {
         this.updateSystemInfo();
         // WOS-301: Update filesystem list after command execution (for file creation/deletion)
         this.updateFilesystemList();
+
+        // WOS-304: Notify tutorial of command execution
+        if (window.interactiveTutorial && window.interactiveTutorial.handleTerminalCommand) {
+          const commandName = cmd.trim().split(/\s+/)[0]; // Extract first word (command name)
+          window.interactiveTutorial.handleTerminalCommand(commandName);
+        }
       } catch (error) {
         this.printLine(`Error: ${error}`, 'error');
 
@@ -3271,7 +3259,1199 @@ class TimeTravelDebugger {
   }
 }
 
+/**
+ * WOS-303: Learning Objectives & Test Status Panel
+ *
+ * Manages the integrated learning environment including:
+ * - Phase tracker with progress visualization
+ * - Task list with expand/collapse
+ * - Integrated test runner
+ * - Progressive hint system
+ * - Lock/unlock mechanics
+ */
+class LearningObjectives {
+  constructor() {
+    tracer.debug('PANEL', 'LearningObjectives constructor called');
 
+    // DOM elements
+    this.panel = document.getElementById('panel-learning-objectives');
+    this.phaseTracker = document.getElementById('phase-tracker');
+    this.taskList = document.getElementById('task-list');
+    this.taskListTitle = document.getElementById('task-list-title');
+    this.testRunner = document.getElementById('test-runner');
+    this.testRunnerOutput = document.getElementById('test-runner-output');
+    this.testSummary = document.getElementById('test-summary');
+    this.testSummaryText = document.getElementById('test-summary-text');
+    this.testErrorDisplay = document.getElementById('test-error-display');
+    this.testErrorContent = document.getElementById('test-error-content');
+    this.btnRunAllTests = document.getElementById('btn-run-all-tests');
+    this.celebrationAnimation = document.getElementById('celebration-animation');
+
+    // State
+    this.roadmapData = null;
+    this.selectedPhaseId = null;
+    this.expandedTasks = new Set();
+    this.testRunning = false;
+    this.completedPhases = new Set();
+    this.completedTasks = new Set();
+    this.hintLevels = new Map(); // taskId -> currentHintLevel
+
+    // Initialize
+    this.loadPreferences();
+    this.loadRoadmapData();
+    this.attachEventListeners();
+
+    tracer.info('PANEL', 'LearningObjectives initialized');
+  }
+
+  /**
+   * Load roadmap.yaml data
+   * For now, we'll use mock data matching roadmap.yaml structure
+   * In production, this would fetch and parse the YAML file
+   */
+  async loadRoadmapData() {
+    tracer.debug('PANEL', 'Loading roadmap data');
+
+    try {
+      // Mock data matching roadmap.yaml structure
+      // In production, fetch /roadmap.yaml and parse with js-yaml
+      this.roadmapData = {
+        phases: [
+          {
+            id: 'phase-1',
+            name: 'Foundation',
+            goal: 'Core kernel structures with Toyota Way quality framework',
+            priority: 'critical',
+            duration: '3_weeks',
+            cycles: 15,
+            tickets: [
+              {
+                id: 'WOS-001',
+                title: 'Project scaffolding and quality gate infrastructure',
+                priority: 'critical',
+                cycle: '1',
+                time_estimate: '4_hours',
+                status: 'completed',
+                tests: [
+                  'test_workspace_structure',
+                  'test_quality_gates_configured',
+                  'test_wasm_target_available'
+                ],
+                hints: [
+                  { level: 1, content: 'Start with Cargo workspace setup' },
+                  { level: 2, content: 'Configure PMAT quality gates' },
+                  { level: 3, content: 'Set up pre-commit hooks' }
+                ]
+              },
+              {
+                id: 'WOS-002',
+                title: 'Kernel state types and serialization',
+                priority: 'critical',
+                cycle: '2',
+                time_estimate: '3_hours',
+                status: 'completed',
+                tests: [
+                  'test_kernel_state_creation',
+                  'test_process_serialization_roundtrip',
+                  'test_process_state_transitions'
+                ],
+                hints: [
+                  { level: 1, content: 'Define KernelState struct' },
+                  { level: 2, content: 'Implement Serialize/Deserialize' },
+                  { level: 3, content: 'Use im-rs for persistent data structures' }
+                ]
+              }
+            ]
+          },
+          {
+            id: 'phase-10',
+            name: 'Enhanced Integrated Learning Environment',
+            goal: 'Transform browser interface into research-backed pedagogical workspace',
+            priority: 'high',
+            duration: '4_weeks',
+            cycles: 20,
+            tickets: [
+              {
+                id: 'WOS-300',
+                title: 'Monaco editor integration for accessibility',
+                priority: 'high',
+                cycle: '1-2',
+                time_estimate: '8_hours',
+                status: 'completed',
+                tests: [
+                  'test_monaco_editor_loads',
+                  'test_monaco_syntax_highlighting',
+                  'test_monaco_intellisense',
+                  'test_monaco_multicursor',
+                  'test_monaco_accessibility',
+                  'e2e_monaco_edit_file'
+                ],
+                hints: [
+                  { level: 1, content: 'Start by reading the Monaco Editor documentation' },
+                  { level: 2, content: 'Look at the existing vim editor integration for guidance' },
+                  { level: 3, content: 'Use the monaco-editor npm package, initialized after WASM loads' }
+                ]
+              },
+              {
+                id: 'WOS-301',
+                title: 'Visual System Monitor panel (Mieruka)',
+                priority: 'critical',
+                cycle: '3-5',
+                time_estimate: '12_hours',
+                status: 'completed',
+                tests: [
+                  'test_process_table_rendering',
+                  'test_process_table_live_updates',
+                  'test_memory_view_bars',
+                  'test_filesystem_tree',
+                  'test_click_to_inspect',
+                  'e2e_visual_monitor_interactions'
+                ],
+                hints: [
+                  { level: 1, content: 'Review Toyota Way principle of Visual Control (Mieruka)' },
+                  { level: 2, content: 'Use setInterval for live updates at 100ms intervals' },
+                  { level: 3, content: 'Call wos.getCurrentState() and parse JSON for live data' }
+                ]
+              },
+              {
+                id: 'WOS-302',
+                title: 'Time-travel debugger UI controls',
+                priority: 'high',
+                cycle: '6-8',
+                time_estimate: '12_hours',
+                status: 'completed',
+                tests: [
+                  'test_timeline_slider',
+                  'test_event_log_filtering',
+                  'test_state_inspector',
+                  'test_keyboard_navigation',
+                  'test_playback_controls',
+                  'e2e_timetravel_workflow'
+                ],
+                hints: [
+                  { level: 1, content: 'Study omniscient debugging concepts' },
+                  { level: 2, content: 'Use range input slider for timeline scrubbing' },
+                  { level: 3, content: 'Call wos.getKernelHistory() and wos.jumpToPosition(pos)' }
+                ]
+              },
+              {
+                id: 'WOS-303',
+                title: 'Learning Objectives & Test Status panel',
+                priority: 'high',
+                cycle: '9-11',
+                time_estimate: '12_hours',
+                status: 'in_progress',
+                tests: [
+                  'test_phase_tracker_rendering',
+                  'test_task_list_expand_collapse',
+                  'test_integrated_test_runner',
+                  'test_progressive_hints',
+                  'test_lock_unlock_phases',
+                  'e2e_learning_objectives_workflow'
+                ],
+                hints: [
+                  { level: 1, content: 'Review mastery-based learning research (no extrinsic rewards)' },
+                  { level: 2, content: 'Parse roadmap.yaml for phase and task data' },
+                  { level: 3, content: 'Use localStorage to persist user progress and preferences' }
+                ]
+              },
+              {
+                id: 'WOS-304',
+                title: 'Interactive tutorial (first-run experience)',
+                priority: 'high',
+                cycle: '12-13',
+                time_estimate: '8_hours',
+                status: 'pending',
+                tests: [
+                  'test_tutorial_step_navigation',
+                  'test_tutorial_highlights',
+                  'test_tutorial_skip',
+                  'test_tutorial_retake',
+                  'e2e_tutorial_complete_workflow'
+                ],
+                hints: [
+                  { level: 1, content: 'Research interactive onboarding best practices' },
+                  { level: 2, content: 'Create 6-step tutorial covering all major features' },
+                  { level: 3, content: 'Use highlight overlays with glowing borders (CSS box-shadow)' }
+                ]
+              },
+              {
+                id: 'WOS-305',
+                title: 'Contextual help system',
+                priority: 'medium',
+                cycle: '14-15',
+                time_estimate: '6_hours',
+                status: 'pending',
+                tests: [
+                  'test_help_command_documentation',
+                  'test_tooltip_hints',
+                  'test_help_search',
+                  'e2e_help_system_usage'
+                ],
+                hints: [
+                  { level: 1, content: 'Study ARIA tooltip accessibility requirements' },
+                  { level: 2, content: 'Implement help <command> in shell for detailed docs' },
+                  { level: 3, content: 'Add side panel with full-text search capability' }
+                ]
+              },
+              {
+                id: 'WOS-306',
+                title: 'Progressive disclosure UI layout',
+                priority: 'high',
+                cycle: '16',
+                time_estimate: '4_hours',
+                status: 'pending',
+                tests: [
+                  'test_initial_layout_defaults',
+                  'test_panel_collapse_expand',
+                  'test_layout_preference_persistence',
+                  'test_reduced_motion_support'
+                ],
+                hints: [
+                  { level: 1, content: 'Study cognitive load theory and graduated reveal patterns' },
+                  { level: 2, content: 'Default: Terminal + Learning Objectives expanded' },
+                  { level: 3, content: 'Check prefers-reduced-motion media query for animations' }
+                ]
+              }
+            ]
+          }
+        ]
+      };
+
+      // Mark completed tasks based on mock data
+      this.roadmapData.phases.forEach(phase => {
+        phase.tickets.forEach(task => {
+          if (task.status === 'completed') {
+            this.completedTasks.add(task.id);
+          }
+        });
+      });
+
+      // Render initial UI
+      this.renderPhaseTracker();
+
+      // Select first phase by default if none selected
+      if (!this.selectedPhaseId && this.roadmapData.phases.length > 0) {
+        this.selectPhase(this.roadmapData.phases[0].id);
+      }
+
+      tracer.info('PANEL', 'Roadmap data loaded successfully');
+    } catch (error) {
+      tracer.error('PANEL', 'Failed to load roadmap data', { error: error.message });
+      this.phaseTracker.innerHTML = '<div class="error">Failed to load curriculum data</div>';
+    }
+  }
+
+  /**
+   * Render phase tracker with progress bars
+   */
+  renderPhaseTracker() {
+    tracer.debug('PANEL', 'Rendering phase tracker');
+
+    if (!this.roadmapData || !this.roadmapData.phases) {
+      this.phaseTracker.innerHTML = '<div class="no-data">No phases available</div>';
+      return;
+    }
+
+    const html = this.roadmapData.phases.map(phase => {
+      const totalTasks = phase.tickets.length;
+      const completedCount = phase.tickets.filter(t => t.status === 'completed').length;
+      const progress = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
+      const isCompleted = completedCount === totalTasks;
+      const isActive = phase.id === this.selectedPhaseId;
+      const isLocked = false; // For now, no locking logic
+
+      let statusIcon = '→'; // in progress
+      if (isCompleted) statusIcon = '✓';
+      if (isLocked) statusIcon = '🔒';
+
+      return `
+        <div class="phase-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''} ${isLocked ? 'locked' : ''}"
+             data-phase-id="${phase.id}">
+          <div class="phase-header">
+            <span class="phase-status-icon">${statusIcon}</span>
+            <span class="phase-name">${phase.name}</span>
+          </div>
+          <div class="phase-progress-bar">
+            <div class="progress-fill" style="width: ${progress}%"></div>
+          </div>
+          <div class="phase-stats">
+            <span class="phase-progress-text">${completedCount}/${totalTasks} tasks</span>
+            <span class="phase-progress-percent phase-percentage">${Math.round(progress)}%</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    this.phaseTracker.innerHTML = html;
+
+    // Attach click handlers
+    this.phaseTracker.querySelectorAll('.phase-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        const phaseId = item.dataset.phaseId;
+        const isLocked = item.classList.contains('locked');
+        if (!isLocked) {
+          this.selectPhase(phaseId);
+        }
+      });
+    });
+  }
+
+  /**
+   * Select a phase and render its task list
+   */
+  selectPhase(phaseId) {
+    tracer.debug('PANEL', `Selecting phase: ${phaseId}`);
+
+    this.selectedPhaseId = phaseId;
+    this.savePreferences();
+
+    // Update phase tracker active state
+    this.phaseTracker.querySelectorAll('.phase-item').forEach(item => {
+      item.classList.toggle('active', item.dataset.phaseId === phaseId);
+    });
+
+    this.renderTaskList();
+  }
+
+  /**
+   * Render task list for selected phase
+   */
+  renderTaskList() {
+    tracer.debug('PANEL', 'Rendering task list');
+
+    if (!this.selectedPhaseId) {
+      this.taskList.innerHTML = '<div class="no-data">Select a phase to view tasks</div>';
+      this.taskListTitle.textContent = 'Select a Phase';
+      return;
+    }
+
+    const phase = this.roadmapData.phases.find(p => p.id === this.selectedPhaseId);
+    if (!phase) {
+      this.taskList.innerHTML = '<div class="no-data">Phase not found</div>';
+      return;
+    }
+
+    this.taskListTitle.textContent = phase.name;
+
+    const html = phase.tickets.map(task => {
+      const isCompleted = task.status === 'completed';
+      const isInProgress = task.status === 'in_progress';
+      const isExpanded = this.expandedTasks.has(task.id);
+      const currentHintLevel = this.hintLevels.get(task.id) || 0;
+      const testCount = task.tests ? task.tests.length : 0;
+      const passedTests = isCompleted ? testCount : 0;
+
+      let statusIcon = '○'; // pending
+      if (isCompleted) statusIcon = '✓';
+      if (isInProgress) statusIcon = '→';
+
+      const testsHtml = task.tests ? task.tests.map(test =>
+        `<li class="test-item">${test}</li>`
+      ).join('') : '';
+
+      const hintsHtml = task.hints ? task.hints
+        .filter((hint, idx) => idx < currentHintLevel)
+        .map((hint, idx) =>
+          `<div class="hint-item hint-level-${idx + 1}">
+            <strong>Hint ${idx + 1}:</strong> ${hint.content}
+          </div>`
+        ).join('') : '';
+
+      const showMoreHints = task.hints && currentHintLevel < task.hints.length;
+
+      return `
+        <div class="task-item ${isCompleted ? 'completed' : ''} ${isInProgress ? 'in-progress' : ''} ${isExpanded ? 'expanded' : ''}"
+             data-task-id="${task.id}">
+          <div class="task-header">
+            <span class="task-status-icon">${statusIcon}</span>
+            <span class="task-id">${task.id}</span>
+            <span class="task-title">${task.title}</span>
+            <span class="task-test-count">${passedTests}/${testCount}</span>
+            <span class="task-estimate">${task.time_estimate}</span>
+          </div>
+          <div class="task-details" style="display: ${isExpanded ? 'block' : 'none'}">
+            <div class="task-tests">
+              <h5>Tests:</h5>
+              <ul class="test-list">${testsHtml}</ul>
+              <button class="btn btn-run-tests" data-task-id="${task.id}">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+                Run Tests
+              </button>
+            </div>
+            <div class="task-hints">
+              <h5>Progressive Hints:</h5>
+              <div class="hints-container">${hintsHtml}</div>
+              ${showMoreHints ? `
+                <button class="btn btn-show-hint" data-task-id="${task.id}">
+                  Show Next Hint (${currentHintLevel + 1}/${task.hints.length})
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    this.taskList.innerHTML = html;
+
+    // Attach event handlers
+    this.taskList.querySelectorAll('.task-header').forEach(header => {
+      header.addEventListener('click', (e) => {
+        const taskItem = header.closest('.task-item');
+        const taskId = taskItem.dataset.taskId;
+        this.toggleTaskExpansion(taskId);
+      });
+    });
+
+    this.taskList.querySelectorAll('.btn-run-tests').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const taskId = btn.dataset.taskId;
+        this.runTests(taskId);
+      });
+    });
+
+    this.taskList.querySelectorAll('.btn-show-hint').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const taskId = btn.dataset.taskId;
+        this.showNextHint(taskId);
+      });
+    });
+  }
+
+  /**
+   * Toggle task expansion
+   */
+  toggleTaskExpansion(taskId) {
+    tracer.debug('PANEL', `Toggling task expansion: ${taskId}`);
+
+    if (this.expandedTasks.has(taskId)) {
+      this.expandedTasks.delete(taskId);
+    } else {
+      this.expandedTasks.add(taskId);
+    }
+
+    this.savePreferences();
+    this.renderTaskList();
+  }
+
+  /**
+   * Show next progressive hint
+   */
+  showNextHint(taskId) {
+    tracer.debug('PANEL', `Showing next hint for: ${taskId}`);
+
+    const currentLevel = this.hintLevels.get(taskId) || 0;
+    this.hintLevels.set(taskId, currentLevel + 1);
+
+    this.savePreferences();
+    this.renderTaskList();
+  }
+
+  /**
+   * Run tests for a specific task
+   */
+  async runTests(taskId) {
+    if (this.testRunning) {
+      tracer.warn('PANEL', 'Test already running, ignoring request');
+      return;
+    }
+
+    tracer.info('PANEL', `Running tests for task: ${taskId}`);
+    this.testRunning = true;
+
+    // Find task
+    const phase = this.roadmapData.phases.find(p => p.id === this.selectedPhaseId);
+    const task = phase?.tickets.find(t => t.id === taskId);
+
+    if (!task) {
+      tracer.error('PANEL', `Task not found: ${taskId}`);
+      return;
+    }
+
+    // Show loading state
+    this.testRunnerOutput.innerHTML = '<div class="loading">Running tests...</div>';
+    this.testSummary.classList.add('hidden');
+    this.testErrorDisplay.classList.add('hidden');
+
+    try {
+      // Mock test execution (in production, this would run Playwright or cargo test)
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Mock results
+      const totalTests = task.tests.length;
+      const passed = Math.floor(Math.random() * totalTests) + 1;
+      const failed = totalTests - passed;
+
+      // Display results
+      const resultHtml = task.tests.map((test, idx) => {
+        const isPassed = idx < passed;
+        return `
+          <div class="test-result ${isPassed ? 'passed' : 'failed'}">
+            <span class="test-result-icon">${isPassed ? '✓' : '✗'}</span>
+            <span class="test-name">${test}</span>
+          </div>
+        `;
+      }).join('');
+
+      this.testRunnerOutput.innerHTML = resultHtml;
+
+      // Show summary
+      this.testSummary.classList.remove('hidden');
+      const summaryParts = [];
+      if (passed > 0) summaryParts.push(`${passed} passed`);
+      if (failed > 0) summaryParts.push(`${failed} failing`);
+      this.testSummaryText.textContent = summaryParts.join(', ');
+
+      // If there are failures, show error details
+      if (failed > 0) {
+        this.testErrorDisplay.classList.remove('hidden');
+        this.testErrorContent.innerHTML = `
+          <pre>Example test failure:
+Expected element to be visible
+Received: element not found
+
+Hint: Check if panel is collapsed in beforeEach hook</pre>
+        `;
+      }
+
+      // If all tests pass, show celebration
+      if (failed === 0) {
+        this.showCelebration(`${task.id} Complete!`, 'All tests passing!');
+      }
+
+      tracer.info('PANEL', `Test execution complete: ${passed}/${totalTests} passed`);
+
+    } catch (error) {
+      tracer.error('PANEL', 'Test execution failed', { error: error.message });
+
+      this.testRunnerOutput.innerHTML = `<div class="error">Test execution failed: ${error.message}</div>`;
+      this.testErrorDisplay.classList.remove('hidden');
+      this.testErrorContent.textContent = error.stack || error.message;
+
+    } finally {
+      this.testRunning = false;
+    }
+  }
+
+  /**
+   * Run all tests for current phase
+   */
+  async runAllTests() {
+    if (this.testRunning) {
+      tracer.warn('PANEL', 'Test already running, ignoring request');
+      return;
+    }
+
+    if (!this.selectedPhaseId) {
+      tracer.warn('PANEL', 'No phase selected');
+      return;
+    }
+
+    tracer.info('PANEL', `Running all tests for phase: ${this.selectedPhaseId}`);
+    this.testRunning = true;
+
+    const phase = this.roadmapData.phases.find(p => p.id === this.selectedPhaseId);
+    if (!phase) return;
+
+    // Show loading
+    this.testRunnerOutput.innerHTML = '<div class="loading">Running all phase tests...</div>';
+    this.testSummary.classList.add('hidden');
+    this.testErrorDisplay.classList.add('hidden');
+
+    try {
+      // Mock execution
+      await new Promise(resolve => setTimeout(resolve, 2500));
+
+      // Aggregate results
+      let totalTests = 0;
+      let totalPassed = 0;
+
+      phase.tickets.forEach(task => {
+        totalTests += task.tests.length;
+        totalPassed += task.status === 'completed' ? task.tests.length : Math.floor(task.tests.length * 0.7);
+      });
+
+      const totalFailed = totalTests - totalPassed;
+
+      this.testRunnerOutput.innerHTML = `
+        <div class="test-result ${totalFailed === 0 ? 'passed' : 'failed'}">
+          <strong>Phase ${this.selectedPhaseId} Test Results:</strong>
+          <div>${totalPassed} passed, ${totalFailed} failed out of ${totalTests} tests</div>
+        </div>
+      `;
+
+      this.testSummary.classList.remove('hidden');
+      this.testSummaryText.textContent = `${totalPassed}/${totalTests} tests passed (${Math.round(totalPassed/totalTests*100)}%)`;
+
+      if (totalFailed === 0) {
+        this.showCelebration('Phase Complete!', 'All tests passing!');
+        this.completedPhases.add(this.selectedPhaseId);
+        this.savePreferences();
+      }
+
+    } catch (error) {
+      tracer.error('PANEL', 'Phase test execution failed', { error: error.message });
+      this.testRunnerOutput.innerHTML = `<div class="error">Failed: ${error.message}</div>`;
+
+    } finally {
+      this.testRunning = false;
+    }
+  }
+
+  /**
+   * Show celebration animation
+   */
+  showCelebration(title, message) {
+    tracer.info('PANEL', `Showing celebration: ${title}`);
+
+    const titleEl = this.celebrationAnimation.querySelector('.celebration-title');
+    const messageEl = this.celebrationAnimation.querySelector('.celebration-message');
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+
+    this.celebrationAnimation.classList.remove('hidden');
+
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+      this.celebrationAnimation.classList.add('hidden');
+    }, 3000);
+  }
+
+  /**
+   * Attach global event listeners
+   */
+  attachEventListeners() {
+    // Run all tests button
+    if (this.btnRunAllTests) {
+      this.btnRunAllTests.addEventListener('click', () => {
+        this.runAllTests();
+      });
+    }
+
+    // Celebration click to dismiss
+    if (this.celebrationAnimation) {
+      this.celebrationAnimation.addEventListener('click', () => {
+        this.celebrationAnimation.classList.add('hidden');
+      });
+    }
+  }
+
+  /**
+   * Load preferences from localStorage
+   */
+  loadPreferences() {
+    try {
+      const prefs = localStorage.getItem('wos-learning-objectives-prefs');
+      if (prefs) {
+        const data = JSON.parse(prefs);
+        this.selectedPhaseId = data.selectedPhaseId || null;
+        this.expandedTasks = new Set(data.expandedTasks || []);
+        this.completedPhases = new Set(data.completedPhases || []);
+        this.completedTasks = new Set(data.completedTasks || []);
+        this.hintLevels = new Map(data.hintLevels || []);
+
+        tracer.debug('PANEL', 'Loaded preferences from localStorage');
+      }
+    } catch (error) {
+      tracer.warn('PANEL', 'Failed to load preferences', { error: error.message });
+    }
+  }
+
+  /**
+   * Save preferences to localStorage
+   */
+  savePreferences() {
+    try {
+      const data = {
+        selectedPhaseId: this.selectedPhaseId,
+        expandedTasks: Array.from(this.expandedTasks),
+        completedPhases: Array.from(this.completedPhases),
+        completedTasks: Array.from(this.completedTasks),
+        hintLevels: Array.from(this.hintLevels.entries())
+      };
+
+      localStorage.setItem('wos-learning-objectives-prefs', JSON.stringify(data));
+      tracer.debug('PANEL', 'Saved preferences to localStorage');
+    } catch (error) {
+      tracer.warn('PANEL', 'Failed to save preferences', { error: error.message });
+    }
+  }
+
+  /**
+   * Update progress for a specific task
+   */
+  updateTaskProgress(taskId, status) {
+    tracer.info('PANEL', `Updating task ${taskId} progress: ${status}`);
+
+    // Find and update task
+    this.roadmapData.phases.forEach(phase => {
+      const task = phase.tickets.find(t => t.id === taskId);
+      if (task) {
+        task.status = status;
+        if (status === 'completed') {
+          this.completedTasks.add(taskId);
+        }
+      }
+    });
+
+    this.savePreferences();
+    this.renderPhaseTracker();
+    this.renderTaskList();
+  }
+}
+
+/**
+ * WOS-304: Interactive Tutorial (First-Run Experience)
+ *
+ * Manages 5-minute guided walkthrough with:
+ * - 6-step tutorial flow (Welcome → Terminal → Monitor → Debugger → Tests → Completion)
+ * - UI element highlighting with glowing borders
+ * - Skip/retake functionality
+ * - localStorage persistence
+ * - Full keyboard navigation
+ * - Screen reader support
+ */
+class InteractiveTutorial {
+  constructor() {
+    tracer.debug('TUTORIAL', 'InteractiveTutorial constructor called');
+
+    // DOM elements
+    this.overlay = document.getElementById('tutorial-overlay');
+    this.stepIndicator = document.getElementById('tutorial-step-indicator');
+    this.tutorialContent = document.querySelector('.tutorial-content');
+    this.announcer = document.getElementById('tutorial-announcer');
+    this.helpButton = document.getElementById('btn-help');
+    this.helpMenu = document.getElementById('help-menu');
+
+    // Tutorial steps
+    this.steps = ['welcome', 'terminal', 'monitor', 'debugger', 'tests', 'completion'];
+    this.currentStepIndex = 0;
+
+    // State
+    this.isActive = false;
+    this.highlightedElement = null;
+
+    // Check if tutorial should be shown
+    this.checkFirstVisit();
+
+    // Attach event listeners
+    this.attachEventListeners();
+
+    tracer.info('TUTORIAL', 'InteractiveTutorial initialized');
+  }
+
+  /**
+   * Check if this is first visit and show tutorial
+   */
+  checkFirstVisit() {
+    const completed = localStorage.getItem('wos-tutorial-completed');
+    const savedStep = localStorage.getItem('wos-tutorial-step');
+
+    if (!completed) {
+      // First visit or tutorial not completed
+      if (savedStep) {
+        // Resume from saved step
+        const stepIndex = this.steps.indexOf(savedStep);
+        if (stepIndex !== -1) {
+          this.currentStepIndex = stepIndex;
+        }
+      }
+
+      // Show tutorial after a short delay to let app initialize
+      setTimeout(() => {
+        this.show();
+      }, 500);
+    } else {
+      // Tutorial already completed, show help button
+      if (this.helpButton) {
+        this.helpButton.classList.remove('hidden');
+      }
+    }
+  }
+
+  /**
+   * Show tutorial overlay
+   */
+  show() {
+    tracer.info('TUTORIAL', 'Showing tutorial overlay');
+    this.isActive = true;
+    this.overlay.classList.remove('hidden');
+    this.renderCurrentStep();
+
+    // Focus Skip button initially so Tab moves to Begin Tour (WOS-304)
+    setTimeout(() => {
+      const skipButton = document.getElementById('btn-skip-tutorial');
+      if (skipButton) {
+        skipButton.focus();
+        tracer.debug('TUTORIAL', 'Focused Skip button for Tab navigation to Begin Tour');
+      }
+    }, 100);
+  }
+
+  /**
+   * Hide tutorial overlay
+   */
+  hide() {
+    tracer.info('TUTORIAL', 'Hiding tutorial overlay');
+    this.isActive = false;
+    this.overlay.classList.add('hidden');
+    this.clearHighlight();
+
+    // Show help button after tutorial
+    if (this.helpButton) {
+      this.helpButton.classList.remove('hidden');
+    }
+  }
+
+  /**
+   * Render current tutorial step
+   */
+  renderCurrentStep() {
+    const currentStep = this.steps[this.currentStepIndex];
+    tracer.debug('TUTORIAL', `Rendering step: ${currentStep} (${this.currentStepIndex + 1}/${this.steps.length})`);
+
+    // Update progress indicator
+    this.stepIndicator.textContent = `Step ${this.currentStepIndex + 1} of ${this.steps.length}`;
+
+    // Hide all steps and clear button visibility states
+    this.tutorialContent.querySelectorAll('.tutorial-step').forEach(step => {
+      step.classList.add('hidden');
+      // Clear hidden class from buttons so they can be properly shown/hidden when step becomes visible
+      step.querySelectorAll('.btn-tutorial-back, .btn-tutorial-next').forEach(btn => {
+        btn.classList.remove('hidden');
+      });
+    });
+
+    // Show current step
+    const stepElement = this.tutorialContent.querySelector(`[data-step="${currentStep}"]`);
+    if (stepElement) {
+      stepElement.classList.remove('hidden');
+
+      // Show/hide back button based on step
+      const backButtons = stepElement.querySelectorAll('.btn-tutorial-back');
+      backButtons.forEach(btn => {
+        if (this.currentStepIndex === 0) {
+          btn.classList.add('hidden');
+        } else {
+          btn.classList.remove('hidden');
+        }
+      });
+    }
+
+    // Apply highlighting based on step
+    this.applyStepHighlight(currentStep);
+
+    // Announce to screen readers
+    this.announce(`Step ${this.currentStepIndex + 1} of ${this.steps.length}: ${currentStep}`);
+
+    // Save progress
+    localStorage.setItem('wos-tutorial-step', currentStep);
+
+    // WOS-304: Mark tutorial as completed when reaching completion step
+    if (currentStep === 'completion') {
+      localStorage.setItem('wos-tutorial-completed', 'true');
+      tracer.info('TUTORIAL', 'Tutorial marked as completed in localStorage');
+    }
+  }
+
+  /**
+   * Apply UI highlighting for current step
+   * WOS-304: Integrates with WOS-306 progressive disclosure
+   */
+  applyStepHighlight(step) {
+    // Clear previous highlight
+    this.clearHighlight();
+
+    let targetElement = null;
+
+    switch (step) {
+      case 'terminal':
+        targetElement = document.getElementById('terminal');
+        break;
+      case 'monitor':
+        targetElement = document.getElementById('panel-system-monitor');
+        break;
+      case 'debugger':
+        targetElement = document.getElementById('panel-time-travel-debugger');
+        // WOS-304: Load demo trace data for tutorial
+        this.loadDemoTraceData();
+        break;
+      case 'tests':
+        targetElement = document.getElementById('panel-learning-objectives');
+        break;
+      default:
+        // No highlighting for welcome and completion steps
+        break;
+    }
+
+    if (targetElement) {
+      // WOS-304 + WOS-306: Expand collapsed panels before highlighting
+      // Check if target is a panel that might be collapsed
+      if (targetElement.classList.contains('file-panel') &&
+          targetElement.classList.contains('collapsed')) {
+        targetElement.classList.remove('collapsed');
+        tracer.debug('TUTORIAL', `Expanded collapsed panel for highlighting: ${targetElement.id}`);
+      }
+
+      targetElement.classList.add('tutorial-highlight');
+      this.highlightedElement = targetElement;
+      tracer.debug('TUTORIAL', `Highlighted element: ${targetElement.id}`);
+    }
+  }
+
+  /**
+   * Clear UI highlighting
+   */
+  clearHighlight() {
+    if (this.highlightedElement) {
+      this.highlightedElement.classList.remove('tutorial-highlight');
+      this.highlightedElement = null;
+    }
+  }
+
+  /**
+   * Load demo trace data for tutorial debugger step (WOS-304)
+   */
+  loadDemoTraceData() {
+    const eventLogList = document.getElementById('event-log-list');
+    if (!eventLogList) {
+      tracer.warn('TUTORIAL', 'event-log-list element not found');
+      return;
+    }
+
+    // Clear any existing demo data
+    eventLogList.innerHTML = '';
+    eventLogList.classList.remove('hidden');
+
+    // Create demo trace entries
+    const demoTraces = [
+      { time: '0ms', pid: 1, syscall: 'Fork', result: 'Success' },
+      { time: '5ms', pid: 2, syscall: 'Exec', result: 'Success' },
+      { time: '12ms', pid: 2, syscall: 'Write', result: 'Success' },
+      { time: '18ms', pid: 1, syscall: 'Read', result: 'Success' },
+      { time: '25ms', pid: 2, syscall: 'Exit', result: 'Success' }
+    ];
+
+    demoTraces.forEach(trace => {
+      const entry = document.createElement('div');
+      entry.className = 'event-log-entry';
+      entry.textContent = `${trace.time} PID=${trace.pid} ${trace.syscall} (${trace.result})`;
+      eventLogList.appendChild(entry);
+    });
+
+    tracer.info('TUTORIAL', `Loaded ${demoTraces.length} demo trace entries`);
+  }
+
+  /**
+   * Advance to next step
+   */
+  nextStep() {
+    if (this.currentStepIndex < this.steps.length - 1) {
+      this.currentStepIndex++;
+      this.renderCurrentStep();
+    }
+  }
+
+  /**
+   * Go back to previous step
+   */
+  previousStep() {
+    if (this.currentStepIndex > 0) {
+      this.currentStepIndex--;
+      this.renderCurrentStep();
+    }
+  }
+
+  /**
+   * Skip tutorial
+   */
+  skip() {
+    tracer.info('TUTORIAL', 'Tutorial skipped by user');
+    this.markComplete();
+    this.hide();
+  }
+
+  /**
+   * Complete tutorial
+   */
+  complete() {
+    tracer.info('TUTORIAL', 'Tutorial completed');
+    this.markComplete();
+    this.hide();
+  }
+
+  /**
+   * Mark tutorial as completed in localStorage
+   */
+  markComplete() {
+    localStorage.setItem('wos-tutorial-completed', 'true');
+    localStorage.removeItem('wos-tutorial-step');
+  }
+
+  /**
+   * Retake tutorial from beginning
+   */
+  retake() {
+    tracer.info('TUTORIAL', 'Retaking tutorial');
+
+    // Clear completion state
+    localStorage.removeItem('wos-tutorial-completed');
+    localStorage.removeItem('wos-tutorial-step');
+
+    // Reset to first step
+    this.currentStepIndex = 0;
+
+    // Hide help menu
+    if (this.helpMenu) {
+      this.helpMenu.classList.add('hidden');
+    }
+
+    // Show tutorial
+    this.show();
+  }
+
+  /**
+   * Announce message to screen readers
+   */
+  announce(message) {
+    if (this.announcer) {
+      this.announcer.textContent = message;
+    }
+  }
+
+  /**
+   * Attach event listeners
+   */
+  attachEventListeners() {
+    // Welcome step buttons
+    const beginButton = document.getElementById('btn-begin-tutorial');
+    if (beginButton) {
+      beginButton.addEventListener('click', () => {
+        this.nextStep();
+      });
+    }
+
+    const skipButton = document.getElementById('btn-skip-tutorial');
+    if (skipButton) {
+      skipButton.addEventListener('click', () => {
+        this.skip();
+      });
+    }
+
+    // Navigation buttons (Next) - delegate to handle dynamic button
+    document.addEventListener('click', (e) => {
+      if (e.target && e.target.classList.contains('btn-tutorial-next')) {
+        this.nextStep();
+      }
+    });
+
+    // Navigation buttons (Back) - delegate to handle dynamic button
+    document.addEventListener('click', (e) => {
+      if (e.target && e.target.classList.contains('btn-tutorial-back')) {
+        this.previousStep();
+      }
+    });
+
+    // Completion step buttons
+    const retakeButton = document.getElementById('btn-retake-tutorial');
+    if (retakeButton) {
+      retakeButton.addEventListener('click', () => {
+        this.retake();
+      });
+    }
+
+    const startCodingButton = document.getElementById('btn-start-coding');
+    if (startCodingButton) {
+      startCodingButton.addEventListener('click', () => {
+        this.complete();
+      });
+    }
+
+    // Close button
+    const closeButton = document.getElementById('btn-tutorial-close');
+    if (closeButton) {
+      closeButton.addEventListener('click', () => {
+        this.skip();
+      });
+    }
+
+    // Help menu button
+    if (this.helpButton) {
+      this.helpButton.addEventListener('click', () => {
+        if (this.helpMenu) {
+          this.helpMenu.classList.toggle('hidden');
+        }
+      });
+    }
+
+    // Retake from help menu - removed (simplified to just "Made by Pragmatic AI Labs" link)
+
+    // Close help menu when clicking outside
+    document.addEventListener('click', (e) => {
+      if (this.helpMenu && !this.helpMenu.classList.contains('hidden')) {
+        if (!this.helpMenu.contains(e.target) && !this.helpButton.contains(e.target)) {
+          this.helpMenu.classList.add('hidden');
+        }
+      }
+    });
+
+    // WOS-304: Listen for terminal commands to auto-advance tutorial
+    const terminalInput = document.getElementById('terminal-input');
+    if (terminalInput) {
+      terminalInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && this.isActive) {
+          const command = terminalInput.value.trim();
+          this.handleTerminalCommand(command);
+        }
+      });
+    }
+
+    // Keyboard navigation
+    this.overlay.addEventListener('keydown', (e) => {
+      if (!this.isActive) return;
+
+      switch (e.key) {
+        case 'Escape':
+          this.skip();
+          break;
+        case 'ArrowLeft':
+          if (this.currentStepIndex > 0) {
+            e.preventDefault();
+            this.previousStep();
+          }
+          break;
+        case 'ArrowRight':
+          if (this.currentStepIndex < this.steps.length - 1) {
+            e.preventDefault();
+            this.nextStep();
+          }
+          break;
+      }
+    });
+  }
+
+  /**
+   * Handle terminal command during tutorial
+   */
+  handleTerminalCommand(command) {
+    const currentStep = this.steps[this.currentStepIndex];
+
+    // Auto-advance on correct commands
+    if (currentStep === 'terminal' && command === 'ls') {
+      tracer.debug('TUTORIAL', 'User typed ls, auto-advancing from terminal step');
+      setTimeout(() => this.nextStep(), 500);
+    } else if (currentStep === 'monitor' && command === 'ps') {
+      tracer.debug('TUTORIAL', 'User typed ps, auto-advancing from monitor step');
+      setTimeout(() => this.nextStep(), 500);
+    }
+  }
+}
 
 // WOS-305: Contextual Help Panel
 class HelpPanel {
@@ -3716,6 +4896,16 @@ async function initApp() {
     const timeTravelDebugger = new TimeTravelDebugger(wos);
     tracer.info('INIT', 'TimeTravelDebugger initialized');
 
+    // WOS-303: Initialize Learning Objectives & Test Status
+    tracer.debug('INIT', 'Creating LearningObjectives');
+    const learningObjectives = new LearningObjectives();
+    tracer.info('INIT', 'LearningObjectives initialized');
+
+    // WOS-304: Initialize Interactive Tutorial (First-Run Experience)
+    tracer.debug('INIT', 'Creating InteractiveTutorial');
+    const interactiveTutorial = new InteractiveTutorial();
+    tracer.info('INIT', 'InteractiveTutorial initialized');
+
     // WOS-305: Initialize Contextual Help Panel
     tracer.debug('INIT', 'Creating HelpPanel');
     const helpPanel = new HelpPanel();
@@ -3724,6 +4914,8 @@ async function initApp() {
     // Expose to window for tests
     window.wos = wos;
     window.timeTravelDebugger = timeTravelDebugger;
+    window.learningObjectives = learningObjectives;
+    window.interactiveTutorial = interactiveTutorial;
     window.helpPanel = helpPanel;
 
     // Get and display version
