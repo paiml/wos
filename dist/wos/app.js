@@ -587,6 +587,11 @@ class PanelManager {
 
     panel.element.style.display = '';
     panel.config.visible = true;
+
+    // WOS-FILE-EDIT-01: Update file list when filesystem panel opens
+    if (panelName === 'filesystem' && this.terminal) {
+      this.terminal.updateFilesystemList();
+    }
   }
 
   hidePanel(panelName) {
@@ -669,9 +674,10 @@ class FileManager {
   }
 
   startFileSystemObserver() {
-    setInterval(() => {
-      this.refreshFileList();
-    }, 600);
+    // WOS-FILE-EDIT-01: Disabled polling - Terminal.updateFilesystemList() handles this
+    // setInterval(() => {
+    //   this.refreshFileList();
+    // }, 600);
   }
 
   setupEventListeners() {
@@ -769,7 +775,60 @@ class FileManager {
     // Track files before refresh to detect new ones
     const previousFiles = new Set(this.files.keys());
 
-    // Load files from localStorage
+    // WOS-FILE-EDIT-01: Load files from WASM filesystem using ls command
+    if (this.wos && this.wos.executeCommand) {
+      try {
+        // Use 'ls -1' to list one file per line
+        const result = this.wos.executeCommand('ls -1');
+        console.log('[FileManager] ls -1 result:', result);
+        if (result && typeof result === 'string' && !result.includes('Error') && !result.includes('error')) {
+          const lines = result.trim().split('\n');
+          console.log('[FileManager] ls -1 lines:', lines);
+
+          // Parse ls output to get file names (one per line format)
+          for (let i = 0; i < lines.length; i++) {
+            const fileName = lines[i].trim();
+            if (!fileName || fileName === '.' || fileName === '..') continue;
+
+            // Skip if it looks like a directory (ends with /)
+            if (fileName.endsWith('/')) continue;
+
+            console.log('[FileManager] Processing file:', fileName);
+
+            // Try to read file content from WASM filesystem
+            let content = '';
+            let size = 0;
+            try {
+              const catResult = this.wos.executeCommand(`cat ${fileName}`) || '';
+              // If cat returns error message, file is empty or unreadable
+              if (catResult.includes('No such file') || catResult.includes('Error') || catResult.includes('cat:')) {
+                content = '';
+              } else {
+                content = catResult;
+              }
+              size = content.length;
+            } catch (e) {
+              // File exists but can't be read, use empty content
+              content = '';
+              size = 0;
+            }
+
+            console.log('[FileManager] Adding file to map:', fileName, 'size:', size);
+            this.files.set(fileName, {
+              name: fileName,
+              content: content,
+              size: size,
+              modified: 'From WASM filesystem'
+            });
+          }
+        }
+        console.log('[FileManager] Total files in map:', this.files.size);
+      } catch (error) {
+        console.error('Error reading WASM filesystem:', error);
+      }
+    }
+
+    // Also load files from localStorage (for backward compatibility)
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key.startsWith('wos-file-')) {
@@ -798,23 +857,10 @@ class FileManager {
   }
 
   renderFileList() {
-    const fileList = document.getElementById('file-list');
-    const browser = document.getElementById('file-browser');
-
-    if (!fileList) {
-      // Fallback to old behavior
-      if (this.files.size === 0) {
-        browser.innerHTML = '<div class="file-placeholder">No files loaded. Upload a file or create new file to begin.</div>';
-        return;
-      }
-      browser.innerHTML = '';
-    } else {
-      if (this.files.size === 0) {
-        fileList.innerHTML = '';
-        return;
-      }
-      fileList.innerHTML = '';
-    }
+    // WOS-FILE-EDIT-01: Terminal.updateFilesystemList() now handles rendering
+    // FileManager only needs to update selection state, not render the list
+    tracer.debug('FILE', 'FileManager.renderFileList() - delegating to Terminal');
+    return;
 
     const container = fileList || browser;
 
@@ -2494,50 +2540,75 @@ class Terminal {
 
   // WOS-301: Update filesystem list from WOS filesystem
   updateFilesystemList() {
-    if (!this.wos) return;
+    if (!this.wos) {
+      tracer.warn('FILE', 'WOS not initialized in updateFilesystemList');
+      return;
+    }
 
     try {
-      // Get file list using ls command
-      const result = this.wos.executeCommand('ls -la /');
-      if (!result || typeof result !== 'string') return;
+      // WOS-FILE-EDIT-01: Use simple 'ls' command (ls -la is broken in WOS)
+      const result = this.wos.executeCommand('ls');
+      tracer.debug('FILE', 'ls result:', { result });
+
+      // WOS-FILE-EDIT-01: Empty string is valid (means no files), only reject null/undefined
+      if (result === null || result === undefined || typeof result !== 'string') {
+        tracer.warn('FILE', 'Invalid ls result, returning');
+        return;
+      }
 
       const fileList = document.getElementById('file-list');
-      if (!fileList) return;
+      if (!fileList) {
+        tracer.warn('FILE', 'file-list element not found');
+        return;
+      }
 
-      // Parse ls output to get file information
+      // Parse ls output - simple format, one file per line
       const lines = result.trim().split('\n');
+      tracer.debug('FILE', 'Parsed lines:', { lines });
       const files = [];
 
-      // Skip header lines (., .., etc.)
       for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line || line === '.' || line === '..') continue;
+        const fileName = lines[i].trim();
+        if (!fileName || fileName === '.' || fileName === '..') continue;
 
-        // Simple parsing - just extract filename from end of line
-        const parts = line.split(/\s+/);
-        if (parts.length > 0) {
-          const fileName = parts[parts.length - 1];
-          if (fileName && fileName !== '.' && fileName !== '..') {
-            files.push({
-              name: fileName,
-              isDirectory: line.startsWith('d'),
-              size: parts.length > 4 ? parts[4] : '0'
-            });
-          }
-        }
+        // Skip directories (end with /)
+        const isDirectory = fileName.endsWith('/');
+        if (isDirectory) continue;
+
+        tracer.debug('FILE', 'Adding file:', { fileName });
+        files.push({
+          name: fileName,
+          isDirectory: false,
+          size: '0'
+        });
       }
+
+      tracer.info('FILE', `Total files: ${files.length}`);
 
       // Clear existing file list
       fileList.innerHTML = '';
 
+      // WOS-FILE-EDIT-01: Disable edit buttons when no files exist
       if (files.length === 0) {
+        if (this.fileManager) {
+          this.fileManager.selectedFile = null;
+          document.getElementById('btn-edit').disabled = true;
+          document.getElementById('btn-download').disabled = true;
+          document.getElementById('btn-delete').disabled = true;
+        }
         return;
       }
 
       // Add file items
+      let firstFileItem = null;
       files.forEach(file => {
         const item = document.createElement('div');
         item.className = file.isDirectory ? 'file-item dir' : 'file-item';
+
+        // Track first non-directory file for auto-selection
+        if (!file.isDirectory && !firstFileItem) {
+          firstFileItem = { item, file };
+        }
 
         // Use appropriate icon
         const iconPath = file.isDirectory
@@ -2560,14 +2631,23 @@ class Terminal {
           fileList.querySelectorAll('.file-item').forEach(f => f.classList.remove('selected'));
           item.classList.add('selected');
 
-          // If it's a file, could open in editor
-          if (!file.isDirectory) {
-            // Could trigger cat command or open in vim
+          // WOS-FILE-EDIT-01: Notify FileManager of selection to enable edit button
+          if (!file.isDirectory && this.fileManager) {
+            this.fileManager.selectFile(file.name);
           }
         });
 
         fileList.appendChild(item);
       });
+
+      // WOS-FILE-EDIT-01: Auto-select first file if no selection exists
+      if (firstFileItem && this.fileManager) {
+        const hasSelection = fileList.querySelector('.file-item.selected');
+        if (!hasSelection) {
+          firstFileItem.item.classList.add('selected');
+          this.fileManager.selectFile(firstFileItem.file.name);
+        }
+      }
     } catch (error) {
       tracer.error('VISUAL_MONITOR', 'Failed to update filesystem list', error);
     }
@@ -2631,7 +2711,8 @@ class Terminal {
     this.updateInterval = setInterval(() => {
       this.updateSystemInfo();
       this.updateSystemMonitor(); // Update process table and memory view
-      this.updateFilesystemList(); // Update file list from WOS filesystem
+      // WOS-FILE-EDIT-01: Disabled - FileManager now handles file list updates
+      // this.updateFilesystemList(); // Update file list from WOS filesystem
     }, 100); // Update every 100ms for real-time monitoring
   }
 
@@ -3577,6 +3658,9 @@ async function initApp() {
 
     tracer.debug('INIT', 'Creating Terminal');
     const terminal = new Terminal(configManager);
+
+    // WOS-FILE-EDIT-01: Set terminal reference in panel manager for file list updates
+    panelManager.terminal = terminal;
 
     // Expose terminal instance to window for testing and monitoring
     tracer.debug('INIT', 'Exposing terminal instance to window');
