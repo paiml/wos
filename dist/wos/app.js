@@ -235,6 +235,12 @@ function closeMonacoEditor(save) {
       const escapedContent = content.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
       currentWosInstance.executeCommand(`echo "${escapedContent}" > ${currentEditingFile}`);
       tracer.info('MONACO', 'File saved: ' + currentEditingFile);
+
+      // WOS-FILE-EDIT-01: Refresh file list after saving
+      if (window.terminalInstance && window.terminalInstance.updateFilesystemList) {
+        tracer.debug('MONACO', 'Refreshing file list after save');
+        window.terminalInstance.updateFilesystemList();
+      }
     } catch (err) {
       tracer.error('MONACO', 'Failed to save file', err);
     }
