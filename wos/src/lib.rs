@@ -1092,7 +1092,12 @@ impl WosWasm {
                 let mut end = start;
 
                 while end < chars.len() && depth > 0 {
-                    if end + 1 < chars.len() && chars[end] == '$' && chars[end + 1] == '(' {
+                    // Check for $( but NOT $(( (arithmetic expansion)
+                    if end + 1 < chars.len()
+                        && chars[end] == '$'
+                        && chars[end + 1] == '('
+                        && !(end + 2 < chars.len() && chars[end + 2] == '(')
+                    {
                         depth += 1;
                         end += 2;
                     } else if chars[end] == ')' {
@@ -2028,11 +2033,30 @@ impl WosWasm {
         // This is essential for:
         // 1. File redirects (echo "line1" > file creates file with "line1\n")
         // 2. Command substitution multiline handling ($(cat file) needs newlines to convert to spaces)
-        if args.is_empty() {
-            "\n".to_string()
+
+        // Handle -e flag for escape sequence interpretation
+        let (enable_escapes, text_args) = if args.first().map(|s| s.as_str()) == Some("-e") {
+            (true, &args[1..])
         } else {
-            format!("{}\n", args.join(" "))
+            (false, &args[..])
+        };
+
+        if text_args.is_empty() {
+            return "\n".to_string();
         }
+
+        let mut output = text_args.join(" ");
+
+        // Process escape sequences if -e flag is present
+        if enable_escapes {
+            output = output
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\\r", "\r")
+                .replace("\\\\", "\\");
+        }
+
+        format!("{}\n", output)
     }
 
     fn cmd_state(&self) -> String {
