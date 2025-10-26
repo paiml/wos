@@ -1,0 +1,26 @@
+--- wos/src/script_executor.rs
++++ wos/src/script_executor.rs
+@@ -215,6 +215,7 @@ where
+         }
+ 
+         // Parse condition from "if CONDITION; then" or "if CONDITION" + "then" on next line
++        #[allow(unused_assignments)]
+         let mut condition = String::new();
+         let then_line_idx;
+ 
+@@ -265,6 +266,7 @@ where
+                 let elif_parts: Vec<&str> = elif_line.split_whitespace().collect();
+                 if elif_parts.len() >= 2 && elif_parts[0] == "elif" {
+                     // Parse elif condition
++                    #[allow(unused_assignments)]
+                     let mut elif_condition = String::new();
+ 
+                     // Check if there's a semicolon and "then" on the same line
+@@ -472,6 +474,7 @@ where
+         }
+ 
+         // Parse condition from "while CONDITION; do" or "while CONDITION" + "do" on next line
++        #[allow(unused_assignments)]
+         let mut condition = String::new();
+         let do_line_idx;
+ 

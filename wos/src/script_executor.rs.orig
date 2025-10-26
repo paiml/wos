@@ -644,7 +644,6 @@ impl ScriptExecutor {
                     message: "Invalid for loop syntax".to_string(),
                 })?;
 
-        #[allow(unused_assignments)]
         let mut var_name = String::new();
         let mut list_items = Vec::new();
         let mut do_idx = start_idx + 1;

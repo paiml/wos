@@ -137,6 +137,8 @@ fn process_token_char(
         *in_single = new_single;
         *in_double = new_double;
         *had_quotes = true;
+        // KEEP the quote character in the token so expand_variables can see it
+        current_token.push(ch);
         return true;
     }
 

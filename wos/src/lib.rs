@@ -289,11 +289,39 @@ impl WosWasm {
     }
 
     /// Expand variables in a string ($VAR or ${VAR} -> value)
+    /// Respects single quotes (no expansion) and double quotes (expansion allowed)
     fn expand_variables(&mut self, text: &str) -> String {
         let mut result = String::new();
         let mut chars = text.chars().peekable();
+        let mut in_single_quotes = false;
+        let mut in_double_quotes = false;
 
         while let Some(ch) = chars.next() {
+            // Track quote context
+            if ch == '\'' && !in_double_quotes && !in_single_quotes {
+                in_single_quotes = true;
+                // DON'T push the quote itself - it should be removed
+                continue;
+            } else if ch == '\'' && !in_double_quotes && in_single_quotes {
+                in_single_quotes = false;
+                // DON'T push the quote itself - it should be removed
+                continue;
+            } else if ch == '"' && !in_single_quotes && !in_double_quotes {
+                in_double_quotes = true;
+                // DON'T push the quote itself - it should be removed
+                continue;
+            } else if ch == '"' && !in_single_quotes && in_double_quotes {
+                in_double_quotes = false;
+                // DON'T push the quote itself - it should be removed
+                continue;
+            }
+
+            // Inside single quotes, NO expansion happens - just copy characters
+            if in_single_quotes {
+                result.push(ch);
+                continue;
+            }
+
             if ch == '\\' {
                 // Handle escape sequences
                 if let Some(&next_ch) = chars.peek() {
@@ -1902,14 +1930,16 @@ impl WosWasm {
                 "bash" => self.cmd_bash(args.to_vec()),
                 "source" => self.cmd_source(args.to_vec()),
                 "unset" => self.cmd_unset(args.to_vec()),
+                "test" => self.cmd_test(args.to_vec()),
+                "[" => self.cmd_bracket(args.to_vec()),
                 "version" => wos_version(),
                 "state" => self.cmd_state(),
                 "reset" => {
                     self.reset();
                     "System reset complete".to_string()
                 }
-                "true" => String::new(),
-                "false" => String::new(),
+                "true" => self.cmd_true(args.to_vec()),
+                "false" => self.cmd_false(args.to_vec()),
                 _ => format!(
                     "Unknown command: {}\nType 'help' for available commands",
                     cmd_name
@@ -2034,11 +2064,14 @@ impl WosWasm {
         // 1. File redirects (echo "line1" > file creates file with "line1\n")
         // 2. Command substitution multiline handling ($(cat file) needs newlines to convert to spaces)
 
-        // Handle -e flag for escape sequence interpretation
-        let (enable_escapes, text_args) = if args.first().map(|s| s.as_str()) == Some("-e") {
-            (true, &args[1..])
+        // Modern bash interprets escape sequences by default (like Ubuntu's bash)
+        // The -e flag is supported but not required for compatibility
+
+        // Handle -e flag (for compatibility, but we always interpret escapes)
+        let text_args = if args.first().map(|s| s.as_str()) == Some("-e") {
+            &args[1..]
         } else {
-            (false, &args[..])
+            &args[..]
         };
 
         if text_args.is_empty() {
@@ -2047,16 +2080,26 @@ impl WosWasm {
 
         let mut output = text_args.join(" ");
 
-        // Process escape sequences if -e flag is present
-        if enable_escapes {
-            output = output
-                .replace("\\n", "\n")
-                .replace("\\t", "\t")
-                .replace("\\r", "\r")
-                .replace("\\\\", "\\");
-        }
+        // Always process escape sequences (modern bash behavior)
+        output = output
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\r", "\r")
+            .replace("\\\\", "\\");
 
         format!("{}\n", output)
+    }
+
+    fn cmd_true(&mut self, _args: Vec<String>) -> String {
+        // true command always succeeds (exit code 0)
+        self.last_exit_code = 0;
+        String::new()
+    }
+
+    fn cmd_false(&mut self, _args: Vec<String>) -> String {
+        // false command always fails (exit code 1)
+        self.last_exit_code = 1;
+        String::new()
     }
 
     fn cmd_state(&self) -> String {
@@ -2277,12 +2320,30 @@ impl WosWasm {
             }
         };
 
+        // Temporarily extract variables to avoid borrow conflicts
+        let mut variables = std::mem::take(&mut self.variables);
+
+        // Create executor closure that executes commands via WosWasm
+        let mut executor = |line: &str| -> (String, i32) {
+            let output = self.execute_command(line);
+            (output, self.last_exit_code)
+        };
+
+        // Create dummy VFS (script_executor doesn't use it - marked _vfs)
+        let mut dummy_vfs = wos_shared::vfs::VirtualFileSystem::new();
+
         // Use ScriptExecutor to execute the script
-        match script_executor::ScriptExecutor::execute(
+        let result = script_executor::ScriptExecutor::execute(
             &script,
-            &mut self.state.vfs,
-            &mut self.variables,
-        ) {
+            &mut dummy_vfs,
+            &mut variables,
+            &mut executor,
+        );
+
+        // Restore variables
+        self.variables = variables;
+
+        match result {
             Ok(result) => {
                 // Update exit code
                 self.last_exit_code = result.exit_code;
@@ -2321,13 +2382,31 @@ impl WosWasm {
             }
         };
 
+        // Temporarily extract variables to avoid borrow conflicts
+        let mut variables = std::mem::take(&mut self.variables);
+
+        // Create executor closure that executes commands via WosWasm
+        let mut executor = |line: &str| -> (String, i32) {
+            let output = self.execute_command(line);
+            (output, self.last_exit_code)
+        };
+
+        // Create dummy VFS (script_executor doesn't use it - marked _vfs)
+        let mut dummy_vfs = wos_shared::vfs::VirtualFileSystem::new();
+
         // Use ScriptExecutor to execute the script in current shell context
         // Unlike bash, source should persist script-local variables
-        match script_executor::ScriptExecutor::execute_in_shell_context(
+        let result = script_executor::ScriptExecutor::execute_in_shell_context(
             &script,
-            &mut self.state.vfs,
-            &mut self.variables,
-        ) {
+            &mut dummy_vfs,
+            &mut variables,
+            &mut executor,
+        );
+
+        // Restore variables
+        self.variables = variables;
+
+        match result {
             Ok(result) => {
                 // Update exit code
                 self.last_exit_code = result.exit_code;
@@ -2353,6 +2432,160 @@ impl WosWasm {
 
         // unset produces no output
         String::new()
+    }
+
+    fn cmd_test(&mut self, args: Vec<String>) -> String {
+        // Test command evaluates conditional expressions
+        // Returns empty string and sets exit code: 0 for true, 1 for false
+
+        if args.is_empty() {
+            self.last_exit_code = 1;
+            return String::new();
+        }
+
+        // Single argument: test if string is non-empty
+        if args.len() == 1 {
+            let result = !args[0].is_empty();
+            self.last_exit_code = if result { 0 } else { 1 };
+            return String::new();
+        }
+
+        // Two arguments: unary operators
+        if args.len() == 2 {
+            let op = &args[0];
+            let arg = &args[1];
+
+            let result = match op.as_str() {
+                "-z" => arg.is_empty(),  // Zero-length string
+                "-n" => !arg.is_empty(), // Non-zero-length string
+                "!" => arg.is_empty(),   // Logical NOT (string is empty)
+                _ => {
+                    self.last_exit_code = 2; // Invalid operator
+                    return format!("test: {}: unary operator expected\n", op);
+                }
+            };
+
+            self.last_exit_code = if result { 0 } else { 1 };
+            return String::new();
+        }
+
+        // Three arguments: binary operators
+        if args.len() == 3 {
+            let left = &args[0];
+            let op = &args[1];
+            let right = &args[2];
+
+            let result = match op.as_str() {
+                // String comparison
+                "=" | "==" => left == right,
+                "!=" => left != right,
+
+                // Numeric comparison
+                "-eq" => self.parse_and_compare_numbers(left, right, |a, b| a == b),
+                "-ne" => self.parse_and_compare_numbers(left, right, |a, b| a != b),
+                "-lt" => self.parse_and_compare_numbers(left, right, |a, b| a < b),
+                "-le" => self.parse_and_compare_numbers(left, right, |a, b| a <= b),
+                "-gt" => self.parse_and_compare_numbers(left, right, |a, b| a > b),
+                "-ge" => self.parse_and_compare_numbers(left, right, |a, b| a >= b),
+
+                _ => {
+                    self.last_exit_code = 2;
+                    return format!("test: {}: binary operator expected\n", op);
+                }
+            };
+
+            self.last_exit_code = if result { 0 } else { 1 };
+            return String::new();
+        }
+
+        // Four or more arguments: complex expressions with -a (AND) and -o (OR)
+        if args.len() >= 4 {
+            // Simple left-to-right evaluation with -a and -o
+            let mut result = self.evaluate_test_expression(&args[0..3]);
+            let mut i = 3;
+
+            while i < args.len() {
+                if i + 3 > args.len() {
+                    break;
+                }
+
+                let logical_op = &args[i];
+                let next_expr = &args[i + 1..i + 4];
+
+                match logical_op.as_str() {
+                    "-a" => {
+                        // Logical AND
+                        result = result && self.evaluate_test_expression(next_expr);
+                    }
+                    "-o" => {
+                        // Logical OR
+                        result = result || self.evaluate_test_expression(next_expr);
+                    }
+                    _ => {
+                        self.last_exit_code = 2;
+                        return format!("test: too many arguments\n");
+                    }
+                }
+
+                i += 4;
+            }
+
+            self.last_exit_code = if result { 0 } else { 1 };
+            return String::new();
+        }
+
+        self.last_exit_code = 2;
+        format!("test: too many arguments\n")
+    }
+
+    fn cmd_bracket(&mut self, args: Vec<String>) -> String {
+        // [ is an alias for test
+        // The closing ] should be the last argument
+        if args.is_empty() {
+            self.last_exit_code = 2;
+            return format!("[: missing ]\n");
+        }
+
+        if args.last() != Some(&"]".to_string()) {
+            self.last_exit_code = 2;
+            return format!("[: missing ]\n");
+        }
+
+        // Remove the trailing ] and call test
+        let test_args = args[..args.len() - 1].to_vec();
+        self.cmd_test(test_args)
+    }
+
+    fn parse_and_compare_numbers<F>(&self, left: &str, right: &str, compare: F) -> bool
+    where
+        F: Fn(i64, i64) -> bool,
+    {
+        match (left.parse::<i64>(), right.parse::<i64>()) {
+            (Ok(l), Ok(r)) => compare(l, r),
+            _ => false, // Non-numeric values are treated as false for numeric comparisons
+        }
+    }
+
+    fn evaluate_test_expression(&mut self, args: &[String]) -> bool {
+        if args.len() != 3 {
+            return false;
+        }
+
+        let left = &args[0];
+        let op = &args[1];
+        let right = &args[2];
+
+        match op.as_str() {
+            "=" | "==" => left == right,
+            "!=" => left != right,
+            "-eq" => self.parse_and_compare_numbers(left, right, |a, b| a == b),
+            "-ne" => self.parse_and_compare_numbers(left, right, |a, b| a != b),
+            "-lt" => self.parse_and_compare_numbers(left, right, |a, b| a < b),
+            "-le" => self.parse_and_compare_numbers(left, right, |a, b| a <= b),
+            "-gt" => self.parse_and_compare_numbers(left, right, |a, b| a > b),
+            "-ge" => self.parse_and_compare_numbers(left, right, |a, b| a >= b),
+            _ => false,
+        }
     }
 
     /// Get current kernel state as JSON
@@ -4331,6 +4564,199 @@ environment: production
             "document.txt",
             "Failed: ${{FILE%.*}} should remove shortest suffix '.bak', got '{}'",
             output.trim()
+        );
+    }
+
+    // Unit tests for glob matching (WOS-BASH-08)
+    #[test]
+    fn test_matches_glob_wildcard() {
+        let wos = WosWasm::new();
+
+        // Test * matches everything
+        assert!(wos.matches_glob("file.txt", "*.txt"));
+        assert!(wos.matches_glob("document.txt", "*.txt"));
+        assert!(!wos.matches_glob("file.log", "*.txt"));
+        assert!(!wos.matches_glob("data.log", "*.txt"));
+
+        // Test * matches multiple characters
+        assert!(wos.matches_glob("file123.txt", "file*.txt"));
+        assert!(wos.matches_glob("file.txt", "file*.txt"));
+
+        // Test * at beginning
+        assert!(wos.matches_glob("myfile.txt", "*file.txt"));
+        assert!(!wos.matches_glob("myfile.log", "*file.txt"));
+    }
+
+    #[test]
+    fn test_matches_glob_question_mark() {
+        let wos = WosWasm::new();
+
+        // Test ? matches single character
+        assert!(wos.matches_glob("file1.txt", "file?.txt"));
+        assert!(wos.matches_glob("file2.txt", "file?.txt"));
+        assert!(!wos.matches_glob("file12.txt", "file?.txt"));
+        assert!(!wos.matches_glob("file.txt", "file?.txt"));
+    }
+
+    #[test]
+    fn test_matches_glob_character_class() {
+        let wos = WosWasm::new();
+
+        // Test [abc] matches single character from set
+        assert!(wos.matches_glob("file1.txt", "file[123].txt"));
+        assert!(wos.matches_glob("file2.txt", "file[123].txt"));
+        assert!(!wos.matches_glob("file4.txt", "file[123].txt"));
+
+        // Test [a-z] range
+        assert!(wos.matches_glob("filea.txt", "file[a-z].txt"));
+        assert!(wos.matches_glob("filez.txt", "file[a-z].txt"));
+        assert!(!wos.matches_glob("file1.txt", "file[a-z].txt"));
+    }
+
+    #[test]
+    fn test_matches_glob_negated_class() {
+        let wos = WosWasm::new();
+
+        // Test [!abc] does not match characters from set
+        assert!(!wos.matches_glob("file1.txt", "file[!123].txt"));
+        assert!(wos.matches_glob("file4.txt", "file[!123].txt"));
+        assert!(wos.matches_glob("filea.txt", "file[!123].txt"));
+    }
+
+    #[test]
+    fn test_matches_glob_dot_files() {
+        let wos = WosWasm::new();
+
+        // Dot files should not match * unless pattern starts with .
+        assert!(!wos.matches_glob(".hidden", "*"));
+        assert!(wos.matches_glob(".hidden", ".*"));
+        assert!(wos.matches_glob(".hidden", ".hidden"));
+        assert!(wos.matches_glob("visible", "*"));
+    }
+
+    #[test]
+    fn test_expand_glob_with_files() {
+        use std::path::PathBuf;
+        let mut wos = WosWasm::new();
+
+        // Create test files in /tmp/
+        wos.state
+            .vfs
+            .create_file(PathBuf::from("/tmp/file1.txt"), vec![])
+            .unwrap();
+        wos.state
+            .vfs
+            .create_file(PathBuf::from("/tmp/file2.txt"), vec![])
+            .unwrap();
+        wos.state
+            .vfs
+            .create_file(PathBuf::from("/tmp/file3.txt"), vec![])
+            .unwrap();
+        wos.state
+            .vfs
+            .create_file(PathBuf::from("/tmp/data.log"), vec![])
+            .unwrap();
+
+        // Test *.txt pattern
+        let matches = wos.expand_glob("/tmp/*.txt");
+        eprintln!("[TEST] expand_glob('/tmp/*.txt') = {:?}", matches);
+
+        assert_eq!(matches.len(), 3, "Should match exactly 3 .txt files");
+        assert!(matches.contains(&"/tmp/file1.txt".to_string()));
+        assert!(matches.contains(&"/tmp/file2.txt".to_string()));
+        assert!(matches.contains(&"/tmp/file3.txt".to_string()));
+        assert!(
+            !matches.contains(&"/tmp/data.log".to_string()),
+            "Should not match .log file"
+        );
+    }
+
+    #[test]
+    fn test_expand_glob_no_matches() {
+        let wos = WosWasm::new();
+
+        // Test pattern with no matches returns original pattern
+        let matches = wos.expand_glob("/nonexistent/*.txt");
+        assert_eq!(matches, vec!["/nonexistent/*.txt"]);
+    }
+
+    #[test]
+    fn test_expand_glob_no_glob_chars() {
+        let wos = WosWasm::new();
+
+        // Test literal path without glob chars
+        let matches = wos.expand_glob("/tmp/file.txt");
+        assert_eq!(matches, vec!["/tmp/file.txt"]);
+    }
+
+    #[test]
+    fn test_glob_with_touch_and_echo() {
+        let mut wos = WosWasm::new();
+
+        // Mimic E2E test: create files with touch
+        wos.execute_command("touch /tmp/file1.txt");
+        wos.execute_command("touch /tmp/file2.txt");
+        wos.execute_command("touch /tmp/file3.txt");
+        wos.execute_command("touch /tmp/data.log");
+
+        // Test echo with glob pattern (should expand to multiple files)
+        let output = wos.execute_command("echo /tmp/*.txt");
+        eprintln!("[TEST] echo /tmp/*.txt = '{}'", output.trim());
+
+        // Should contain all three .txt files
+        assert!(
+            output.contains("file1.txt"),
+            "Output should contain file1.txt"
+        );
+        assert!(
+            output.contains("file2.txt"),
+            "Output should contain file2.txt"
+        );
+        assert!(
+            output.contains("file3.txt"),
+            "Output should contain file3.txt"
+        );
+        assert!(
+            !output.contains("data.log"),
+            "Output should NOT contain data.log"
+        );
+    }
+
+    #[test]
+    fn test_glob_with_ls_command() {
+        let mut wos = WosWasm::new();
+
+        // Mimic E2E test: create files with touch
+        wos.execute_command("touch /tmp/file1.txt");
+        wos.execute_command("touch /tmp/file2.txt");
+        wos.execute_command("touch /tmp/file3.txt");
+        wos.execute_command("touch /tmp/data.log");
+        wos.execute_command("touch /tmp/readme.md");
+
+        // Test ls with glob pattern (should list only matching files)
+        let output = wos.execute_command("ls /tmp/*.txt");
+        eprintln!("[TEST] ls /tmp/*.txt = '{}'", output.trim());
+
+        // Should contain only .txt files
+        assert!(
+            output.contains("file1.txt"),
+            "Output should contain file1.txt"
+        );
+        assert!(
+            output.contains("file2.txt"),
+            "Output should contain file2.txt"
+        );
+        assert!(
+            output.contains("file3.txt"),
+            "Output should contain file3.txt"
+        );
+        assert!(
+            !output.contains("data.log"),
+            "Output should NOT contain data.log"
+        );
+        assert!(
+            !output.contains("readme.md"),
+            "Output should NOT contain readme.md"
         );
     }
 

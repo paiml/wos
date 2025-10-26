@@ -1,0 +1,562 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - link "Skip to terminal" [ref=e2] [cursor=pointer]:
+    - /url: "#terminal-input"
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - heading "WOS" [level=1] [ref=e5]
+      - paragraph [ref=e6]: Rust + WASM | ↑/↓ History | Ctrl+L Clear
+    - main [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: Terminal
+          - generic [ref=e11]:
+            - button "Clear terminal" [ref=e12] [cursor=pointer]: Clear
+            - button "Reset OS state" [ref=e13] [cursor=pointer]: Reset
+            - button "Save state" [ref=e14] [cursor=pointer]: Save
+            - button "Load state" [ref=e15] [cursor=pointer]: Load
+        - generic [ref=e16]:
+          - log [ref=e17]:
+            - generic [ref=e18]: WOS - WebAssembly Operating System
+            - generic [ref=e19]: Educational microkernel v0.1.0
+            - generic [ref=e20]: Type "help" for available commands
+            - generic [ref=e21]: root@wos:/$ echo '#!/bin/bash' > /tmp/for_break.sh
+            - generic [ref=e22]: root@wos:/$ echo 'for i in 1 2 3 4 5; do' >> /tmp/for_break.sh
+            - generic [ref=e23]: root@wos:/$ echo ' echo $i' >> /tmp/for_break.sh
+            - generic [ref=e24]: root@wos:/$ echo ' if [ $i -eq 3 ]; then' >> /tmp/for_break.sh
+            - generic [ref=e25]: root@wos:/$ echo ' break' >> /tmp/for_break.sh
+            - generic [ref=e26]: root@wos:/$ echo ' fi' >> /tmp/for_break.sh
+            - generic [ref=e27]: root@wos:/$ echo 'done' >> /tmp/for_break.sh
+            - generic [ref=e28]: root@wos:/$ bash /tmp/for_break.sh
+            - generic [ref=e29]: "1 Unknown command: if Type 'help' for available commands Unknown command: then Type 'help' for available commands"
+          - generic [ref=e30]:
+            - generic [ref=e31]: wos$
+            - textbox "Terminal command input" [active] [ref=e32]
+        - separator "Resize terminal" [ref=e33]
+      - toolbar "Panel switcher" [ref=e34]:
+        - button "Show Process List" [ref=e35] [cursor=pointer]:
+          - img [ref=e36]
+          - generic [ref=e38]: Processes
+        - button "Show Memory Map" [ref=e39] [cursor=pointer]:
+          - img [ref=e40]
+          - generic [ref=e42]: Memory
+        - button "Show System Call Trace" [ref=e43] [cursor=pointer]:
+          - img [ref=e44]
+          - generic [ref=e46]: Syscalls
+        - button "Show File System" [ref=e47] [cursor=pointer]:
+          - img [ref=e48]
+          - generic [ref=e50]: Files
+        - button "Show System Monitor" [ref=e51] [cursor=pointer]:
+          - img [ref=e52]
+          - generic [ref=e54]: System
+        - button "Show Time-Travel Debugger" [ref=e55] [cursor=pointer]:
+          - img [ref=e56]
+          - generic [ref=e58]: Debugger
+        - button "Show Help" [ref=e59] [cursor=pointer]:
+          - img [ref=e60]
+          - generic [ref=e62]: Help
+      - generic [ref=e63]:
+        - text: ↕ ↕ ↕ ↕ ↕ ↕
+        - complementary "Help panel" [ref=e64]:
+          - generic [ref=e65]:
+            - heading "Help & Documentation" [level=3] [ref=e66]
+            - button "Collapse help panel" [expanded] [ref=e68] [cursor=pointer]:
+              - img [ref=e69]
+          - generic [ref=e71]:
+            - textbox "Search help documentation" [ref=e73]:
+              - /placeholder: Search commands...
+            - list [ref=e74]:
+              - listitem [ref=e75]:
+                - generic [ref=e76]: help Display help information for commands
+                - generic [ref=e77]:
+                  - generic [ref=e78]:
+                    - strong [ref=e79]: "Usage:"
+                    - code [ref=e80]: help [command]
+                  - generic [ref=e81]:
+                    - strong [ref=e82]: "Options:"
+                    - list [ref=e83]:
+                      - listitem [ref=e84]:
+                        - code [ref=e85]: "[command]"
+                        - text: "- Optional command name for detailed help"
+                  - generic [ref=e86]:
+                    - strong [ref=e87]: "Examples:"
+                    - list [ref=e88]:
+                      - listitem [ref=e89]:
+                        - code [ref=e90]: help
+                        - text: "- Show all available commands"
+                      - listitem [ref=e91]:
+                        - code [ref=e92]: help ls
+                        - text: "- Show detailed help for ls command"
+                      - listitem [ref=e93]:
+                        - code [ref=e94]: help cat
+                        - text: "- Show detailed help for cat command"
+                  - generic [ref=e95]:
+                    - strong [ref=e96]: "See also:"
+                    - text: version, config
+              - listitem [ref=e97]:
+                - generic [ref=e98]: ls List files and directories in the current directory
+                - generic [ref=e99]:
+                  - generic [ref=e100]:
+                    - strong [ref=e101]: "Usage:"
+                    - code [ref=e102]: ls [options] [path]
+                  - generic [ref=e103]:
+                    - strong [ref=e104]: "Options:"
+                    - list [ref=e105]:
+                      - listitem [ref=e106]:
+                        - code [ref=e107]: "-l"
+                        - text: "- Use long listing format"
+                      - listitem [ref=e108]:
+                        - code [ref=e109]: "-a"
+                        - text: "- Show hidden files"
+                      - listitem [ref=e110]:
+                        - code [ref=e111]: "[path]"
+                        - text: "- Directory path to list (default: current directory)"
+                  - generic [ref=e112]:
+                    - strong [ref=e113]: "Examples:"
+                    - list [ref=e114]:
+                      - listitem [ref=e115]:
+                        - code [ref=e116]: ls
+                        - text: "- List files in current directory"
+                      - listitem [ref=e117]:
+                        - code [ref=e118]: ls /home
+                        - text: "- List files in /home directory"
+                      - listitem [ref=e119]:
+                        - code [ref=e120]: ls -l
+                        - text: "- List files with detailed information"
+                  - generic [ref=e121]:
+                    - strong [ref=e122]: "See also:"
+                    - text: cd, pwd, mkdir
+              - listitem [ref=e123]:
+                - generic [ref=e124]: cat Concatenate and display file contents
+                - generic [ref=e125]:
+                  - generic [ref=e126]:
+                    - strong [ref=e127]: "Usage:"
+                    - code [ref=e128]: cat
+                  - generic [ref=e129]:
+                    - strong [ref=e130]: "Options:"
+                    - list [ref=e131]:
+                      - listitem [ref=e132]:
+                        - code
+                        - text: "- File to display (required)"
+                  - generic [ref=e133]:
+                    - strong [ref=e134]: "Examples:"
+                    - list [ref=e135]:
+                      - listitem [ref=e136]:
+                        - code [ref=e137]: cat file.txt
+                        - text: "- Display contents of file.txt"
+                      - listitem [ref=e138]:
+                        - code [ref=e139]: cat /etc/config
+                        - text: "- Display contents of /etc/config"
+                  - generic [ref=e140]:
+                    - strong [ref=e141]: "See also:"
+                    - text: echo, grep, wc
+              - listitem [ref=e142]:
+                - generic [ref=e143]: echo Print text to the terminal output
+                - generic [ref=e144]:
+                  - generic [ref=e145]:
+                    - strong [ref=e146]: "Usage:"
+                    - code [ref=e147]: echo
+                  - generic [ref=e148]:
+                    - strong [ref=e149]: "Options:"
+                    - list [ref=e150]:
+                      - listitem [ref=e151]:
+                        - code
+                        - text: "- Text to print (required)"
+                  - generic [ref=e152]:
+                    - strong [ref=e153]: "Examples:"
+                    - list [ref=e154]:
+                      - listitem [ref=e155]:
+                        - code [ref=e156]: echo Hello World
+                        - text: "- Print \"Hello World\""
+                      - listitem [ref=e157]:
+                        - code [ref=e158]: echo "Hello, WOS!"
+                        - text: "- Print quoted text"
+                  - generic [ref=e159]:
+                    - strong [ref=e160]: "See also:"
+                    - text: cat, printf
+              - listitem [ref=e161]:
+                - generic [ref=e162]: cd Change the current working directory
+                - generic [ref=e163]:
+                  - generic [ref=e164]:
+                    - strong [ref=e165]: "Usage:"
+                    - code [ref=e166]: cd
+                  - generic [ref=e167]:
+                    - strong [ref=e168]: "Options:"
+                    - list [ref=e169]:
+                      - listitem [ref=e170]:
+                        - code
+                        - text: "- Directory path to change to (required)"
+                      - listitem [ref=e171]:
+                        - code [ref=e172]: ..
+                        - text: "- Parent directory"
+                      - listitem [ref=e173]:
+                        - code [ref=e174]: ~
+                        - text: "- Home directory"
+                  - generic [ref=e175]:
+                    - strong [ref=e176]: "Examples:"
+                    - list [ref=e177]:
+                      - listitem [ref=e178]:
+                        - code [ref=e179]: cd /home
+                        - text: "- Change to /home directory"
+                      - listitem [ref=e180]:
+                        - code [ref=e181]: cd ..
+                        - text: "- Go up one directory level"
+                      - listitem [ref=e182]:
+                        - code [ref=e183]: cd ~
+                        - text: "- Go to home directory"
+                  - generic [ref=e184]:
+                    - strong [ref=e185]: "See also:"
+                    - text: pwd, ls, mkdir
+              - listitem [ref=e186]:
+                - generic [ref=e187]: pwd Print the current working directory path
+                - generic [ref=e188]:
+                  - generic [ref=e189]:
+                    - strong [ref=e190]: "Usage:"
+                    - code [ref=e191]: pwd
+                  - generic [ref=e192]:
+                    - strong [ref=e193]: "Examples:"
+                    - list [ref=e194]:
+                      - listitem [ref=e195]:
+                        - code [ref=e196]: pwd
+                        - text: "- Show current directory path"
+                  - generic [ref=e197]:
+                    - strong [ref=e198]: "See also:"
+                    - text: cd, ls
+              - listitem [ref=e199]:
+                - generic [ref=e200]: mkdir Create a new directory
+                - generic [ref=e201]:
+                  - generic [ref=e202]:
+                    - strong [ref=e203]: "Usage:"
+                    - code [ref=e204]: mkdir
+                  - generic [ref=e205]:
+                    - strong [ref=e206]: "Options:"
+                    - list [ref=e207]:
+                      - listitem [ref=e208]:
+                        - code
+                        - text: "- Directory name or path to create (required)"
+                  - generic [ref=e209]:
+                    - strong [ref=e210]: "Examples:"
+                    - list [ref=e211]:
+                      - listitem [ref=e212]:
+                        - code [ref=e213]: mkdir mydir
+                        - text: "- Create directory named \"mydir\""
+                      - listitem [ref=e214]:
+                        - code [ref=e215]: mkdir /home/docs
+                        - text: "- Create directory at /home/docs"
+                  - generic [ref=e216]:
+                    - strong [ref=e217]: "See also:"
+                    - text: ls, cd, rm
+              - listitem [ref=e218]:
+                - generic [ref=e219]: rm Remove (delete) files or directories
+                - generic [ref=e220]:
+                  - generic [ref=e221]:
+                    - strong [ref=e222]: "Usage:"
+                    - code [ref=e223]: rm
+                  - generic [ref=e224]:
+                    - strong [ref=e225]: "Options:"
+                    - list [ref=e226]:
+                      - listitem [ref=e227]:
+                        - code
+                        - text: "- File to remove (required)"
+                      - listitem [ref=e228]:
+                        - code [ref=e229]: "-r"
+                        - text: "- Remove directories recursively"
+                  - generic [ref=e230]:
+                    - strong [ref=e231]: "Examples:"
+                    - list [ref=e232]:
+                      - listitem [ref=e233]:
+                        - code [ref=e234]: rm file.txt
+                        - text: "- Delete file.txt"
+                      - listitem [ref=e235]:
+                        - code [ref=e236]: rm /tmp/temp.log
+                        - text: "- Delete /tmp/temp.log"
+                  - generic [ref=e237]:
+                    - strong [ref=e238]: "See also:"
+                    - text: touch, mkdir, ls
+              - listitem [ref=e239]:
+                - generic [ref=e240]: touch Create a new empty file or update file timestamp
+                - generic [ref=e241]:
+                  - generic [ref=e242]:
+                    - strong [ref=e243]: "Usage:"
+                    - code [ref=e244]: touch
+                  - generic [ref=e245]:
+                    - strong [ref=e246]: "Options:"
+                    - list [ref=e247]:
+                      - listitem [ref=e248]:
+                        - code
+                        - text: "- File to create or update (required)"
+                  - generic [ref=e249]:
+                    - strong [ref=e250]: "Examples:"
+                    - list [ref=e251]:
+                      - listitem [ref=e252]:
+                        - code [ref=e253]: touch file.txt
+                        - text: "- Create empty file.txt"
+                      - listitem [ref=e254]:
+                        - code [ref=e255]: touch /home/notes.md
+                        - text: "- Create file at /home/notes.md"
+                  - generic [ref=e256]:
+                    - strong [ref=e257]: "See also:"
+                    - text: rm, cat, mkdir
+              - listitem [ref=e258]:
+                - generic [ref=e259]: ps List running processes in the system
+                - generic [ref=e260]:
+                  - generic [ref=e261]:
+                    - strong [ref=e262]: "Usage:"
+                    - code [ref=e263]: ps
+                  - generic [ref=e264]:
+                    - strong [ref=e265]: "Examples:"
+                    - list [ref=e266]:
+                      - listitem [ref=e267]:
+                        - code [ref=e268]: ps
+                        - text: "- Show all running processes"
+                  - generic [ref=e269]:
+                    - strong [ref=e270]: "See also:"
+                    - text: kill, state
+              - listitem [ref=e271]:
+                - generic [ref=e272]: grep Search for patterns in file contents
+                - generic [ref=e273]:
+                  - generic [ref=e274]:
+                    - strong [ref=e275]: "Usage:"
+                    - code [ref=e276]: grep
+                  - generic [ref=e277]:
+                    - strong [ref=e278]: "Options:"
+                    - list [ref=e279]:
+                      - listitem [ref=e280]:
+                        - code
+                        - text: "- Text pattern to search for (required)"
+                      - listitem [ref=e281]:
+                        - code
+                        - text: "- File to search in (required)"
+                  - generic [ref=e282]:
+                    - strong [ref=e283]: "Examples:"
+                    - list [ref=e284]:
+                      - listitem [ref=e285]:
+                        - code [ref=e286]: grep "hello" file.txt
+                        - text: "- Search for \"hello\" in file.txt"
+                      - listitem [ref=e287]:
+                        - code [ref=e288]: grep error log.txt
+                        - text: "- Search for \"error\" in log.txt"
+                  - generic [ref=e289]:
+                    - strong [ref=e290]: "See also:"
+                    - text: cat, wc
+              - listitem [ref=e291]:
+                - generic [ref=e292]: wc Count words, lines, and bytes in files
+                - generic [ref=e293]:
+                  - generic [ref=e294]:
+                    - strong [ref=e295]: "Usage:"
+                    - code [ref=e296]: wc
+                  - generic [ref=e297]:
+                    - strong [ref=e298]: "Options:"
+                    - list [ref=e299]:
+                      - listitem [ref=e300]:
+                        - code
+                        - text: "- File to analyze (required)"
+                      - listitem [ref=e301]:
+                        - code [ref=e302]: "-l"
+                        - text: "- Count only lines"
+                      - listitem [ref=e303]:
+                        - code [ref=e304]: "-w"
+                        - text: "- Count only words"
+                      - listitem [ref=e305]:
+                        - code [ref=e306]: "-c"
+                        - text: "- Count only bytes"
+                  - generic [ref=e307]:
+                    - strong [ref=e308]: "Examples:"
+                    - list [ref=e309]:
+                      - listitem [ref=e310]:
+                        - code [ref=e311]: wc file.txt
+                        - text: "- Count lines, words, and bytes in file.txt"
+                  - generic [ref=e312]:
+                    - strong [ref=e313]: "See also:"
+                    - text: cat, grep
+              - listitem [ref=e314]:
+                - generic [ref=e315]: vim Open the Vim modal text editor
+                - generic [ref=e316]:
+                  - generic [ref=e317]:
+                    - strong [ref=e318]: "Usage:"
+                    - code [ref=e319]: vim [filename]
+                  - generic [ref=e320]:
+                    - strong [ref=e321]: "Options:"
+                    - list [ref=e322]:
+                      - listitem [ref=e323]:
+                        - code [ref=e324]: "[filename]"
+                        - text: "- Optional file to edit"
+                  - generic [ref=e325]:
+                    - strong [ref=e326]: "Examples:"
+                    - list [ref=e327]:
+                      - listitem [ref=e328]:
+                        - code [ref=e329]: vim
+                        - text: "- Open empty Vim editor"
+                      - listitem [ref=e330]:
+                        - code [ref=e331]: vim file.txt
+                        - text: "- Edit file.txt in Vim"
+                  - generic [ref=e332]:
+                    - strong [ref=e333]: "See also:"
+                    - text: edit, cat
+              - listitem [ref=e334]:
+                - generic [ref=e335]: edit Open the Monaco code editor
+                - generic [ref=e336]:
+                  - generic [ref=e337]:
+                    - strong [ref=e338]: "Usage:"
+                    - code [ref=e339]: edit
+                  - generic [ref=e340]:
+                    - strong [ref=e341]: "Options:"
+                    - list [ref=e342]:
+                      - listitem [ref=e343]:
+                        - code
+                        - text: "- File to edit (required)"
+                  - generic [ref=e344]:
+                    - strong [ref=e345]: "Examples:"
+                    - list [ref=e346]:
+                      - listitem [ref=e347]:
+                        - code [ref=e348]: edit file.js
+                        - text: "- Edit file.js in Monaco editor"
+                      - listitem [ref=e349]:
+                        - code [ref=e350]: edit config.json
+                        - text: "- Edit config.json"
+                  - generic [ref=e351]:
+                    - strong [ref=e352]: "See also:"
+                    - text: vim, cat
+              - listitem [ref=e353]:
+                - generic [ref=e354]: bash Execute a shell script file
+                - generic [ref=e356]:
+                  - strong [ref=e357]: "Usage:"
+                  - code [ref=e358]: bash
+              - listitem [ref=e359]:
+                - generic [ref=e360]: source Execute script in current shell context
+                - generic [ref=e362]:
+                  - strong [ref=e363]: "Usage:"
+                  - code [ref=e364]: source
+              - listitem [ref=e365]:
+                - generic [ref=e366]: version Show the WOS system version information
+                - generic [ref=e367]:
+                  - generic [ref=e368]:
+                    - strong [ref=e369]: "Usage:"
+                    - code [ref=e370]: version
+                  - generic [ref=e371]:
+                    - strong [ref=e372]: "Examples:"
+                    - list [ref=e373]:
+                      - listitem [ref=e374]:
+                        - code [ref=e375]: version
+                        - text: "- Display system version"
+                  - generic [ref=e376]:
+                    - strong [ref=e377]: "See also:"
+                    - text: help, state
+              - listitem [ref=e378]:
+                - generic [ref=e379]: state Display current kernel state and system information
+                - generic [ref=e380]:
+                  - generic [ref=e381]:
+                    - strong [ref=e382]: "Usage:"
+                    - code [ref=e383]: state
+                  - generic [ref=e384]:
+                    - strong [ref=e385]: "Examples:"
+                    - list [ref=e386]:
+                      - listitem [ref=e387]:
+                        - code [ref=e388]: state
+                        - text: "- Show kernel state"
+                  - generic [ref=e389]:
+                    - strong [ref=e390]: "See also:"
+                    - text: ps, version
+              - listitem [ref=e391]:
+                - generic [ref=e392]: reset Reset the system to initial state
+                - generic [ref=e393]:
+                  - generic [ref=e394]:
+                    - strong [ref=e395]: "Usage:"
+                    - code [ref=e396]: reset
+                  - generic [ref=e397]:
+                    - strong [ref=e398]: "Examples:"
+                    - list [ref=e399]:
+                      - listitem [ref=e400]:
+                        - code [ref=e401]: reset
+                        - text: "- Reset system and clear all data"
+                  - generic [ref=e402]:
+                    - strong [ref=e403]: "See also:"
+                    - text: clear
+              - listitem [ref=e404]:
+                - generic [ref=e405]: clear Clear the terminal screen
+                - generic [ref=e406]:
+                  - generic [ref=e407]:
+                    - strong [ref=e408]: "Usage:"
+                    - code [ref=e409]: clear
+                  - generic [ref=e410]:
+                    - strong [ref=e411]: "Examples:"
+                    - list [ref=e412]:
+                      - listitem [ref=e413]:
+                        - code [ref=e414]: clear
+                        - text: "- Clear terminal output"
+                      - listitem [ref=e415]:
+                        - code [ref=e416]: cls
+                        - text: "- Alias for clear"
+                  - generic [ref=e417]:
+                    - strong [ref=e418]: "See also:"
+                    - text: reset
+              - listitem [ref=e419]:
+                - generic [ref=e420]: history Show command history
+                - generic [ref=e421]:
+                  - generic [ref=e422]:
+                    - strong [ref=e423]: "Usage:"
+                    - code [ref=e424]: history
+                  - generic [ref=e425]:
+                    - strong [ref=e426]: "Examples:"
+                    - list [ref=e427]:
+                      - listitem [ref=e428]:
+                        - code [ref=e429]: history
+                        - text: "- Display all previous commands"
+                  - generic [ref=e430]:
+                    - strong [ref=e431]: "See also:"
+                    - text: clear
+              - listitem [ref=e432]:
+                - generic [ref=e433]: config Show current system configuration
+                - generic [ref=e434]:
+                  - generic [ref=e435]:
+                    - strong [ref=e436]: "Usage:"
+                    - code [ref=e437]: config
+                  - generic [ref=e438]:
+                    - strong [ref=e439]: "Examples:"
+                    - list [ref=e440]:
+                      - listitem [ref=e441]:
+                        - code [ref=e442]: config
+                        - text: "- Display configuration settings"
+                  - generic [ref=e443]:
+                    - strong [ref=e444]: "See also:"
+                    - text: version, state
+              - listitem [ref=e445]:
+                - generic [ref=e446]: theme Change the terminal color theme
+                - generic [ref=e447]:
+                  - generic [ref=e448]:
+                    - strong [ref=e449]: "Usage:"
+                    - code [ref=e450]: theme
+                  - generic [ref=e451]:
+                    - strong [ref=e452]: "Options:"
+                    - list [ref=e453]:
+                      - listitem [ref=e454]:
+                        - code [ref=e455]: dark
+                        - text: "- Dark color scheme"
+                      - listitem [ref=e456]:
+                        - code [ref=e457]: light
+                        - text: "- Light color scheme"
+                      - listitem [ref=e458]:
+                        - code [ref=e459]: auto
+                        - text: "- Automatic based on system preference"
+                  - generic [ref=e460]:
+                    - strong [ref=e461]: "Examples:"
+                    - list [ref=e462]:
+                      - listitem [ref=e463]:
+                        - code [ref=e464]: theme dark
+                        - text: "- Switch to dark theme"
+                      - listitem [ref=e465]:
+                        - code [ref=e466]: theme light
+                        - text: "- Switch to light theme"
+                      - listitem [ref=e467]:
+                        - code [ref=e468]: theme auto
+                        - text: "- Use system theme preference"
+                  - generic [ref=e469]:
+                    - strong [ref=e470]: "See also:"
+                    - text: config
+  - link "Made by Pragmatic AI Labs" [ref=e471] [cursor=pointer]:
+    - /url: https://paiml.com
+    - img "Pragmatic AI Labs" [ref=e472]
+    - generic [ref=e473]: paiml.com
+```
