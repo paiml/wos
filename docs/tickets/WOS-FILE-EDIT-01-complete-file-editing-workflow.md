@@ -155,7 +155,25 @@ document.getElementById('btn-edit').addEventListener('click', () => {
 
 ## Implementation Plan (RED-GREEN-REFACTOR)
 
-### Phase 1: Fix File List Auto-Refresh (4 hours)
+### Phase 1: Fix File List Auto-Refresh ✅ COMPLETED (2025-10-26)
+
+**Actual Time**: 4 hours (debugging + implementation + testing)
+**Commit**: a0fa000 "[WOS-FILE-EDIT-01] fix: File list auto-refresh integration (5/5 tests passing)"
+**Tests**: `tests/e2e/file-creation-refresh-test.spec.js` (5/5 passing)
+
+**Implementation Summary**:
+- Fixed `ls -la /` command bug (was returning garbage) by using simple `ls` command
+- Disabled FileManager's `renderFileList()` which was overwriting Terminal's correct rendering
+- Fixed empty `ls` output validation (empty string is valid when no files exist)
+- Added button state management when file list becomes empty
+- Updated file list refresh on filesystem panel open
+
+**Code Changes**:
+- `dist/wos/app.js:2544-2562` - Use simple `ls` command, accept empty string as valid
+- `dist/wos/app.js:2586-2595` - Disable buttons when files.length === 0
+- `dist/wos/app.js:854-858` - Disabled FileManager rendering (delegating to Terminal)
+- `dist/wos/app.js:591-594` - Update file list when filesystem panel opens
+- `dist/wos/app.js:3663` - Set terminal reference in panel manager
 
 **RED** (Write Failing Tests):
 ```javascript
@@ -235,7 +253,32 @@ refreshFileList() {
 
 **REFACTOR**: Extract auto-selection logic, add configuration option
 
-### Phase 3: Vim Editor Save/Load Integration (4 hours)
+### Phase 3: Vim Editor Save/Load Integration ✅ COMPLETED (2025-10-26)
+
+**Actual Time**: 2.5 hours (test writing + implementation + verification)
+**Commit**: [pending] "[WOS-FILE-EDIT-01] feat: Vim editor save/load WASM integration (7/7 tests passing)"
+**Tests**: `tests/e2e/vim-editor-save-load-test.spec.js` (7/7 passing)
+
+**Implementation Summary**:
+- Updated `FileManager.openVimEditor()` to read file content from WASM filesystem using `cat` command
+- Implemented save callback that writes to WASM using `echo` redirect
+- Created `escapeForShell()` method to properly escape content (quotes, backslashes, $, backticks, newlines)
+- Maintains backward compatibility with localStorage
+- Full workflow tested: create → edit → save → reopen → verify persistence
+
+**Test Coverage**:
+1. ✅ vim saves file content and persists across reopen
+2. ✅ vim :w saves without closing editor
+3. ✅ vim :q! discards unsaved changes
+4. ✅ vim :q warns if unsaved changes exist
+5. ✅ vim handles multiline content correctly
+6. ✅ vim saves special characters correctly ($, quotes, backslashes)
+7. ✅ vim edit workflow integrates with file list
+
+**Code Changes**:
+- `dist/wos/app.js:930-997` - openVimEditor() reads from WASM, saves to WASM
+- `dist/wos/app.js:999-1012` - escapeForShell() helper method
+- `tests/e2e/vim-editor-save-load-test.spec.js` - NEW FILE - 7 comprehensive E2E tests
 
 **RED** (Write Failing Tests):
 ```javascript

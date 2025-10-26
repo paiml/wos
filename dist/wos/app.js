@@ -928,20 +928,87 @@ class FileManager {
   }
 
   openVimEditor(fileName) {
-    const fileData = this.files.get(fileName);
-    if (!fileData) return;
+    // WOS-FILE-EDIT-01: Read file content from WASM filesystem (not just the Map)
+    tracer.debug('FILE', 'openVimEditor called', { fileName });
 
-    const vim = new VimEditor(fileData.name, fileData.content, (newContent) => {
-      // Save callback
+    let content = '';
+
+    // Try to get from WASM filesystem first
+    if (this.wos) {
+      try {
+        const result = this.wos.executeCommand(`cat ${fileName}`);
+        // Check if file exists (cat returns error if not found)
+        if (result && !result.includes('No such file') && !result.includes('cat:')) {
+          content = result;
+          tracer.debug('FILE', 'Loaded content from WASM', { fileName, contentLength: content.length });
+        } else {
+          // File doesn't exist in WASM, might be new or from localStorage
+          tracer.debug('FILE', 'File not in WASM, checking Map/localStorage', { fileName });
+          const fileData = this.files.get(fileName);
+          if (fileData) {
+            content = fileData.content || '';
+          }
+        }
+      } catch (error) {
+        tracer.warn('FILE', 'Error reading from WASM', { fileName, error: error.message });
+        const fileData = this.files.get(fileName);
+        if (fileData) {
+          content = fileData.content || '';
+        }
+      }
+    } else {
+      // No WASM available, use Map
+      const fileData = this.files.get(fileName);
+      if (fileData) {
+        content = fileData.content || '';
+      }
+    }
+
+    // Create Vim editor with save callback that writes to WASM
+    const vim = new VimEditor(fileName, content, (newContent) => {
+      tracer.info('FILE', 'Saving file to WASM filesystem', { fileName, contentLength: newContent.length });
+
+      // Save to WASM filesystem using echo redirect
+      if (this.wos) {
+        try {
+          // Escape content for shell (handle quotes, backslashes, etc.)
+          const escapedContent = this.escapeForShell(newContent);
+          const saveCommand = `echo "${escapedContent}" > ${fileName}`;
+          this.wos.executeCommand(saveCommand);
+          tracer.info('FILE', 'File saved to WASM successfully', { fileName });
+        } catch (error) {
+          tracer.error('FILE', 'Error saving to WASM', { fileName, error: error.message });
+        }
+      }
+
+      // Also update local Map and localStorage for backward compatibility
+      const fileData = this.files.get(fileName) || { name: fileName };
       fileData.content = newContent;
       fileData.size = newContent.length;
       fileData.modified = new Date().toLocaleString();
       this.files.set(fileName, fileData);
       localStorage.setItem(`wos-file-${fileName}`, newContent);
+
+      // Refresh file list to show updated size
       this.refreshFileList();
     });
 
     vim.open();
+  }
+
+  // WOS-FILE-EDIT-01: Escape content for safe shell command execution
+  escapeForShell(content) {
+    // Replace backslashes first (must be first to avoid double-escaping)
+    let escaped = content.replace(/\\/g, '\\\\');
+    // Escape double quotes
+    escaped = escaped.replace(/"/g, '\\"');
+    // Escape dollar signs (variable expansion)
+    escaped = escaped.replace(/\$/g, '\\$');
+    // Escape backticks (command substitution)
+    escaped = escaped.replace(/`/g, '\\`');
+    // Replace newlines with \n literal
+    escaped = escaped.replace(/\n/g, '\\n');
+    return escaped;
   }
 
   downloadFile(fileName) {
