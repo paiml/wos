@@ -21,10 +21,10 @@ test.describe('WebOS Showcase Demo', () => {
     test('30-second comprehensive WebOS demo', async ({ page }) => {
         test.setTimeout(60000); // 60 second timeout for the demo
         // Navigate to WebOS
-        await page.goto('http://localhost:8000/wos/');
+        await page.goto('http://127.0.0.1:8000/');
 
         // Wait for WebOS to fully load
-        await page.waitForSelector('#terminal', { timeout: 10000 });
+        await page.waitForSelector('#terminal-input', { timeout: 10000 });
         await page.waitForTimeout(2000); // Let UI settle
 
         // Dismiss tutorial overlay if present
@@ -34,8 +34,8 @@ test.describe('WebOS Showcase Demo', () => {
             await page.waitForTimeout(500);
         }
 
-        // Get terminal element
-        const terminal = page.locator('#terminal');
+        // Get terminal input element
+        const terminal = page.locator('#terminal-input');
 
         // ============================================
         // Part 1: Set up environment variables (3s)
