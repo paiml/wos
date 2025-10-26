@@ -2647,6 +2647,34 @@ mod tests {
     }
 
     #[test]
+    fn test_expand_arithmetic_basic() {
+        let wos = WosWasm::new();
+        let result = wos.expand_arithmetic("echo $((2 + 3))");
+        assert_eq!(result, "echo 5");
+    }
+
+    #[test]
+    fn test_expand_arithmetic_multiple() {
+        let wos = WosWasm::new();
+        let result = wos.expand_arithmetic("$((1+1)) and $((2*3))");
+        assert_eq!(result, "2 and 6");
+    }
+
+    #[test]
+    fn test_expand_arithmetic_no_match() {
+        let wos = WosWasm::new();
+        let result = wos.expand_arithmetic("echo hello");
+        assert_eq!(result, "echo hello");
+    }
+
+    #[test]
+    fn test_execute_command_arithmetic() {
+        let mut wos = WosWasm::new();
+        let result = wos.execute_command("echo $((2 + 3))");
+        assert_eq!(result, "5\n");
+    }
+
+    #[test]
     fn test_wos_wasm_execute_command_version() {
         let mut wos = WosWasm::new();
         let result = wos.execute_command("version");
