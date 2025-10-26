@@ -2024,12 +2024,14 @@ impl WosWasm {
     }
 
     fn cmd_echo(&self, args: Vec<String>) -> String {
-        // echo with no arguments outputs an empty line (newline)
-        // echo with arguments outputs the arguments joined by spaces
+        // echo adds a trailing newline (bash behavior)
+        // This is essential for:
+        // 1. File redirects (echo "line1" > file creates file with "line1\n")
+        // 2. Command substitution multiline handling ($(cat file) needs newlines to convert to spaces)
         if args.is_empty() {
-            String::new()
+            "\n".to_string()
         } else {
-            args.join(" ")
+            format!("{}\n", args.join(" "))
         }
     }
 
@@ -2604,7 +2606,8 @@ mod tests {
         let mut wos = WosWasm::new();
         let result = wos.execute_command("echo hello world");
 
-        assert_eq!(result, "hello world");
+        // echo adds trailing newline (correct bash behavior)
+        assert_eq!(result, "hello world\n");
     }
 
     #[test]

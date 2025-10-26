@@ -15,7 +15,9 @@ async function getLastOutput(page) {
   const count = await outputs.count();
   if (count === 0) return '';
   const lastOutput = outputs.nth(count - 1);
-  return await lastOutput.textContent();
+  const text = await lastOutput.textContent();
+  // Strip trailing newline (echo adds \n, but display should not show it)
+  return text.replace(/\n$/, '');
 }
 
 async function getAllOutput(page) {
