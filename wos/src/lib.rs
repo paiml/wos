@@ -1962,23 +1962,27 @@ impl WosWasm {
             }
         };
 
-        // Commands that set last_exit_code directly (ls, cat, true, false)
+        // Commands that set last_exit_code directly (echo, ls, cat, true, false)
         // return that value. Other commands use heuristic detection.
-        let exit_code =
-            if cmd_name == "ls" || cmd_name == "cat" || cmd_name == "true" || cmd_name == "false" {
-                // Command set last_exit_code directly - use it
-                self.last_exit_code
-            } else if output.contains("Error")
-                || output.contains("error")
-                || output.contains("Unknown command")
-                || output.contains("cannot")
-                || output.contains("not found")
-                || output.contains("No such")
-            {
-                1
-            } else {
-                0
-            };
+        let exit_code = if cmd_name == "echo"
+            || cmd_name == "ls"
+            || cmd_name == "cat"
+            || cmd_name == "true"
+            || cmd_name == "false"
+        {
+            // Command set last_exit_code directly - use it
+            self.last_exit_code
+        } else if output.contains("Error")
+            || output.contains("error")
+            || output.contains("Unknown command")
+            || output.contains("cannot")
+            || output.contains("not found")
+            || output.contains("No such")
+        {
+            1
+        } else {
+            0
+        };
 
         (output, exit_code)
     }
@@ -2100,7 +2104,7 @@ impl WosWasm {
         }
     }
 
-    fn cmd_echo(&self, args: Vec<String>) -> String {
+    fn cmd_echo(&mut self, args: Vec<String>) -> String {
         // echo adds a trailing newline (bash behavior)
         // This is essential for:
         // 1. File redirects (echo "line1" > file creates file with "line1\n")
@@ -2115,6 +2119,9 @@ impl WosWasm {
         } else {
             &args[..]
         };
+
+        // echo always succeeds (exit code 0)
+        self.last_exit_code = 0;
 
         if text_args.is_empty() {
             return "\n".to_string();
@@ -5036,6 +5043,36 @@ mod test_ls_exit {
             exit_code_output.trim(),
             "1",
             "Exit code should be 1 after ls failure"
+        );
+    }
+
+    #[test]
+    fn test_false_sets_exit_code() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("false");
+
+        // Check last_exit_code via $?
+        let exit_code_output = wos.execute_command("echo $?");
+        eprintln!("Exit code after false: {:?}", exit_code_output.trim());
+        assert_eq!(
+            exit_code_output.trim(),
+            "1",
+            "Exit code should be 1 after false"
+        );
+    }
+
+    #[test]
+    fn test_true_sets_exit_code() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("true");
+
+        // Check last_exit_code via $?
+        let exit_code_output = wos.execute_command("echo $?");
+        eprintln!("Exit code after true: {:?}", exit_code_output.trim());
+        assert_eq!(
+            exit_code_output.trim(),
+            "0",
+            "Exit code should be 0 after true"
         );
     }
 }
