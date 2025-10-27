@@ -75,6 +75,7 @@ pub struct WosWasm {
     last_exit_code: i32,
     history: KernelHistory,
     shell: wos_userspace::Shell,
+    positional_params: Vec<String>, // $0, $1, $2, ... script arguments
 }
 
 impl Default for WosWasm {
@@ -98,6 +99,7 @@ impl WosWasm {
             last_exit_code: 0,
             history,
             shell,
+            positional_params: vec!["wos".to_string()], // $0 = shell name
         }
     }
 
@@ -419,29 +421,41 @@ impl WosWasm {
                     chars.next(); // consume second '$'
                     result.push_str(&self.shell.pid.to_string());
                 } else if chars.peek() == Some(&'0') {
-                    // Special variable $0 - shell name
+                    // Special variable $0 - script name or shell name
                     chars.next(); // consume '0'
-                    result.push_str("wos"); // Shell name
+                    if let Some(script_name) = self.positional_params.first() {
+                        result.push_str(script_name);
+                    }
                 } else if chars.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
                     // Special variables $1-$9 - positional parameters
                     let digit_ch = chars.next().unwrap();
                     let pos = (digit_ch as u8 - b'0') as usize;
-                    // For now, positional params expand to empty (will be filled in bash scripts)
-                    // In shell context, there are no arguments, so expand to empty
-                    let _ = pos; // Suppress unused warning
+                    if let Some(param) = self.positional_params.get(pos) {
+                        result.push_str(param);
+                    }
+                    // If undefined, expand to empty string
                 } else if chars.peek() == Some(&'#') {
                     // Special variable $# - number of positional parameters
+                    // Count excludes $0 (script name), so subtract 1
                     chars.next(); // consume '#'
-                                  // In shell context, no arguments, so $# = 0
-                    result.push('0');
+                    let count = if !self.positional_params.is_empty() {
+                        self.positional_params.len() - 1
+                    } else {
+                        0
+                    };
+                    result.push_str(&count.to_string());
                 } else if chars.peek() == Some(&'@') {
-                    // Special variable $@ - all positional parameters
+                    // Special variable $@ - all positional parameters (excluding $0)
                     chars.next(); // consume '@'
-                                  // In shell context, no arguments, so $@ expands to empty
+                    if self.positional_params.len() > 1 {
+                        result.push_str(&self.positional_params[1..].join(" "));
+                    }
                 } else if chars.peek() == Some(&'*') {
-                    // Special variable $* - all positional parameters as single word
+                    // Special variable $* - all positional parameters as single word (excluding $0)
                     chars.next(); // consume '*'
-                                  // In shell context, no arguments, so $* expands to empty
+                    if self.positional_params.len() > 1 {
+                        result.push_str(&self.positional_params[1..].join(" "));
+                    }
                 } else {
                     // Regular $VAR syntax
                     let mut var_name = String::new();
@@ -2351,6 +2365,10 @@ impl WosWasm {
             }
         };
 
+        // Set positional parameters: $0 = script path, $1...$N = arguments
+        // Save previous positional params to restore after script execution
+        let saved_positional_params = std::mem::replace(&mut self.positional_params, args.clone());
+
         // Temporarily extract variables to avoid borrow conflicts
         let mut variables = std::mem::take(&mut self.variables);
 
@@ -2371,8 +2389,9 @@ impl WosWasm {
             &mut executor,
         );
 
-        // Restore variables
+        // Restore variables and positional params
         self.variables = variables;
+        self.positional_params = saved_positional_params;
 
         match result {
             Ok(result) => {
