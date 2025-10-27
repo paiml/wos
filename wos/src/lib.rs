@@ -1923,6 +1923,7 @@ impl WosWasm {
                 "touch" => self.cmd_touch(args.to_vec()),
                 "mkdir" => self.cmd_mkdir(args.to_vec()),
                 "rm" => self.cmd_rm(args.to_vec()),
+                "mv" => self.cmd_mv(args.to_vec()),
                 "echo" => self.cmd_echo(args.to_vec()),
                 "grep" => self.cmd_grep(args.to_vec(), stdin),
                 "wc" => self.cmd_wc(args.to_vec(), stdin),
@@ -2191,6 +2192,36 @@ impl WosWasm {
             }
         }
         output
+    }
+
+    fn cmd_mv(&mut self, args: Vec<String>) -> String {
+        if args.len() != 2 {
+            return "Usage: mv <source> <dest>\n".to_string();
+        }
+
+        let src = &args[0];
+        let dest = &args[1];
+        let src_path = std::path::PathBuf::from(src);
+        let dest_path = std::path::PathBuf::from(dest);
+
+        // Read source file
+        match self.state.vfs.read_file(&src_path) {
+            Ok(content) => {
+                // Delete destination if it exists (to allow overwriting)
+                let _ = self.state.vfs.delete_file(&dest_path);
+
+                // Create destination file
+                match self.state.vfs.create_file(dest_path, content) {
+                    Ok(_) => {
+                        // Delete source (completing the move)
+                        let _ = self.state.vfs.delete_file(&src_path);
+                        String::new() // Success - no output
+                    }
+                    Err(_) => format!("mv: cannot move '{}' to '{}'\n", src, dest),
+                }
+            }
+            Err(_) => format!("mv: cannot stat '{}': No such file or directory\n", src),
+        }
     }
 
     fn cmd_grep(&self, args: Vec<String>, stdin: &str) -> String {
@@ -4812,5 +4843,116 @@ environment: production
             "Failed: MYVAR should still be 'original', got '{}'",
             output4.trim()
         );
+    }
+
+    // RED TEST: WOS-FILE-MV-01 - mv command basic functionality
+    #[test]
+    fn test_cmd_mv_basic() {
+        let mut wos = WosWasm::new();
+
+        // Create a file with content
+        wos.cmd_touch(vec!["source.txt".to_string()]);
+        wos.state
+            .vfs
+            .write_file(
+                &std::path::PathBuf::from("source.txt"),
+                b"test content".to_vec(),
+            )
+            .unwrap();
+
+        // Move the file
+        let output = wos.cmd_mv(vec!["source.txt".to_string(), "dest.txt".to_string()]);
+
+        // Should succeed with no output
+        assert_eq!(output, "");
+
+        // Source should not exist
+        assert!(wos
+            .state
+            .vfs
+            .read_file(&std::path::PathBuf::from("source.txt"))
+            .is_err());
+
+        // Destination should exist with same content
+        let content = wos
+            .state
+            .vfs
+            .read_file(&std::path::PathBuf::from("dest.txt"))
+            .unwrap();
+        assert_eq!(content, b"test content");
+    }
+
+    #[test]
+    fn test_cmd_mv_missing_args() {
+        let mut wos = WosWasm::new();
+
+        // Test with no args
+        let output = wos.cmd_mv(vec![]);
+        assert!(output.contains("Usage: mv"));
+
+        // Test with only one arg
+        let output = wos.cmd_mv(vec!["file.txt".to_string()]);
+        assert!(output.contains("Usage: mv"));
+    }
+
+    #[test]
+    fn test_cmd_mv_source_not_found() {
+        let mut wos = WosWasm::new();
+
+        // Try to move non-existent file
+        let output = wos.cmd_mv(vec!["nonexistent.txt".to_string(), "dest.txt".to_string()]);
+
+        // Should show error
+        assert!(output.contains("cannot stat") || output.contains("No such file"));
+    }
+
+    #[test]
+    fn test_cmd_mv_rename() {
+        let mut wos = WosWasm::new();
+
+        // Create file
+        wos.cmd_touch(vec!["oldname.txt".to_string()]);
+
+        // Rename it
+        let output = wos.cmd_mv(vec!["oldname.txt".to_string(), "newname.txt".to_string()]);
+        assert_eq!(output, "");
+
+        // Old name should not exist
+        assert!(wos
+            .state
+            .vfs
+            .read_file(&std::path::PathBuf::from("oldname.txt"))
+            .is_err());
+
+        // New name should exist
+        assert!(wos
+            .state
+            .vfs
+            .read_file(&std::path::PathBuf::from("newname.txt"))
+            .is_ok());
+    }
+
+    #[test]
+    fn test_cmd_mv_preserves_content() {
+        let mut wos = WosWasm::new();
+
+        // Create file with specific content
+        wos.cmd_touch(vec!["data.txt".to_string()]);
+        let test_content = b"Important data\nLine 2\nLine 3";
+        wos.state
+            .vfs
+            .write_file(&std::path::PathBuf::from("data.txt"), test_content.to_vec())
+            .unwrap();
+
+        // Move it
+        wos.cmd_mv(vec!["data.txt".to_string(), "backup.txt".to_string()]);
+
+        // Content should be preserved
+        let content = wos
+            .state
+            .vfs
+            .read_file(&std::path::PathBuf::from("backup.txt"))
+            .unwrap();
+        assert_eq!(content, test_content);
     }
 }
