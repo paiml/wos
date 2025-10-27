@@ -1962,21 +1962,23 @@ impl WosWasm {
             }
         };
 
-        // Determine exit code (0 = success, 1 = error)
-        let exit_code = if cmd_name == "true" {
-            0
-        } else if cmd_name == "false"
-            || output.contains("Error")
-            || output.contains("error")
-            || output.contains("Unknown command")
-            || output.contains("cannot")
-            || output.contains("not found")
-            || output.contains("No such")
-        {
-            1
-        } else {
-            0
-        };
+        // Commands that set last_exit_code directly (ls, cat, true, false)
+        // return that value. Other commands use heuristic detection.
+        let exit_code =
+            if cmd_name == "ls" || cmd_name == "cat" || cmd_name == "true" || cmd_name == "false" {
+                // Command set last_exit_code directly - use it
+                self.last_exit_code
+            } else if output.contains("Error")
+                || output.contains("error")
+                || output.contains("Unknown command")
+                || output.contains("cannot")
+                || output.contains("not found")
+                || output.contains("No such")
+            {
+                1
+            } else {
+                0
+            };
 
         (output, exit_code)
     }
@@ -2026,7 +2028,7 @@ impl WosWasm {
         output
     }
 
-    fn cmd_ls(&self, args: Vec<String>) -> String {
+    fn cmd_ls(&mut self, args: Vec<String>) -> String {
         // If args provided (glob-expanded paths), list only those
         // Otherwise list all files from VFS
         if !args.is_empty() {
@@ -2066,20 +2068,25 @@ impl WosWasm {
                     });
 
                     if !path_exists && path != "." {
-                        // Non-existent directory - return error
+                        // Non-existent directory - set exit code and return error
+                        self.last_exit_code = 1;
                         format!("ls: cannot access '{}': No such file or directory\n", path)
                     } else {
+                        self.last_exit_code = 0;
                         String::new()
                     }
                 } else {
+                    self.last_exit_code = 0;
                     matching.join("\n") + "\n"
                 }
             } else {
                 // Args are already glob-expanded - just list them
+                self.last_exit_code = 0;
                 args.join("\n") + "\n"
             }
         } else {
             let files = self.state.vfs.list_files();
+            self.last_exit_code = 0;
             if files.is_empty() {
                 String::new()
             } else {
@@ -2155,14 +2162,16 @@ impl WosWasm {
         output
     }
 
-    fn cmd_cat(&self, args: Vec<String>, stdin: &str) -> String {
+    fn cmd_cat(&mut self, args: Vec<String>, stdin: &str) -> String {
         // If no file is provided, read from stdin (Unix cat behavior)
         if args.is_empty() {
+            self.last_exit_code = 0;
             return stdin.to_string();
         }
 
         // Concatenate all provided files
         let mut output = String::new();
+        let mut had_error = false;
         for arg in args {
             let path = std::path::PathBuf::from(&arg);
             match self.state.vfs.read_file(&path) {
@@ -2170,10 +2179,13 @@ impl WosWasm {
                     output.push_str(&String::from_utf8_lossy(&contents));
                 }
                 Err(_) => {
+                    had_error = true;
                     output.push_str(&format!("cat: {}: No such file or directory\n", arg));
                 }
             }
         }
+        // Set exit code based on whether any errors occurred
+        self.last_exit_code = if had_error { 1 } else { 0 };
         output
     }
 
