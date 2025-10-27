@@ -2030,27 +2030,47 @@ impl WosWasm {
         // If args provided (glob-expanded paths), list only those
         // Otherwise list all files from VFS
         if !args.is_empty() {
-            // Check if arg is a directory path (ends with /)
-            // If so, list files in that directory
-            if args.len() == 1 && args[0].ends_with('/') {
-                let dir = &args[0];
+            // Check if arg is a directory path (like /nonexistent or /tmp/)
+            if args.len() == 1 {
+                let path = &args[0];
                 let files = self.state.vfs.list_files();
+
+                // Check if this is a directory request (with or without trailing /)
+                let dir_path = if path.ends_with('/') {
+                    path.clone()
+                } else {
+                    format!("{}/", path)
+                };
+
+                // Find files in this directory
                 let matching: Vec<_> = files
                     .iter()
                     .filter(|p| {
                         let path_str = p.to_string_lossy();
-                        // File is in this directory if it starts with dir and has no further slashes
-                        if !path_str.starts_with(dir) {
+                        // File is in this directory if it starts with dir_path and has no further slashes
+                        if !path_str.starts_with(&dir_path) {
                             return false;
                         }
-                        let remainder = &path_str[dir.len()..];
+                        let remainder = &path_str[dir_path.len()..];
                         !remainder.contains('/')
                     })
                     .map(|p| p.display().to_string())
                     .collect();
 
                 if matching.is_empty() {
-                    String::new()
+                    // Check if this looks like a directory request (not just an empty result)
+                    // If the path doesn't match any existing paths, it's an error
+                    let path_exists = files.iter().any(|p| {
+                        let path_str = p.to_string_lossy();
+                        path_str.starts_with(&dir_path) || path_str == path.as_str()
+                    });
+
+                    if !path_exists && path != "." {
+                        // Non-existent directory - return error
+                        format!("ls: cannot access '{}': No such file or directory\n", path)
+                    } else {
+                        String::new()
+                    }
                 } else {
                     matching.join("\n") + "\n"
                 }
@@ -4973,5 +4993,37 @@ environment: production
             .read_file(&std::path::PathBuf::from("backup.txt"))
             .unwrap();
         assert_eq!(content, test_content);
+    }
+}
+
+#[cfg(test)]
+mod test_ls_exit {
+    use super::*;
+
+    #[test]
+    fn test_ls_nonexistent_produces_error() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("ls /nonexistent_directory");
+
+        eprintln!("LS Output: {:?}", output);
+        assert!(
+            output.contains("No such"),
+            "ls output should contain 'No such'"
+        );
+    }
+
+    #[test]
+    fn test_ls_nonexistent_sets_exit_code() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("ls /nonexistent_directory");
+
+        // Check last_exit_code via $?
+        let exit_code_output = wos.execute_command("echo $?");
+        eprintln!("Exit code output: {:?}", exit_code_output.trim());
+        assert_eq!(
+            exit_code_output.trim(),
+            "1",
+            "Exit code should be 1 after ls failure"
+        );
     }
 }
