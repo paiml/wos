@@ -516,9 +516,9 @@ mod tests {
         let pipeline = parse_pipeline("echo \"hello | world\" | grep hello");
         assert_eq!(pipeline.stages.len(), 2);
 
-        // First command should have the full quoted string
+        // First command should have the full quoted string (with quotes preserved)
         assert_eq!(pipeline.stages[0].command.name, "echo");
-        assert_eq!(pipeline.stages[0].command.args, vec!["hello | world"]);
+        assert_eq!(pipeline.stages[0].command.args, vec!["\"hello | world\""]);
         assert_eq!(pipeline.stages[0].operator, Some(Operator::Pipe));
     }
 
@@ -554,7 +554,7 @@ mod tests {
         assert_eq!(pipeline.stages[0].operator, Some(Operator::Or));
 
         assert_eq!(pipeline.stages[1].command.name, "echo");
-        assert_eq!(pipeline.stages[1].command.args, vec!["not found"]);
+        assert_eq!(pipeline.stages[1].command.args, vec!["\"not found\""]);
         assert_eq!(pipeline.stages[1].operator, None);
     }
 
@@ -604,7 +604,10 @@ mod tests {
     fn test_operators_in_single_quotes_ignored() {
         let pipeline = parse_pipeline("echo 'cmd1 | cmd2 && cmd3'");
         assert_eq!(pipeline.stages.len(), 1);
-        assert_eq!(pipeline.stages[0].command.args, vec!["cmd1 | cmd2 && cmd3"]);
+        assert_eq!(
+            pipeline.stages[0].command.args,
+            vec!["'cmd1 | cmd2 && cmd3'"]
+        );
         assert!(pipeline.is_simple());
     }
 
@@ -612,7 +615,10 @@ mod tests {
     fn test_operators_in_double_quotes_ignored() {
         let pipeline = parse_pipeline("echo \"cmd1 || cmd2 ; cmd3\"");
         assert_eq!(pipeline.stages.len(), 1);
-        assert_eq!(pipeline.stages[0].command.args, vec!["cmd1 || cmd2 ; cmd3"]);
+        assert_eq!(
+            pipeline.stages[0].command.args,
+            vec!["\"cmd1 || cmd2 ; cmd3\""]
+        );
         assert!(pipeline.is_simple());
     }
 
@@ -662,8 +668,8 @@ mod tests {
     fn test_quoted_args_preserved_in_pipeline() {
         let pipeline = parse_pipeline("mkdir \"my dir\" && cd \"my dir\"");
         assert_eq!(pipeline.stages.len(), 2);
-        assert_eq!(pipeline.stages[0].command.args, vec!["my dir"]);
-        assert_eq!(pipeline.stages[1].command.args, vec!["my dir"]);
+        assert_eq!(pipeline.stages[0].command.args, vec!["\"my dir\""]);
+        assert_eq!(pipeline.stages[1].command.args, vec!["\"my dir\""]);
     }
 
     #[test]
@@ -774,8 +780,8 @@ mod tests {
     fn test_parse_redirection_operators_in_quotes_ignored() {
         let pipeline = parse_pipeline("echo \"test > file\" > output.txt");
         assert_eq!(pipeline.stages.len(), 1);
-        // Quotes are stripped by parse_command (standard shell behavior)
-        assert_eq!(pipeline.stages[0].command.args, vec!["test > file"]);
+        // Quotes are kept in args - expand_variables will strip them later
+        assert_eq!(pipeline.stages[0].command.args, vec!["\"test > file\""]);
         assert_eq!(pipeline.stages[0].command.redirections.len(), 1);
         assert_eq!(
             pipeline.stages[0].command.redirections[0],

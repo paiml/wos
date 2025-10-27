@@ -22,7 +22,7 @@
 ///
 /// let (cmd, args) = parse_command("mkdir \"my directory\"");
 /// assert_eq!(cmd, "mkdir");
-/// assert_eq!(args, vec!["my directory"]);
+/// assert_eq!(args, vec!["\"my directory\""]);
 /// ```
 pub fn parse_command(input: &str) -> (String, Vec<String>) {
     let input = input.trim();
@@ -261,28 +261,28 @@ mod tests {
     fn test_parse_double_quotes() {
         let (cmd, args) = parse_command("mkdir \"my directory\"");
         assert_eq!(cmd, "mkdir");
-        assert_eq!(args, vec!["my directory"]);
+        assert_eq!(args, vec!["\"my directory\""]);
     }
 
     #[test]
     fn test_parse_double_quotes_with_spaces() {
         let (cmd, args) = parse_command("touch \"file with spaces.txt\"");
         assert_eq!(cmd, "touch");
-        assert_eq!(args, vec!["file with spaces.txt"]);
+        assert_eq!(args, vec!["\"file with spaces.txt\""]);
     }
 
     #[test]
     fn test_parse_multiple_quoted_args() {
         let (cmd, args) = parse_command("cmd \"arg one\" \"arg two\"");
         assert_eq!(cmd, "cmd");
-        assert_eq!(args, vec!["arg one", "arg two"]);
+        assert_eq!(args, vec!["\"arg one\"", "\"arg two\""]);
     }
 
     #[test]
     fn test_parse_mixed_quoted_unquoted() {
         let (cmd, args) = parse_command("cp file.txt \"my folder/backup.txt\"");
         assert_eq!(cmd, "cp");
-        assert_eq!(args, vec!["file.txt", "my folder/backup.txt"]);
+        assert_eq!(args, vec!["file.txt", "\"my folder/backup.txt\""]);
     }
 
     // Single quote tests
@@ -290,15 +290,15 @@ mod tests {
     fn test_parse_single_quotes() {
         let (cmd, args) = parse_command("echo 'hello world'");
         assert_eq!(cmd, "echo");
-        assert_eq!(args, vec!["hello world"]);
+        assert_eq!(args, vec!["'hello world'"]);
     }
 
     #[test]
     fn test_parse_single_quotes_literal() {
         let (cmd, args) = parse_command("echo 'It'\"'\"'s working'");
         assert_eq!(cmd, "echo");
-        // Single quotes preserve everything literally
-        assert_eq!(args, vec!["It's working"]);
+        // Parser keeps quotes - expand_variables will handle them
+        assert_eq!(args, vec!["'It'\"'\"'s working'"]);
     }
 
     // Escape sequence tests
@@ -320,35 +320,35 @@ mod tests {
     fn test_parse_escape_in_double_quotes() {
         let (cmd, args) = parse_command("echo \"Line 1\\nLine 2\"");
         assert_eq!(cmd, "echo");
-        assert_eq!(args, vec!["Line 1\nLine 2"]);
+        assert_eq!(args, vec!["\"Line 1\nLine 2\""]);
     }
 
     #[test]
     fn test_parse_escape_tab_in_double_quotes() {
         let (cmd, args) = parse_command("echo \"Col1\\tCol2\"");
         assert_eq!(cmd, "echo");
-        assert_eq!(args, vec!["Col1\tCol2"]);
+        assert_eq!(args, vec!["\"Col1\tCol2\""]);
     }
 
     #[test]
     fn test_parse_escape_carriage_return_in_double_quotes() {
         let (cmd, args) = parse_command("echo \"Line1\\rLine2\"");
         assert_eq!(cmd, "echo");
-        assert_eq!(args, vec!["Line1\rLine2"]);
+        assert_eq!(args, vec!["\"Line1\rLine2\""]);
     }
 
     #[test]
     fn test_parse_escape_backslash_in_double_quotes() {
         let (cmd, args) = parse_command("echo \"Path\\\\is\\\\escaped\"");
         assert_eq!(cmd, "echo");
-        assert_eq!(args, vec!["Path\\is\\escaped"]);
+        assert_eq!(args, vec!["\"Path\\is\\escaped\""]);
     }
 
     #[test]
     fn test_parse_escape_quote_in_double_quotes() {
         let (cmd, args) = parse_command("echo \"She said \\\"Hello\\\"\"");
         assert_eq!(cmd, "echo");
-        assert_eq!(args, vec!["She said \"Hello\""]);
+        assert_eq!(args, vec!["\"She said \"Hello\"\""]);
     }
 
     #[test]
@@ -356,7 +356,7 @@ mod tests {
         let (cmd, args) = parse_command("echo 'Line 1\\nLine 2'");
         assert_eq!(cmd, "echo");
         // Backslash is literal in single quotes
-        assert_eq!(args, vec!["Line 1\\nLine 2"]);
+        assert_eq!(args, vec!["'Line 1\\nLine 2'"]);
     }
 
     // Edge cases
@@ -371,7 +371,7 @@ mod tests {
     fn test_parse_empty_quotes() {
         let (cmd, args) = parse_command("echo \"\" ''");
         assert_eq!(cmd, "echo");
-        assert_eq!(args, vec!["", ""]);
+        assert_eq!(args, vec!["\"\"", "''"]);
     }
 
     #[test]
@@ -394,7 +394,7 @@ mod tests {
         let (cmd, args) = parse_command("echo \"$VAR $(cmd) `backtick`\"");
         assert_eq!(cmd, "echo");
         // For now, these are literal (variable expansion is future work)
-        assert_eq!(args, vec!["$VAR $(cmd) `backtick`"]);
+        assert_eq!(args, vec!["\"$VAR $(cmd) `backtick`\""]);
     }
 
     #[test]
@@ -414,11 +414,11 @@ mod tests {
             for arg in args {
                 // If we had spaces in the input, they should be preserved in the arg
                 if input.contains("a b c") {
-                    assert_eq!(arg, "a b c");
+                    assert_eq!(arg, "\"a b c\"");
                 } else if input.contains("x y z") {
-                    assert_eq!(arg, "x y z");
+                    assert_eq!(arg, "'x y z'");
                 } else if input.contains("hello   world") {
-                    assert_eq!(arg, "hello   world");
+                    assert_eq!(arg, "\"hello   world\"");
                 }
             }
         }
@@ -438,7 +438,7 @@ mod tests {
         let (cmd, args) = parse_command("echo \"\\$VAR\"");
         assert_eq!(cmd, "echo");
         // In double quotes, \$ should be preserved for variable expander
-        assert_eq!(args, vec!["\\$VAR"]);
+        assert_eq!(args, vec!["\"\\$VAR\""]);
     }
 
     #[test]
@@ -446,7 +446,7 @@ mod tests {
         let (cmd, args) = parse_command("echo '\\$VAR'");
         assert_eq!(cmd, "echo");
         // In single quotes, everything is literal including backslash
-        assert_eq!(args, vec!["\\$VAR"]);
+        assert_eq!(args, vec!["'\\$VAR'"]);
     }
 
     // WOS-Q03: Tests for refactored tokenize helper functions
