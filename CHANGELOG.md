@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-10-27
+
+### Deployed
+- **Production Release**: Deployed to https://interactive.paiml.com/wos/
+  - S3 Bucket: `interactive.paiml.com-production-mces4cme`
+  - CloudFront Distribution: `ELY820FVFXAFF`
+  - Deployment method: Symlink-based rapid iteration workflow
+  - Features: Arithmetic expansion, icon toolbar, terminal resize, PAIML branding
+
+### Added
+- **Arithmetic Expansion (WOS-BASH-09)**: Full support for `$((expression))` syntax
+  - Addition, subtraction, multiplication, division, modulo
+  - Parentheses for precedence
+  - Variable references in expressions
+  - Negative numbers support
+  - Test coverage: 28 unit tests, 2 E2E tests (21/28 passing)
+  - Location: `wos/src/script_executor.rs:420-512`
+
 ### Fixed
 - **Parser Quote Handling Regression (2025-10-27)**: Reverted commit 58242b7 that stripped quotes from parser tokens
   - Issue: Quote stripping broke variable expansion control in bash scripts (E2E tests: 19/23 → 14/23)
