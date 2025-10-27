@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Parser Quote Handling Regression (2025-10-27)**: Reverted commit 58242b7 that stripped quotes from parser tokens
+  - Issue: Quote stripping broke variable expansion control in bash scripts (E2E tests: 19/23 → 14/23)
+  - Root cause: `expand_variables()` relied on quote characters to determine expansion behavior
+  - Commit b031efc: Reverted quote stripping to restore E2E test pass rate (14/23 → 19/23)
+  - Trade-off: Restored user-facing functionality at cost of 23 unit test failures (known issue)
+  - Location: `shared/src/parser.rs:134-143`
+  - **Note**: Proper fix requires parser refactoring to return `Vec<Token>` with quote metadata (architectural change)
+
 ### Added
 - **Icon Toolbar Pattern**: Replaced vertical accordion with horizontal icon toolbar (8 icons: Processes, Memory, Syscalls, Files, System, Debugger, Learning, Help)
   - Chrome DevTools / VS Code style interface
