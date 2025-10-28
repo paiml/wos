@@ -60,18 +60,25 @@ Fix all 16 PMAT quality gate violations to achieve A+ quality grade
 
 **PMAT Impact**: Reduced violations from 16 to 15 (1 fixed)
 
-#### WOS-QUALITY-02: Dead Code Elimination
+#### 🔍 WOS-QUALITY-02: Dead Code Elimination (DEFERRED - Tooling Investigation Required)
 **Goal**: Remove 6 dead code violations
 
-**Strategy**:
-- Run `cargo clippy` with dead_code lint
-- Remove unused functions, structs, or modules
-- Or add `#[allow(dead_code)]` with justification if intentionally unused
+**Status**: ⏸️ DEFERRED pending WOS-QUALITY-05
+**Investigation Date**: October 28, 2025
+**Finding**: **Major discrepancy** between PMAT individual command (0 violations) and quality gate (6 violations)
 
-**Acceptance Criteria**:
-- Zero dead code warnings
-- `make pmat-gates` dead code check passes
-- No functional regressions
+**Details**:
+- `pmat analyze dead-code`: Reports **0 dead code** (219 files, 0%)
+- `pmat quality-gate`: Reports **6 violations**
+- `cargo clippy --workspace -- -W dead_code`: **0 warnings**
+
+**Hypothesis**:
+- Quality gate may use stricter criteria (unused pub(crate) functions, unexported symbols)
+- Different static analysis backend than standard Rust tooling
+
+**Action**: See WOS-QUALITY-05 for tooling investigation
+
+**Reference**: docs/PMAT-INVESTIGATION-2025-10-28.md
 
 #### WOS-QUALITY-03: Entropy Reduction
 **Goal**: Reduce 7 entropy violations
@@ -89,19 +96,63 @@ Fix all 16 PMAT quality gate violations to achieve A+ quality grade
 - `make pmat-entropy` passes
 - Code readability improved
 
-#### WOS-QUALITY-04: Provability Enhancement
+#### WOS-QUALITY-03: Entropy Reduction (DEFERRED)
+**Goal**: Reduce 7 entropy violations
+
+**Status**: ⏸️ DEFERRED pending WOS-QUALITY-05
+**Context**: High entropy indicates complex, hard-to-maintain code
+
+**Details**:
+- 7 violations reported by quality gate
+- No detailed file/function-level output from `make pmat-entropy`
+- Requires investigation into PMAT entropy methodology
+
+**Reference**: docs/PMAT-INVESTIGATION-2025-10-28.md
+
+#### WOS-QUALITY-04: Provability Enhancement (DEFERRED)
 **Goal**: Fix 1 provability violation
 
+**Status**: ⏸️ DEFERRED pending WOS-QUALITY-05
 **Context**: Provability measures how easy it is to reason about code correctness
 
-**Strategy**:
-- Add assertions for preconditions/postconditions
-- Simplify state mutations
-- Make invariants explicit
+**Details**:
+- 1 violation reported by quality gate
+- No `pmat analyze provability` command found
+- Requires investigation into PMAT provability methodology
 
-**Acceptance Criteria**:
-- Provability check passes
-- Code correctness more verifiable
+**Reference**: docs/PMAT-INVESTIGATION-2025-10-28.md
+
+#### WOS-QUALITY-05: PMAT Tooling Investigation (NEW)
+**Goal**: Understand and resolve PMAT quality gate discrepancies
+
+**Priority**: MEDIUM (after Sprint 4 features)
+**Estimated Time**: 4-8 hours
+**Created**: October 28, 2025
+
+**Investigation Required**:
+1. **Dead Code Discrepancy**: Explain 6 violations in quality gate vs 0 in individual command
+2. **Entropy Analysis**: Understand methodology and get file/function-level details
+3. **Provability Analysis**: Find analysis method and specific violations
+4. **Cognitive Complexity**: Identify which function(s) have cognitive complexity >10
+
+**Research Tasks**:
+- Examine PMAT source code or detailed documentation
+- Create custom scripts to extract detailed violation information
+- Test alternative static analysis tools for comparison
+- Document clear remediation steps for each violation type
+
+**Deliverables**:
+- Detailed violation report with file:line references
+- Remediation guide for each violation type
+- Updated `.pmat-gates.toml` configuration if needed
+- Decision on Option A (fix all) vs Option B (pragmatic thresholds)
+
+**Success Criteria**:
+- Clear understanding of all 15 remaining violations
+- Actionable remediation plan
+- Tool discrepancies explained or reported upstream
+
+**Reference**: docs/PMAT-INVESTIGATION-2025-10-28.md
 
 ### Success Metrics
 - ✅ All 16 PMAT violations resolved
@@ -370,26 +421,51 @@ Target: End of November 2025
 ## Sprint 1 Progress Log
 
 ### October 28, 2025 - WOS-QUALITY-01 Completed
-**Commit**: 7fca510
+**Commit**: 7fca510, 1f015b6
 **Time Spent**: ~2 hours
-**Violations Fixed**: 1 (complexity)
+**Violations Fixed**: 1 (cyclomatic complexity)
 **Remaining**: 15 violations
 
 **Key Achievements**:
-- Reduced `tokenize` complexity from 16 to 7 (56% improvement)
-- Reduced `split_by_operators` complexity from 10 to <10
-- Created reusable helper functions for shell expansion detection
-- All 691/691 tests passing
-- Zero functional regressions
+- ✅ Reduced `tokenize` complexity from 16 to 7 (56% improvement)
+- ✅ Reduced `split_by_operators` complexity from 10 to <10
+- ✅ Created reusable helper functions for shell expansion detection
+- ✅ All 691/691 tests passing
+- ✅ Zero functional regressions
+- ✅ Documentation checkpoint created
+
+### October 28, 2025 - PMAT Investigation Complete
+**Documents**: docs/PMAT-INVESTIGATION-2025-10-28.md
+**Time Spent**: ~2 hours
+**Decision**: Pivot to feature work (Sprint 4)
+
+**Key Findings**:
+- **Tool Discrepancies**: Major discrepancies between PMAT individual commands and quality gate
+  - Dead Code: 0 violations (individual) vs 6 violations (quality gate)
+  - Complexity: Cognitive complexity (not cyclomatic) is the issue (max: 23, target: ≤10)
+  - Entropy/Provability: Limited tooling visibility
+
+- **Validation**: Standard Rust tooling (clippy) shows zero violations, confirming discrepancies
+
+**Actions Taken**:
+- ✅ Created comprehensive investigation document
+- ✅ Added WOS-QUALITY-05 ticket for future tooling investigation
+- ✅ Marked WOS-QUALITY-02, 03, 04 as DEFERRED pending tooling clarity
+- 🔜 Pivot to Sprint 4 (vim.wasm Phase 1 features)
+
+**Rationale**:
+- Production is stable (691/691 tests, 0 regressions)
+- Significant quality improvement achieved (complexity reduction)
+- PMAT tooling requires deeper investigation before proceeding
+- High-value feature work (vim.wasm) has clear specification
 
 **Next Steps**:
-- Investigate PMAT-specific dead code detection (differs from clippy)
-- Analyze entropy violations for refactoring opportunities
-- Address remaining complexity violation (1)
-- Fix provability violation (1)
+- Review Sprint 4 (vim.wasm Phase 1) specification
+- Begin feature work with fresh focus
+- Return to quality gates after WOS-QUALITY-05 investigation
 
 **Technical Notes**:
-PMAT uses stricter/different criteria than standard Rust tooling. The remaining violations require investigation into PMAT's internal detection mechanisms or detailed reporting capabilities.
+PMAT uses stricter/different criteria than standard Rust tooling. The remaining 15 violations (1 cognitive complexity, 6 dead code, 7 entropy, 1 provability) require dedicated tooling investigation to understand detection methodology and create actionable remediation plans.
 
 ---
 
