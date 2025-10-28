@@ -17,4 +17,4 @@ pub mod state;
 
 pub use buffer::{BufferMemento, CursorPos, VimBuffer};
 pub use command::VimCommand;
-pub use state::{VimError, VimMode, VimState};
+pub use state::{Register, RegisterContent, RegisterType, VimError, VimMode, VimState};
