@@ -4,12 +4,12 @@
 
 meta:
   created: 2025-10-17
-  updated: 2025-10-21
+  updated: 2025-10-28
   project: wos
   pmat_config: .pmat-gates.toml
   roadmap: roadmap.yaml
-  status: resolved
-  priority: completed
+  status: investigating
+  priority: high
 
 # Phase 8 (PMAT Quality Gates) - ✅ COMPLETE as of 2025-10-21
 # All complexity violations resolved via WOS-Q01 through WOS-Q04
@@ -63,15 +63,50 @@ resolved_issues:
     note: "All SATD violations were resolved in previous development sessions"
 
 issues:
-  # No current violations - all Phase 8 gates passing
+  # NEW VIOLATIONS DETECTED (2025-10-28)
+  # PMAT gates show 17 total violations across 4 categories
+
+  new_violations_detected:
+    date_detected: 2025-10-28
+    total_count: 17
+    breakdown:
+      - category: complexity
+        count: 1
+        status: "⚠️ UNDER THRESHOLD (max: 8, threshold: 10) - PASSING"
+        note: "Complexity is 8, under threshold of 10, so this is acceptable"
+
+      - category: dead_code
+        count: 6
+        status: "❌ REQUIRES INVESTIGATION"
+        note: "Dead code detected but earlier check showed 0% dead code"
+        action: "Run detailed analysis to identify specific violations"
+
+      - category: entropy
+        count: 9
+        status: "❌ REQUIRES INVESTIGATION"
+        note: "Code entropy violations need detailed review"
+        action: "Run pmat analyze entropy to get specific file/function details"
+
+      - category: provability
+        count: 1
+        status: "❌ REQUIRES INVESTIGATION"
+        note: "Provability violation needs analysis"
+        action: "Identify which function/file has provability issues"
 
 current_quality_status:
-  all_gates_passing: true
-  complexity_gate: "✅ PASSING (max: 8, threshold: 10)"
+  all_gates_passing: false
+  total_violations: 17
+  complexity_gate: "⚠️ WARNING (max: 8, threshold: 10) - PASSING but flagged"
+  dead_code_gate: "❌ FAILING (6 violations detected)"
   satd_gate: "✅ PASSING (violations: 0)"
-  coverage_gate: "✅ PASSING (85%+)"
-  tests_passing: "✅ 636/636 tests passing"
+  entropy_gate: "❌ FAILING (9 violations detected)"
+  security_gate: "✅ PASSING (violations: 0)"
+  duplicates_gate: "✅ PASSING (violations: 0)"
+  coverage_gate: "✅ PASSING (violations: 0)"
+  provability_gate: "❌ FAILING (1 violation detected)"
+  tests_passing: "✅ 751/751 unit tests + E2E tests passing"
   clippy_warnings: "✅ 0 warnings"
+  wasm_size: "2011 KB"
 
 roadmap_sync:
   phase_8_status: "✅ COMPLETE"
