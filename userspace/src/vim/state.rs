@@ -65,6 +65,184 @@ impl RegisterContent {
     }
 }
 
+/// Mark identifier (local a-z, global A-Z, special marks)
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MarkId {
+    /// Local marks (a-z) - per-buffer
+    Local(char),
+
+    /// Global marks (A-Z) - across all buffers
+    Global(char),
+
+    /// Special marks
+    Special(SpecialMark),
+}
+
+/// Special predefined marks
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SpecialMark {
+    /// Last visual selection start
+    VisualStart,
+
+    /// Last visual selection end
+    VisualEnd,
+
+    /// Last edit position
+    LastEdit,
+
+    /// Last insert position
+    LastInsert,
+}
+
+/// A saved position in a buffer
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Mark {
+    /// Buffer this mark points to
+    pub buffer_id: BufferId,
+
+    /// Line number (0-indexed)
+    pub line: usize,
+
+    /// Column number (0-indexed)
+    pub col: usize,
+}
+
+impl Mark {
+    /// Create a new mark at the given position
+    pub fn new(buffer_id: BufferId, line: usize, col: usize) -> Self {
+        Self {
+            buffer_id,
+            line,
+            col,
+        }
+    }
+}
+
+/// Jump list entry for Ctrl-O/Ctrl-I navigation
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JumpEntry {
+    /// Buffer ID
+    pub buffer_id: BufferId,
+
+    /// Line number
+    pub line: usize,
+
+    /// Column number
+    pub col: usize,
+}
+
+impl JumpEntry {
+    /// Create a new jump entry
+    pub fn new(buffer_id: BufferId, line: usize, col: usize) -> Self {
+        Self {
+            buffer_id,
+            line,
+            col,
+        }
+    }
+}
+
+/// Jump list for navigation history
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JumpList {
+    /// List of jump positions
+    entries: im::Vector<JumpEntry>,
+
+    /// Current position in the list
+    current: usize,
+
+    /// Maximum number of jumps to remember
+    max_size: usize,
+}
+
+impl JumpList {
+    /// Create a new empty jump list
+    pub fn new() -> Self {
+        Self {
+            entries: im::Vector::new(),
+            current: 0,
+            max_size: 100, // Vim default
+        }
+    }
+
+    /// Add a new jump position
+    pub fn push(&mut self, entry: JumpEntry) {
+        // If we've jumped back in history, discard the "future" entries
+        // (when we make a new jump, discard everything after current)
+        if self.current < self.entries.len() {
+            self.entries = self.entries.take(self.current + 1);
+        }
+
+        // Add new entry
+        self.entries.push_back(entry);
+
+        // Update current to point to the new entry
+        self.current = self.entries.len().saturating_sub(1);
+
+        // Trim if exceeded max size
+        if self.entries.len() > self.max_size {
+            self.entries = self.entries.skip(1);
+            // After skipping, adjust current
+            if self.current > 0 {
+                self.current -= 1;
+            }
+        }
+    }
+
+    /// Jump backward (Ctrl-O)
+    pub fn jump_back(&mut self) -> Option<&JumpEntry> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        if self.current > 0 {
+            self.current -= 1;
+            self.entries.get(self.current)
+        } else {
+            None
+        }
+    }
+
+    /// Jump forward (Ctrl-I)
+    pub fn jump_forward(&mut self) -> Option<&JumpEntry> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        if self.current + 1 < self.entries.len() {
+            self.current += 1;
+            self.entries.get(self.current)
+        } else {
+            None
+        }
+    }
+
+    /// Get current jump entry
+    pub fn current(&self) -> Option<&JumpEntry> {
+        if self.entries.is_empty() {
+            None
+        } else {
+            self.entries.get(self.current)
+        }
+    }
+
+    /// Check if we can jump backward
+    pub fn can_jump_back(&self) -> bool {
+        // Can jump back if we have entries and current points after first entry
+        !self.entries.is_empty() && self.current > 0
+    }
+
+    /// Check if we can jump forward
+    pub fn can_jump_forward(&self) -> bool {
+        // Can jump forward if current is not at the end
+        !self.entries.is_empty() && self.current + 1 < self.entries.len()
+    }
+}
+
+impl Default for JumpList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Vim editor mode
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum VimMode {
@@ -124,6 +302,12 @@ pub struct VimState {
 
     /// Currently selected register for next yank/delete/paste (None = unnamed)
     pub selected_register: Option<Register>,
+
+    /// Marks for position navigation (ma, 'a, etc.)
+    pub marks: im::HashMap<MarkId, Mark>,
+
+    /// Jump list for Ctrl-O/Ctrl-I navigation
+    pub jump_list: JumpList,
 }
 
 impl VimState {
@@ -144,6 +328,8 @@ impl VimState {
             modified: false,
             registers: im::HashMap::new(),
             selected_register: None,
+            marks: im::HashMap::new(),
+            jump_list: JumpList::new(),
         }
     }
 
@@ -165,6 +351,8 @@ impl VimState {
             modified: is_modified,
             registers: im::HashMap::new(),
             selected_register: None,
+            marks: im::HashMap::new(),
+            jump_list: JumpList::new(),
         }
     }
 
@@ -410,6 +598,135 @@ impl VimState {
         self.clear_register_selection();
 
         Ok(())
+    }
+
+    // ===== Mark Operations =====
+
+    /// Set a mark at the current cursor position
+    pub fn set_mark(&mut self, mark_id: MarkId) -> Result<(), VimError> {
+        let buffer = self.current_buffer();
+        let mark = Mark::new(self.active_buffer, buffer.cursor.line, buffer.cursor.col);
+        self.marks.insert(mark_id, mark);
+        Ok(())
+    }
+
+    /// Jump to a previously set mark
+    pub fn jump_to_mark(&mut self, mark_id: &MarkId) -> Result<(), VimError> {
+        let mark = self
+            .marks
+            .get(mark_id)
+            .ok_or_else(|| VimError::General(format!("Mark not set: {:?}", mark_id)))?
+            .clone();
+
+        // Record current position in jump list before jumping
+        self.record_jump();
+
+        // Switch buffer if needed
+        if mark.buffer_id != self.active_buffer {
+            if !self.buffers.contains_key(&mark.buffer_id) {
+                return Err(VimError::BufferNotFound(mark.buffer_id));
+            }
+            self.active_buffer = mark.buffer_id;
+        }
+
+        // Move cursor to mark position
+        let buffer = self.current_buffer_mut();
+        buffer.cursor.line = mark.line;
+        buffer.cursor.col = mark.col;
+        buffer.clamp_cursor();
+
+        Ok(())
+    }
+
+    /// Get a mark by its ID
+    pub fn get_mark(&self, mark_id: &MarkId) -> Option<&Mark> {
+        self.marks.get(mark_id)
+    }
+
+    // ===== Jump List Operations =====
+
+    /// Record current position in jump list
+    pub fn record_jump(&mut self) {
+        let buffer = self.current_buffer();
+        let entry = JumpEntry::new(self.active_buffer, buffer.cursor.line, buffer.cursor.col);
+        self.jump_list.push(entry);
+    }
+
+    /// Jump backward in jump list (Ctrl-O)
+    pub fn jump_back(&mut self) -> Result<(), VimError> {
+        // First, record current position before jumping
+        // This ensures the position we're jumping FROM is in the list
+        let buffer = self.current_buffer();
+        let current_pos = JumpEntry::new(self.active_buffer, buffer.cursor.line, buffer.cursor.col);
+
+        // Only record if it's different from the last entry
+        if self.jump_list.current() != Some(&current_pos) {
+            self.record_jump();
+        }
+
+        let entry = self
+            .jump_list
+            .jump_back()
+            .ok_or_else(|| VimError::General("Already at oldest jump".to_string()))?
+            .clone();
+
+        // Switch buffer if needed
+        if entry.buffer_id != self.active_buffer {
+            if !self.buffers.contains_key(&entry.buffer_id) {
+                return Err(VimError::BufferNotFound(entry.buffer_id));
+            }
+            self.active_buffer = entry.buffer_id;
+        }
+
+        // Move cursor
+        let buffer = self.current_buffer_mut();
+        buffer.cursor.line = entry.line;
+        buffer.cursor.col = entry.col;
+        buffer.clamp_cursor();
+
+        Ok(())
+    }
+
+    /// Jump forward in jump list (Ctrl-I)
+    pub fn jump_forward(&mut self) -> Result<(), VimError> {
+        let entry = self
+            .jump_list
+            .jump_forward()
+            .ok_or_else(|| VimError::General("Already at newest jump".to_string()))?
+            .clone();
+
+        // Switch buffer if needed
+        if entry.buffer_id != self.active_buffer {
+            if !self.buffers.contains_key(&entry.buffer_id) {
+                return Err(VimError::BufferNotFound(entry.buffer_id));
+            }
+            self.active_buffer = entry.buffer_id;
+        }
+
+        // Move cursor
+        let buffer = self.current_buffer_mut();
+        buffer.cursor.line = entry.line;
+        buffer.cursor.col = entry.col;
+        buffer.clamp_cursor();
+
+        Ok(())
+    }
+
+    /// Check if we can jump backward
+    pub fn can_jump_back(&self) -> bool {
+        self.jump_list.can_jump_back()
+    }
+
+    /// Check if we can jump forward
+    pub fn can_jump_forward(&self) -> bool {
+        self.jump_list.can_jump_forward()
+    }
+
+    /// Update special marks automatically
+    pub fn update_special_marks(&mut self, special: SpecialMark) {
+        let buffer = self.current_buffer();
+        let mark = Mark::new(self.active_buffer, buffer.cursor.line, buffer.cursor.col);
+        self.marks.insert(MarkId::Special(special), mark);
     }
 }
 
@@ -771,5 +1088,320 @@ mod tests {
         let content = state.paste_from_register(&Register::Unnamed);
         assert_eq!(content.unwrap().text, "BC\nFG");
         assert_eq!(content.unwrap().register_type, RegisterType::Block);
+    }
+
+    // ===== Mark Tests =====
+
+    #[test]
+    fn test_set_and_get_local_mark() {
+        let mut state = VimState::new_with_text("Line 1\nLine 2\nLine 3");
+
+        // Set cursor at line 1, col 3
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(1, 3);
+
+        // Set mark 'a'
+        let mark_id = MarkId::Local('a');
+        state.set_mark(mark_id.clone()).unwrap();
+
+        // Verify mark was set correctly
+        let mark = state.get_mark(&mark_id).unwrap();
+        assert_eq!(mark.buffer_id, BufferId(0));
+        assert_eq!(mark.line, 1);
+        assert_eq!(mark.col, 3);
+    }
+
+    #[test]
+    fn test_set_and_get_global_mark() {
+        let mut state = VimState::new_with_text("Test content");
+
+        // Set cursor at line 0, col 5
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(0, 5);
+
+        // Set global mark 'A'
+        let mark_id = MarkId::Global('A');
+        state.set_mark(mark_id.clone()).unwrap();
+
+        // Verify mark was set
+        let mark = state.get_mark(&mark_id).unwrap();
+        assert_eq!(mark.line, 0);
+        assert_eq!(mark.col, 5);
+    }
+
+    #[test]
+    fn test_jump_to_local_mark() {
+        let mut state = VimState::new_with_text("Line 1\nLine 2\nLine 3");
+
+        // Set mark at line 1, col 3
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(1, 3);
+        state.set_mark(MarkId::Local('a')).unwrap();
+
+        // Move cursor somewhere else
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(2, 0);
+
+        // Jump to mark 'a'
+        state.jump_to_mark(&MarkId::Local('a')).unwrap();
+
+        // Verify cursor moved to mark position
+        let buffer = state.current_buffer();
+        assert_eq!(buffer.cursor.line, 1);
+        assert_eq!(buffer.cursor.col, 3);
+    }
+
+    #[test]
+    fn test_jump_to_nonexistent_mark() {
+        let mut state = VimState::new_with_text("Test");
+
+        // Try to jump to mark that doesn't exist
+        let result = state.jump_to_mark(&MarkId::Local('z'));
+
+        // Should return error
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            VimError::General("Mark not set: Local('z')".to_string())
+        );
+    }
+
+    #[test]
+    fn test_special_mark() {
+        let mut state = VimState::new_with_text("Test content");
+
+        // Set cursor position
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(0, 5);
+
+        // Update special mark (last edit)
+        state.update_special_marks(SpecialMark::LastEdit);
+
+        // Verify special mark was set
+        let mark = state
+            .get_mark(&MarkId::Special(SpecialMark::LastEdit))
+            .unwrap();
+        assert_eq!(mark.line, 0);
+        assert_eq!(mark.col, 5);
+    }
+
+    #[test]
+    fn test_overwrite_mark() {
+        let mut state = VimState::new_with_text("Line 1\nLine 2");
+
+        // Set mark at position 1
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(0, 3);
+        state.set_mark(MarkId::Local('a')).unwrap();
+
+        // Move and set same mark at position 2
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(1, 5);
+        state.set_mark(MarkId::Local('a')).unwrap();
+
+        // Verify mark now points to position 2
+        let mark = state.get_mark(&MarkId::Local('a')).unwrap();
+        assert_eq!(mark.line, 1);
+        assert_eq!(mark.col, 5);
+    }
+
+    // ===== Jump List Tests =====
+
+    #[test]
+    fn test_record_jump() {
+        let mut state = VimState::new_with_text("Line 1\nLine 2\nLine 3");
+
+        // Record current position
+        state.record_jump();
+
+        // With only one jump, we can't jump back or forward
+        assert!(!state.can_jump_back());
+        assert!(!state.can_jump_forward());
+
+        // Record another position
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(1, 0);
+        state.record_jump();
+
+        // Now we can jump back (to first position) but not forward
+        assert!(state.can_jump_back());
+        assert!(!state.can_jump_forward());
+    }
+
+    #[test]
+    fn test_jump_back() {
+        let mut state = VimState::new_with_text("Line 1\nLine 2\nLine 3");
+
+        // Record position 1
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(0, 0);
+        state.record_jump();
+
+        // Move to position 2 and record
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(1, 5);
+        state.record_jump();
+
+        // Move to position 3
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(2, 3);
+
+        // Jump back to position 2
+        state.jump_back().unwrap();
+        let buffer = state.current_buffer();
+        assert_eq!(buffer.cursor.line, 1);
+        assert_eq!(buffer.cursor.col, 5);
+
+        // Jump back to position 1
+        state.jump_back().unwrap();
+        let buffer = state.current_buffer();
+        assert_eq!(buffer.cursor.line, 0);
+        assert_eq!(buffer.cursor.col, 0);
+    }
+
+    #[test]
+    fn test_jump_forward() {
+        let mut state = VimState::new_with_text("Line 1\nLine 2\nLine 3");
+
+        // Record position 1
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(0, 0);
+        state.record_jump();
+
+        // Record position 2
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(1, 5);
+        state.record_jump();
+
+        // Jump back
+        state.jump_back().unwrap();
+
+        // Now jump forward
+        state.jump_forward().unwrap();
+        let buffer = state.current_buffer();
+        assert_eq!(buffer.cursor.line, 1);
+        assert_eq!(buffer.cursor.col, 5);
+    }
+
+    #[test]
+    fn test_jump_back_at_oldest() {
+        let mut state = VimState::new_with_text("Test");
+
+        // Try to jump back with no jumps recorded
+        let result = state.jump_back();
+
+        // Should return error
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            VimError::General("Already at oldest jump".to_string())
+        );
+    }
+
+    #[test]
+    fn test_jump_forward_at_newest() {
+        let mut state = VimState::new_with_text("Test");
+
+        // Record a jump
+        state.record_jump();
+
+        // Try to jump forward (no jumps ahead)
+        let result = state.jump_forward();
+
+        // Should return error
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            VimError::General("Already at newest jump".to_string())
+        );
+    }
+
+    #[test]
+    fn test_jump_list_navigation() {
+        let mut state = VimState::new_with_text("Line 1\nLine 2\nLine 3\nLine 4");
+
+        // Record multiple positions
+        for line in 0..4 {
+            let buffer = state.current_buffer_mut();
+            buffer.cursor = CursorPos::new(line, 0);
+            state.record_jump();
+        }
+
+        // Jump back 3 times
+        state.jump_back().unwrap(); // To line 2
+        state.jump_back().unwrap(); // To line 1
+        state.jump_back().unwrap(); // To line 0
+
+        let buffer = state.current_buffer();
+        assert_eq!(buffer.cursor.line, 0);
+
+        // Jump forward 2 times
+        state.jump_forward().unwrap(); // To line 1
+        state.jump_forward().unwrap(); // To line 2
+
+        let buffer = state.current_buffer();
+        assert_eq!(buffer.cursor.line, 2);
+    }
+
+    #[test]
+    fn test_can_jump_back() {
+        let mut state = VimState::new_with_text("Test");
+
+        // No jumps recorded yet
+        assert!(!state.can_jump_back());
+
+        // Record first jump
+        state.record_jump();
+
+        // Still can't jump back (only one position, current = 0)
+        assert!(!state.can_jump_back());
+
+        // Record second jump
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(0, 5);
+        state.record_jump();
+
+        // Now we can jump back (we're at index 1, can go to index 0)
+        assert!(state.can_jump_back());
+    }
+
+    #[test]
+    fn test_can_jump_forward() {
+        let mut state = VimState::new_with_text("Test");
+
+        // Record two jumps
+        state.record_jump();
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(0, 5);
+        state.record_jump();
+
+        // Can't jump forward yet
+        assert!(!state.can_jump_forward());
+
+        // Jump back once
+        state.jump_back().unwrap();
+
+        // Now we can jump forward
+        assert!(state.can_jump_forward());
+    }
+
+    #[test]
+    fn test_jump_records_position_before_jumping() {
+        let mut state = VimState::new_with_text("Line 1\nLine 2");
+
+        // Set mark at line 0
+        state.set_mark(MarkId::Local('a')).unwrap();
+
+        // Move to line 1
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(1, 0);
+
+        // Jump to mark (should record current position first)
+        state.jump_to_mark(&MarkId::Local('a')).unwrap();
+
+        // Now jump back - should return to line 1
+        state.jump_back().unwrap();
+        let buffer = state.current_buffer();
+        assert_eq!(buffer.cursor.line, 1);
     }
 }
