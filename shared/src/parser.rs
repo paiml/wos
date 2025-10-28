@@ -111,6 +111,85 @@ fn complete_token(current: &mut String, tokens: &mut Vec<String>, had_quotes: &m
     }
 }
 
+/// Handle ${...} parameter expansion start
+/// Returns true if this was a parameter expansion start
+pub(crate) fn handle_parameter_expansion(
+    ch: char,
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    current_token: &mut String,
+    in_single_quote: bool,
+    brace_depth: &mut usize,
+) -> bool {
+    if ch == '$' && chars.peek() == Some(&'{') && !in_single_quote {
+        current_token.push(ch);
+        current_token.push(chars.next().unwrap()); // consume '{'
+        *brace_depth += 1;
+        true
+    } else {
+        false
+    }
+}
+
+/// Handle $(...) and $((...)) expansions start
+/// Returns true if this was an expansion start
+pub(crate) fn handle_command_or_arithmetic_expansion(
+    ch: char,
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    current_token: &mut String,
+    in_single_quote: bool,
+    paren_depth: &mut usize,
+) -> bool {
+    if ch == '$' && chars.peek() == Some(&'(') && !in_single_quote {
+        current_token.push(ch);
+        current_token.push(chars.next().unwrap()); // consume first '('
+
+        // Check if this is $(( (arithmetic) or just $( (command substitution)
+        if chars.peek() == Some(&'(') {
+            current_token.push(chars.next().unwrap()); // consume second '('
+            *paren_depth += 2; // Track both opening parens
+        } else {
+            *paren_depth += 1;
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// Handle closing } for parameter expansion
+/// Returns true if this was a closing brace
+pub(crate) fn handle_closing_brace(
+    ch: char,
+    current_token: &mut String,
+    in_single_quote: bool,
+    brace_depth: &mut usize,
+) -> bool {
+    if ch == '}' && *brace_depth > 0 && !in_single_quote {
+        current_token.push(ch);
+        *brace_depth -= 1;
+        true
+    } else {
+        false
+    }
+}
+
+/// Handle closing ) for command/arithmetic expansion
+/// Returns true if this was a closing paren
+pub(crate) fn handle_closing_paren(
+    ch: char,
+    current_token: &mut String,
+    in_single_quote: bool,
+    paren_depth: &mut usize,
+) -> bool {
+    if ch == ')' && *paren_depth > 0 && !in_single_quote {
+        current_token.push(ch);
+        *paren_depth -= 1;
+        true
+    } else {
+        false
+    }
+}
+
 /// Process a single character in tokenization
 /// Returns true if character was handled (no need to push to token)
 #[allow(clippy::too_many_arguments)]
@@ -164,39 +243,34 @@ fn tokenize(input: &str) -> Vec<String> {
 
     while let Some(ch) = chars.next() {
         // Check for ${  - start of parameter expansion
-        if ch == '$' && chars.peek() == Some(&'{') && !in_single_quote {
-            current_token.push(ch);
-            current_token.push(chars.next().unwrap()); // consume '{'
-            brace_depth += 1;
+        if handle_parameter_expansion(
+            ch,
+            &mut chars,
+            &mut current_token,
+            in_single_quote,
+            &mut brace_depth,
+        ) {
             continue;
         }
 
         // Check for $((  - start of arithmetic expansion
-        if ch == '$' && chars.peek() == Some(&'(') && !in_single_quote {
-            current_token.push(ch);
-            current_token.push(chars.next().unwrap()); // consume first '('
-
-            // Check if this is $(( (arithmetic) or just $( (command substitution)
-            if chars.peek() == Some(&'(') {
-                current_token.push(chars.next().unwrap()); // consume second '('
-                paren_depth += 2; // Track both opening parens
-            } else {
-                paren_depth += 1;
-            }
+        if handle_command_or_arithmetic_expansion(
+            ch,
+            &mut chars,
+            &mut current_token,
+            in_single_quote,
+            &mut paren_depth,
+        ) {
             continue;
         }
 
         // Track closing } when inside ${...}
-        if ch == '}' && brace_depth > 0 && !in_single_quote {
-            current_token.push(ch);
-            brace_depth -= 1;
+        if handle_closing_brace(ch, &mut current_token, in_single_quote, &mut brace_depth) {
             continue;
         }
 
         // Track closing ) when inside $(...) or $((...))
-        if ch == ')' && paren_depth > 0 && !in_single_quote {
-            current_token.push(ch);
-            paren_depth -= 1;
+        if handle_closing_paren(ch, &mut current_token, in_single_quote, &mut paren_depth) {
             continue;
         }
 

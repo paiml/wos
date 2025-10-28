@@ -416,24 +416,19 @@ fn split_by_operators(input: &str) -> Vec<(String, Option<Operator>)> {
 
     while let Some(ch) = chars.next() {
         // Check for $((  - start of arithmetic expansion
-        if ch == '$' && chars.peek() == Some(&'(') && !in_single_quote {
-            current.push(ch);
-            current.push(chars.next().unwrap()); // consume first '('
-
-            // Check if this is $(( (arithmetic) or just $( (command substitution)
-            if chars.peek() == Some(&'(') {
-                current.push(chars.next().unwrap()); // consume second '('
-                paren_depth += 2; // Track both opening parens
-            } else {
-                paren_depth += 1;
-            }
+        if crate::parser::handle_command_or_arithmetic_expansion(
+            ch,
+            &mut chars,
+            &mut current,
+            in_single_quote,
+            &mut paren_depth,
+        ) {
             continue;
         }
 
         // Track closing ) when inside $(...) or $((...))
-        if ch == ')' && paren_depth > 0 && !in_single_quote {
-            current.push(ch);
-            paren_depth -= 1;
+        if crate::parser::handle_closing_paren(ch, &mut current, in_single_quote, &mut paren_depth)
+        {
             continue;
         }
 
