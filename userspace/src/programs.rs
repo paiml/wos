@@ -347,6 +347,24 @@ impl Vim {
                             .set_mode(VimMode::Visual(VisualMode::Character));
                         Ok(())
                     }
+                    'V' => {
+                        // Enter visual line mode
+                        let buffer = self.vim_state.current_buffer_mut();
+                        VimCommand::EnterVisualLine
+                            .execute(buffer)
+                            .map_err(|e| e.to_string())?;
+                        self.vim_state.set_mode(VimMode::Visual(VisualMode::Line));
+                        Ok(())
+                    }
+                    '\x16' => {
+                        // Ctrl+v - Enter visual block mode
+                        let buffer = self.vim_state.current_buffer_mut();
+                        VimCommand::EnterVisualBlock
+                            .execute(buffer)
+                            .map_err(|e| e.to_string())?;
+                        self.vim_state.set_mode(VimMode::Visual(VisualMode::Block));
+                        Ok(())
+                    }
                     _ => Ok(()), // Ignore unknown keys
                 }
             }
@@ -376,9 +394,10 @@ impl Vim {
                 // Handle visual mode keys
                 match ch {
                     '\x1b' => {
-                        // ESC - Clear visual anchor and return to normal mode
+                        // ESC - Clear visual anchor and mode, return to normal mode
                         let buffer = self.vim_state.current_buffer_mut();
                         buffer.visual_anchor = None;
+                        buffer.visual_mode = None;
                         self.vim_state.set_mode(VimMode::Normal);
                         Ok(())
                     }

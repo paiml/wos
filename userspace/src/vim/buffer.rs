@@ -72,6 +72,9 @@ pub struct VimBuffer {
     /// None when not in visual mode
     pub visual_anchor: Option<CursorPos>,
 
+    /// Visual mode type (only valid when visual_anchor is Some)
+    pub visual_mode: Option<super::state::VisualMode>,
+
     /// Undo stack (command, memento pairs)
     ///
     /// Note: We store the memento BEFORE the command was executed,
@@ -94,6 +97,7 @@ impl VimBuffer {
             lines: im::vector![String::new()],
             cursor: CursorPos::zero(),
             visual_anchor: None,
+            visual_mode: None,
             undo_stack: im::Vector::new(),
             redo_stack: im::Vector::new(),
             modified: false,
@@ -114,6 +118,7 @@ impl VimBuffer {
             lines,
             cursor: CursorPos::zero(),
             visual_anchor: None,
+            visual_mode: None,
             undo_stack: im::Vector::new(),
             redo_stack: im::Vector::new(),
             modified: false,

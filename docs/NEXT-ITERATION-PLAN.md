@@ -269,11 +269,23 @@ See `docs/specifications/more-vim-features-wasm.md` for complete specification
 
 **Size Impact**: Minimal (within WASM budget)
 
-#### WOS-VIM-02: Visual Mode (Line/Block)
-- Line visual mode with `V`
-- Block visual mode with `Ctrl+v`
-- Operations on selections
-- **Size Impact**: +3 KB
+#### ✅ WOS-VIM-02: Visual Mode (Line/Block) - COMPLETED
+**Status**: ✅ COMPLETE (October 28, 2025)
+**Implementation**:
+- ✅ Line visual mode with `V` key in normal mode
+- ✅ Block visual mode with `Ctrl+v` key in normal mode
+- ✅ Line-wise delete operation (entire lines)
+- ✅ Block-wise delete operation (rectangular selection)
+- ✅ 11 comprehensive unit tests (711/711 passing)
+- ✅ Pure functional implementation using im::Vector
+
+**Files Modified**:
+- `userspace/src/vim/state.rs:9-20` - Extended VisualMode enum (Line, Block)
+- `userspace/src/vim/buffer.rs:75-76` - Added visual_mode field
+- `userspace/src/vim/command.rs:63-66,264-283,285-316,402-486,1002-1203` - Commands + deletion logic + tests
+- `userspace/src/programs.rs:350-369` - Normal mode key handlers ('V', Ctrl+v)
+
+**Size Impact**: Minimal (within WASM budget)
 
 #### WOS-VIM-03: Register System
 - Named registers ("a-"z)

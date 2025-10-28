@@ -60,6 +60,10 @@ pub enum VimCommand {
     EnterCommandMode,
     /// Enter visual character mode (v)
     EnterVisualChar,
+    /// Enter visual line mode (V)
+    EnterVisualLine,
+    /// Enter visual block mode (Ctrl+v)
+    EnterVisualBlock,
 
     // Visual mode operations
     /// Delete visual selection (d or x in visual mode)
@@ -260,22 +264,49 @@ impl VimCommand {
             VimCommand::EnterVisualChar => {
                 // Set visual anchor to current cursor position
                 buffer.visual_anchor = Some(buffer.cursor);
+                buffer.visual_mode = Some(super::state::VisualMode::Character);
+                Ok(false) // Mode change happens externally
+            }
+
+            VimCommand::EnterVisualLine => {
+                // Set visual anchor to current cursor position
+                buffer.visual_anchor = Some(buffer.cursor);
+                buffer.visual_mode = Some(super::state::VisualMode::Line);
+                Ok(false) // Mode change happens externally
+            }
+
+            VimCommand::EnterVisualBlock => {
+                // Set visual anchor to current cursor position
+                buffer.visual_anchor = Some(buffer.cursor);
+                buffer.visual_mode = Some(super::state::VisualMode::Block);
                 Ok(false) // Mode change happens externally
             }
 
             VimCommand::VisualDelete => {
-                // Delete visual selection and return to normal mode
+                // Delete visual selection based on mode
                 if let Some(anchor) = buffer.visual_anchor {
                     buffer.save_undo_point();
 
-                    // Calculate selection range (inclusive)
-                    let (start, end) = Self::get_selection_range(anchor, buffer.cursor);
+                    // Dispatch based on visual mode
+                    match buffer.visual_mode {
+                        Some(super::state::VisualMode::Character) | None => {
+                            // Character-wise deletion (default if mode not set)
+                            let (start, end) = Self::get_selection_range(anchor, buffer.cursor);
+                            Self::delete_range(buffer, start, end)?;
+                        }
+                        Some(super::state::VisualMode::Line) => {
+                            // Line-wise deletion
+                            Self::delete_lines(buffer, anchor.line, buffer.cursor.line)?;
+                        }
+                        Some(super::state::VisualMode::Block) => {
+                            // Block-wise deletion
+                            Self::delete_block(buffer, anchor, buffer.cursor)?;
+                        }
+                    }
 
-                    // Delete the selection
-                    Self::delete_range(buffer, start, end)?;
-
-                    // Clear visual anchor
+                    // Clear visual anchor and mode
                     buffer.visual_anchor = None;
+                    buffer.visual_mode = None;
                     buffer.mark_modified();
 
                     Ok(true)
@@ -288,6 +319,7 @@ impl VimCommand {
                 // Yank visual selection (for now, just clear anchor)
                 // Full yank implementation with register system will come in WOS-VIM-03
                 buffer.visual_anchor = None;
+                buffer.visual_mode = None;
                 Ok(false)
             }
 
@@ -367,6 +399,92 @@ impl VimCommand {
         Ok(())
     }
 
+    /// Helper: Delete entire lines from start_line to end_line (inclusive, line-wise)
+    fn delete_lines(
+        buffer: &mut VimBuffer,
+        start_line: usize,
+        end_line: usize,
+    ) -> Result<(), VimError> {
+        // Normalize range (ensure start <= end)
+        let (start, end) = if start_line <= end_line {
+            (start_line, end_line)
+        } else {
+            (end_line, start_line)
+        };
+
+        // Validate range
+        if start >= buffer.lines.len() {
+            return Err(VimError::General("Invalid line range".to_string()));
+        }
+
+        let end = end.min(buffer.lines.len() - 1);
+
+        // Remove lines from start to end (inclusive)
+        let mut new_lines = buffer.lines.clone();
+        for _ in start..=end {
+            if start < new_lines.len() {
+                new_lines.remove(start);
+            }
+        }
+
+        // Ensure at least one empty line remains
+        if new_lines.is_empty() {
+            new_lines.push_back(String::new());
+        }
+
+        buffer.lines = new_lines;
+        buffer.cursor = CursorPos::new(start.min(buffer.lines.len() - 1), 0);
+        buffer.clamp_cursor();
+        Ok(())
+    }
+
+    /// Helper: Delete block selection (rectangular, block-wise)
+    fn delete_block(
+        buffer: &mut VimBuffer,
+        anchor: CursorPos,
+        cursor: CursorPos,
+    ) -> Result<(), VimError> {
+        // Calculate rectangular bounds
+        let (start_line, end_line) = if anchor.line <= cursor.line {
+            (anchor.line, cursor.line)
+        } else {
+            (cursor.line, anchor.line)
+        };
+
+        let (start_col, end_col) = if anchor.col <= cursor.col {
+            (anchor.col, cursor.col)
+        } else {
+            (cursor.col, anchor.col)
+        };
+
+        // Delete the rectangular block from each line
+        let mut new_lines = buffer.lines.clone();
+        for line_idx in start_line..=end_line.min(buffer.lines.len() - 1) {
+            let line = new_lines[line_idx].clone();
+            if start_col < line.len() {
+                let actual_end = end_col.min(line.len() - 1);
+                if actual_end >= start_col {
+                    // Delete the block from this line
+                    let new_line = format!(
+                        "{}{}",
+                        &line[..start_col],
+                        if actual_end + 1 < line.len() {
+                            &line[actual_end + 1..]
+                        } else {
+                            ""
+                        }
+                    );
+                    new_lines = new_lines.update(line_idx, new_line);
+                }
+            }
+        }
+
+        buffer.lines = new_lines;
+        buffer.cursor = CursorPos::new(start_line, start_col);
+        buffer.clamp_cursor();
+        Ok(())
+    }
+
     /// Get a human-readable description of the command
     pub fn description(&self) -> &str {
         match self {
@@ -392,6 +510,8 @@ impl VimCommand {
             VimCommand::EnterNormalMode => "Enter normal mode",
             VimCommand::EnterCommandMode => "Enter command mode",
             VimCommand::EnterVisualChar => "Enter visual character mode",
+            VimCommand::EnterVisualLine => "Enter visual line mode",
+            VimCommand::EnterVisualBlock => "Enter visual block mode",
             VimCommand::VisualDelete => "Delete visual selection",
             VimCommand::VisualYank => "Yank visual selection",
             VimCommand::InsertChar(_) => "Insert character",
@@ -877,5 +997,206 @@ mod tests {
 
         assert_eq!(buffer.text(), "Hello ");
         assert_eq!(buffer.cursor, CursorPos::new(0, 6));
+    }
+
+    // Visual Line Mode Tests
+
+    #[test]
+    fn test_enter_visual_line() {
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Line 1\nLine 2");
+        buffer.cursor = CursorPos::new(0, 3);
+
+        VimCommand::EnterVisualLine.execute(&mut buffer).unwrap();
+
+        // Visual anchor and mode should be set
+        assert_eq!(buffer.visual_anchor, Some(CursorPos::new(0, 3)));
+        assert_eq!(
+            buffer.visual_mode,
+            Some(super::super::state::VisualMode::Line)
+        );
+    }
+
+    #[test]
+    fn test_visual_line_delete_single_line() {
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Line 1\nLine 2\nLine 3");
+
+        // Enter visual line mode on line 1
+        buffer.cursor = CursorPos::new(1, 2);
+        buffer.visual_anchor = Some(CursorPos::new(1, 2));
+        buffer.visual_mode = Some(super::super::state::VisualMode::Line);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should delete entire line 1
+        assert_eq!(buffer.text(), "Line 1\nLine 3");
+        assert_eq!(buffer.cursor, CursorPos::new(1, 0)); // Cursor at start of line 1 (now "Line 3")
+        assert_eq!(buffer.visual_anchor, None);
+        assert_eq!(buffer.visual_mode, None);
+    }
+
+    #[test]
+    fn test_visual_line_delete_multiple_lines() {
+        let mut buffer = VimBuffer::new_with_text(
+            BufferId(0),
+            "/test.txt".into(),
+            "Line 1\nLine 2\nLine 3\nLine 4",
+        );
+
+        // Select lines 1-2 (visual line mode)
+        buffer.cursor = CursorPos::new(2, 5); // On line 2
+        buffer.visual_anchor = Some(CursorPos::new(1, 0)); // Anchor on line 1
+        buffer.visual_mode = Some(super::super::state::VisualMode::Line);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should delete lines 1 and 2
+        assert_eq!(buffer.text(), "Line 1\nLine 4");
+        assert_eq!(buffer.cursor, CursorPos::new(1, 0));
+    }
+
+    #[test]
+    fn test_visual_line_delete_reverse_selection() {
+        let mut buffer = VimBuffer::new_with_text(
+            BufferId(0),
+            "/test.txt".into(),
+            "Line 1\nLine 2\nLine 3\nLine 4",
+        );
+
+        // Reverse selection: anchor at line 3, cursor at line 1
+        buffer.cursor = CursorPos::new(1, 0);
+        buffer.visual_anchor = Some(CursorPos::new(3, 2));
+        buffer.visual_mode = Some(super::super::state::VisualMode::Line);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should delete lines 1-3 (normalized)
+        assert_eq!(buffer.text(), "Line 1");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 0)); // At line 0 (min of range)
+    }
+
+    #[test]
+    fn test_visual_line_delete_entire_buffer() {
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Line 1\nLine 2");
+
+        // Select all lines
+        buffer.cursor = CursorPos::new(1, 0);
+        buffer.visual_anchor = Some(CursorPos::new(0, 0));
+        buffer.visual_mode = Some(super::super::state::VisualMode::Line);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should leave one empty line
+        assert_eq!(buffer.text(), "");
+        assert_eq!(buffer.lines.len(), 1);
+        assert_eq!(buffer.cursor, CursorPos::new(0, 0));
+    }
+
+    // Visual Block Mode Tests
+
+    #[test]
+    fn test_enter_visual_block() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "ABCD\nEFGH");
+        buffer.cursor = CursorPos::new(0, 1);
+
+        VimCommand::EnterVisualBlock.execute(&mut buffer).unwrap();
+
+        // Visual anchor and mode should be set
+        assert_eq!(buffer.visual_anchor, Some(CursorPos::new(0, 1)));
+        assert_eq!(
+            buffer.visual_mode,
+            Some(super::super::state::VisualMode::Block)
+        );
+    }
+
+    #[test]
+    fn test_visual_block_delete_rectangle() {
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "ABCD\nEFGH\nIJKL");
+
+        // Select 2x2 block: columns 1-2, lines 0-1
+        buffer.cursor = CursorPos::new(1, 2); // Line 1, col 2 ('G')
+        buffer.visual_anchor = Some(CursorPos::new(0, 1)); // Line 0, col 1 ('B')
+        buffer.visual_mode = Some(super::super::state::VisualMode::Block);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should delete 'BC' from line 0 and 'FG' from line 1
+        assert_eq!(buffer.text(), "AD\nEH\nIJKL");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 1)); // Top-left of block
+        assert_eq!(buffer.visual_anchor, None);
+        assert_eq!(buffer.visual_mode, None);
+    }
+
+    #[test]
+    fn test_visual_block_delete_reverse_selection() {
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "ABCD\nEFGH\nIJKL");
+
+        // Reverse selection: anchor bottom-right, cursor top-left
+        buffer.cursor = CursorPos::new(0, 1); // Line 0, col 1
+        buffer.visual_anchor = Some(CursorPos::new(1, 2)); // Line 1, col 2
+        buffer.visual_mode = Some(super::super::state::VisualMode::Block);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should still delete 'BC' and 'FG' (normalized)
+        assert_eq!(buffer.text(), "AD\nEH\nIJKL");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 1));
+    }
+
+    #[test]
+    fn test_visual_block_delete_variable_line_lengths() {
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Short\nMediumLine\nX");
+
+        // Select block from col 2-4, lines 0-2
+        buffer.cursor = CursorPos::new(2, 4); // Line 2, col 4 (beyond "X")
+        buffer.visual_anchor = Some(CursorPos::new(0, 2)); // Line 0, col 2
+        buffer.visual_mode = Some(super::super::state::VisualMode::Block);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Line 0: delete "ort" (cols 2-4 of "Short")
+        // Line 1: delete "diu" (cols 2-4 of "MediumLine")
+        // Line 2: "X" is too short (len=1), no deletion (col 2 >= len)
+        assert_eq!(buffer.text(), "Sh\nMemLine\nX");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 2));
+    }
+
+    #[test]
+    fn test_visual_block_delete_single_column() {
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "ABCD\nEFGH\nIJKL");
+
+        // Select single column (col 2) across 3 lines
+        buffer.cursor = CursorPos::new(2, 2); // Line 2, col 2 ('K')
+        buffer.visual_anchor = Some(CursorPos::new(0, 2)); // Line 0, col 2 ('C')
+        buffer.visual_mode = Some(super::super::state::VisualMode::Block);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should delete 'C', 'G', 'K'
+        assert_eq!(buffer.text(), "ABD\nEFH\nIJL");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 2));
+    }
+
+    #[test]
+    fn test_visual_block_delete_to_line_end() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "ABCD\nEF");
+
+        // Select block from col 1 to beyond line 1's end
+        buffer.cursor = CursorPos::new(1, 5); // Beyond line 1's length
+        buffer.visual_anchor = Some(CursorPos::new(0, 1));
+        buffer.visual_mode = Some(super::super::state::VisualMode::Block);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Line 0: delete "BCD" (cols 1-3)
+        // Line 1: delete "F" (cols 1-1, clamped to line length)
+        assert_eq!(buffer.text(), "A\nE");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 1));
     }
 }

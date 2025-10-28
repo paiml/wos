@@ -11,6 +11,12 @@ use super::buffer::{BufferId, VimBuffer};
 pub enum VisualMode {
     /// Character-wise visual selection (v)
     Character,
+
+    /// Line-wise visual selection (V)
+    Line,
+
+    /// Block-wise visual selection (Ctrl+v)
+    Block,
 }
 
 /// Vim editor mode
@@ -39,6 +45,8 @@ impl fmt::Display for VimMode {
             VimMode::Normal => write!(f, "NORMAL"),
             VimMode::Insert => write!(f, "INSERT"),
             VimMode::Visual(VisualMode::Character) => write!(f, "VISUAL"),
+            VimMode::Visual(VisualMode::Line) => write!(f, "VISUAL LINE"),
+            VimMode::Visual(VisualMode::Block) => write!(f, "VISUAL BLOCK"),
             VimMode::Command { .. } => write!(f, "COMMAND"),
         }
     }
@@ -219,6 +227,11 @@ mod tests {
         assert_eq!(VimMode::Normal.to_string(), "NORMAL");
         assert_eq!(VimMode::Insert.to_string(), "INSERT");
         assert_eq!(VimMode::Visual(VisualMode::Character).to_string(), "VISUAL");
+        assert_eq!(VimMode::Visual(VisualMode::Line).to_string(), "VISUAL LINE");
+        assert_eq!(
+            VimMode::Visual(VisualMode::Block).to_string(),
+            "VISUAL BLOCK"
+        );
         assert_eq!(
             VimMode::Command {
                 buffer: String::new()
