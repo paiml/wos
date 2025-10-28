@@ -58,6 +58,14 @@ pub enum VimCommand {
     EnterNormalMode,
     /// Enter command mode (:)
     EnterCommandMode,
+    /// Enter visual character mode (v)
+    EnterVisualChar,
+
+    // Visual mode operations
+    /// Delete visual selection (d or x in visual mode)
+    VisualDelete,
+    /// Yank (copy) visual selection (y in visual mode)
+    VisualYank,
 
     // Text insertion (for insert mode)
     /// Insert a character at cursor
@@ -249,9 +257,114 @@ impl VimCommand {
 
             VimCommand::Redo => Ok(buffer.redo()),
 
+            VimCommand::EnterVisualChar => {
+                // Set visual anchor to current cursor position
+                buffer.visual_anchor = Some(buffer.cursor);
+                Ok(false) // Mode change happens externally
+            }
+
+            VimCommand::VisualDelete => {
+                // Delete visual selection and return to normal mode
+                if let Some(anchor) = buffer.visual_anchor {
+                    buffer.save_undo_point();
+
+                    // Calculate selection range (inclusive)
+                    let (start, end) = Self::get_selection_range(anchor, buffer.cursor);
+
+                    // Delete the selection
+                    Self::delete_range(buffer, start, end)?;
+
+                    // Clear visual anchor
+                    buffer.visual_anchor = None;
+                    buffer.mark_modified();
+
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
+
+            VimCommand::VisualYank => {
+                // Yank visual selection (for now, just clear anchor)
+                // Full yank implementation with register system will come in WOS-VIM-03
+                buffer.visual_anchor = None;
+                Ok(false)
+            }
+
             // Other commands - stubs for now
             _ => Ok(false),
         }
+    }
+
+    /// Helper: Get selection range from anchor and cursor (inclusive)
+    /// Returns (start, end) where start <= end
+    fn get_selection_range(anchor: CursorPos, cursor: CursorPos) -> (CursorPos, CursorPos) {
+        if anchor.line < cursor.line || (anchor.line == cursor.line && anchor.col <= cursor.col) {
+            (anchor, cursor)
+        } else {
+            (cursor, anchor)
+        }
+    }
+
+    /// Helper: Delete range from start to end (inclusive, character-wise)
+    fn delete_range(
+        buffer: &mut VimBuffer,
+        start: CursorPos,
+        end: CursorPos,
+    ) -> Result<(), VimError> {
+        if start.line == end.line {
+            // Same line deletion
+            let line_idx = start.line;
+            if line_idx >= buffer.lines.len() {
+                return Err(VimError::General("Invalid line index".to_string()));
+            }
+
+            let line = buffer.lines[line_idx].clone();
+            if end.col >= line.len() {
+                // Delete to end of line
+                let new_line = line[..start.col.min(line.len())].to_string();
+                buffer.lines = buffer.lines.update(line_idx, new_line);
+            } else {
+                // Delete within line
+                let new_line = format!("{}{}", &line[..start.col], &line[end.col + 1..]);
+                buffer.lines = buffer.lines.update(line_idx, new_line);
+            }
+
+            buffer.cursor = start;
+        } else {
+            // Multi-line deletion
+            // Get first line up to start.col
+            let first_line = buffer.lines[start.line].clone();
+            let before = first_line[..start.col.min(first_line.len())].to_string();
+
+            // Get last line from end.col+1 onward
+            let last_line = buffer.lines[end.line].clone();
+            let after = if end.col + 1 < last_line.len() {
+                last_line[end.col + 1..].to_string()
+            } else {
+                String::new()
+            };
+
+            // Join first and last parts
+            let joined = format!("{}{}", before, after);
+
+            // Update lines: replace first line, remove lines in between
+            let mut new_lines = buffer.lines.clone();
+            new_lines = new_lines.update(start.line, joined);
+
+            // Remove lines from start.line+1 to end.line (inclusive)
+            for _ in start.line + 1..=end.line {
+                if start.line + 1 < new_lines.len() {
+                    new_lines.remove(start.line + 1);
+                }
+            }
+
+            buffer.lines = new_lines;
+            buffer.cursor = start;
+        }
+
+        buffer.clamp_cursor();
+        Ok(())
     }
 
     /// Get a human-readable description of the command
@@ -278,6 +391,9 @@ impl VimCommand {
             VimCommand::EnterInsertMode => "Enter insert mode",
             VimCommand::EnterNormalMode => "Enter normal mode",
             VimCommand::EnterCommandMode => "Enter command mode",
+            VimCommand::EnterVisualChar => "Enter visual character mode",
+            VimCommand::VisualDelete => "Delete visual selection",
+            VimCommand::VisualYank => "Yank visual selection",
             VimCommand::InsertChar(_) => "Insert character",
             VimCommand::InsertNewline => "Insert newline",
             VimCommand::Backspace => "Backspace",
@@ -610,5 +726,156 @@ mod tests {
         // Clamp should fix it
         buffer.clamp_cursor();
         assert_eq!(buffer.cursor.col, 5); // Clamped to 5
+    }
+
+    // Visual mode tests
+
+    #[test]
+    fn test_enter_visual_char() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Hello\nWorld");
+        buffer.cursor = CursorPos::new(0, 2);
+
+        VimCommand::EnterVisualChar.execute(&mut buffer).unwrap();
+
+        // Visual anchor should be set to current cursor
+        assert_eq!(buffer.visual_anchor, Some(CursorPos::new(0, 2)));
+    }
+
+    #[test]
+    fn test_visual_delete_single_line() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Hello World");
+
+        // Set anchor at position 0
+        buffer.cursor = CursorPos::new(0, 0);
+        buffer.visual_anchor = Some(CursorPos::new(0, 0));
+
+        // Move cursor to position 4 ("Hello" selected)
+        buffer.cursor = CursorPos::new(0, 4);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should delete "Hello" (inclusive)
+        assert_eq!(buffer.text(), " World");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 0));
+        assert_eq!(buffer.visual_anchor, None); // Anchor cleared
+        assert!(buffer.modified);
+    }
+
+    #[test]
+    fn test_visual_delete_reverse_selection() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Hello World");
+
+        // Set anchor at position 9
+        buffer.cursor = CursorPos::new(0, 9);
+        buffer.visual_anchor = Some(CursorPos::new(0, 9));
+
+        // Move cursor back to position 6 (selecting "World" in reverse)
+        buffer.cursor = CursorPos::new(0, 6);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should delete "Worl" (positions 6-9 inclusive)
+        assert_eq!(buffer.text(), "Hello d");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 6));
+    }
+
+    #[test]
+    fn test_visual_delete_multi_line() {
+        let mut buffer =
+            VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Line 1\nLine 2\nLine 3");
+
+        // Set anchor at line 0, col 5 ("1")
+        buffer.cursor = CursorPos::new(0, 5);
+        buffer.visual_anchor = Some(CursorPos::new(0, 5));
+
+        // Move cursor to line 2, col 1 ("i" in "Line 3")
+        buffer.cursor = CursorPos::new(2, 1);
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should join "Line " from first line and "ne 3" from last line
+        assert_eq!(buffer.text(), "Line ne 3");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 5));
+        assert_eq!(buffer.visual_anchor, None);
+    }
+
+    #[test]
+    fn test_visual_delete_with_undo() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Hello World");
+        let original_text = buffer.text();
+
+        // Enter visual mode and select
+        buffer.cursor = CursorPos::new(0, 0);
+        buffer.visual_anchor = Some(CursorPos::new(0, 0));
+        buffer.cursor = CursorPos::new(0, 4);
+
+        // Undo point is saved in execute()
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+        assert_eq!(buffer.text(), " World");
+
+        // Undo should restore original text
+        buffer.undo();
+        assert_eq!(buffer.text(), original_text);
+    }
+
+    #[test]
+    fn test_visual_yank() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Hello World");
+
+        // Set up visual selection
+        buffer.cursor = CursorPos::new(0, 0);
+        buffer.visual_anchor = Some(CursorPos::new(0, 0));
+        buffer.cursor = CursorPos::new(0, 4);
+
+        VimCommand::VisualYank.execute(&mut buffer).unwrap();
+
+        // Text should be unchanged
+        assert_eq!(buffer.text(), "Hello World");
+        // Anchor should be cleared
+        assert_eq!(buffer.visual_anchor, None);
+        // Buffer should not be modified
+        assert!(!buffer.modified);
+    }
+
+    #[test]
+    fn test_visual_delete_no_anchor() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Hello");
+
+        // Try to delete without anchor set
+        let result = VimCommand::VisualDelete.execute(&mut buffer);
+
+        // Should succeed but do nothing (returns Ok(false))
+        assert!(result.is_ok());
+        assert_eq!(buffer.text(), "Hello");
+    }
+
+    #[test]
+    fn test_visual_delete_single_char() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Hello");
+
+        // Select single character at position 1 ('e')
+        buffer.cursor = CursorPos::new(0, 1);
+        buffer.visual_anchor = Some(CursorPos::new(0, 1));
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        // Should delete just the 'e'
+        assert_eq!(buffer.text(), "Hllo");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 1));
+    }
+
+    #[test]
+    fn test_visual_delete_to_end_of_line() {
+        let mut buffer = VimBuffer::new_with_text(BufferId(0), "/test.txt".into(), "Hello World");
+
+        // Select from position 6 to end of line
+        buffer.cursor = CursorPos::new(0, 6);
+        buffer.visual_anchor = Some(CursorPos::new(0, 6));
+        buffer.cursor.col = 10; // At 'd' (last char)
+
+        VimCommand::VisualDelete.execute(&mut buffer).unwrap();
+
+        assert_eq!(buffer.text(), "Hello ");
+        assert_eq!(buffer.cursor, CursorPos::new(0, 6));
     }
 }

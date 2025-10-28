@@ -250,11 +250,24 @@ See `docs/specifications/more-vim-features-wasm.md` for complete specification
 
 ### Tickets (Phase 1 - v0.3.0)
 
-#### WOS-VIM-01: Visual Mode (Character)
-- Visual selection with `v`
-- Movement in visual mode (hjkl, w/b/e)
-- Delete/yank selected text
-- **Size Impact**: +3 KB
+#### ✅ WOS-VIM-01: Visual Mode (Character) - COMPLETED
+**Status**: ✅ COMPLETE (October 28, 2025)
+**Implementation**:
+- ✅ Visual selection with `v` key in normal mode
+- ✅ Movement in visual mode (hjkl navigation)
+- ✅ Delete selected text (d/x keys) with undo support
+- ✅ Yank selected text (y key, placeholder for register system)
+- ✅ ESC to exit visual mode
+- ✅ 9 comprehensive unit tests (700/700 passing)
+- ✅ Pure functional implementation using im::Vector
+
+**Files Modified**:
+- `userspace/src/vim/state.rs:9-14` - Added VisualMode enum
+- `userspace/src/vim/buffer.rs:71-73` - Added visual_anchor field
+- `userspace/src/vim/command.rs:61-68,260-364,729-885` - Visual commands + helpers + tests
+- `userspace/src/programs.rs:9-10,339-413` - Input handling integration
+
+**Size Impact**: Minimal (within WASM budget)
 
 #### WOS-VIM-02: Visual Mode (Line/Block)
 - Line visual mode with `V`

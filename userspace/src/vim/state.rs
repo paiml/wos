@@ -6,6 +6,13 @@ use std::fmt;
 
 use super::buffer::{BufferId, VimBuffer};
 
+/// Visual mode type
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VisualMode {
+    /// Character-wise visual selection (v)
+    Character,
+}
+
 /// Vim editor mode
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum VimMode {
@@ -15,6 +22,9 @@ pub enum VimMode {
 
     /// Insert mode - for text editing
     Insert,
+
+    /// Visual mode - for text selection
+    Visual(VisualMode),
 
     /// Command mode - for ex commands (:w, :q, etc.)
     Command {
@@ -28,6 +38,7 @@ impl fmt::Display for VimMode {
         match self {
             VimMode::Normal => write!(f, "NORMAL"),
             VimMode::Insert => write!(f, "INSERT"),
+            VimMode::Visual(VisualMode::Character) => write!(f, "VISUAL"),
             VimMode::Command { .. } => write!(f, "COMMAND"),
         }
     }
@@ -207,6 +218,7 @@ mod tests {
     fn test_mode_display() {
         assert_eq!(VimMode::Normal.to_string(), "NORMAL");
         assert_eq!(VimMode::Insert.to_string(), "INSERT");
+        assert_eq!(VimMode::Visual(VisualMode::Character).to_string(), "VISUAL");
         assert_eq!(
             VimMode::Command {
                 buffer: String::new()

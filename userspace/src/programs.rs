@@ -6,6 +6,7 @@
 //! - ps: list running processes
 //! - vim: modal text editor
 
+use crate::vim::state::VisualMode;
 use crate::vim::{VimCommand, VimMode, VimState};
 use std::path::PathBuf;
 use wos_kernel::{KernelState, ProcessId, SystemCall};
@@ -336,6 +337,16 @@ impl Vim {
                             Err(e) => Err(e.to_string()),
                         }
                     }
+                    'v' => {
+                        // Enter visual character mode
+                        let buffer = self.vim_state.current_buffer_mut();
+                        VimCommand::EnterVisualChar
+                            .execute(buffer)
+                            .map_err(|e| e.to_string())?;
+                        self.vim_state
+                            .set_mode(VimMode::Visual(VisualMode::Character));
+                        Ok(())
+                    }
                     _ => Ok(()), // Ignore unknown keys
                 }
             }
@@ -359,6 +370,48 @@ impl Vim {
                     let buffer = self.vim_state.current_buffer_mut();
                     cmd.execute(buffer).map_err(|e| e.to_string())?;
                     Ok(())
+                }
+            }
+            VimMode::Visual(_) => {
+                // Handle visual mode keys
+                match ch {
+                    '\x1b' => {
+                        // ESC - Clear visual anchor and return to normal mode
+                        let buffer = self.vim_state.current_buffer_mut();
+                        buffer.visual_anchor = None;
+                        self.vim_state.set_mode(VimMode::Normal);
+                        Ok(())
+                    }
+                    'h' | 'j' | 'k' | 'l' => {
+                        // Navigation in visual mode - move cursor but keep anchor
+                        match crate::vim::parser::parse_normal_key(ch) {
+                            Ok(cmd) => {
+                                let buffer = self.vim_state.current_buffer_mut();
+                                cmd.execute(buffer).map_err(|e| e.to_string())?;
+                                Ok(())
+                            }
+                            Err(e) => Err(e.to_string()),
+                        }
+                    }
+                    'd' | 'x' => {
+                        // Delete visual selection
+                        let buffer = self.vim_state.current_buffer_mut();
+                        VimCommand::VisualDelete
+                            .execute(buffer)
+                            .map_err(|e| e.to_string())?;
+                        self.vim_state.set_mode(VimMode::Normal);
+                        Ok(())
+                    }
+                    'y' => {
+                        // Yank visual selection (placeholder for now)
+                        let buffer = self.vim_state.current_buffer_mut();
+                        VimCommand::VisualYank
+                            .execute(buffer)
+                            .map_err(|e| e.to_string())?;
+                        self.vim_state.set_mode(VimMode::Normal);
+                        Ok(())
+                    }
+                    _ => Ok(()), // Ignore unknown keys
                 }
             }
             VimMode::Command { buffer: cmd_buffer } => {
