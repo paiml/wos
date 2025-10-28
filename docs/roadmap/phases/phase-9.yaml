@@ -1,0 +1,337 @@
+  - id: phase-9
+    name: "Shell Script Execution"
+    goal: "Enable bash script.sh, source script.sh, and ./script.sh execution with NASA-grade quality"
+    priority: CRITICAL
+    duration: 2_weeks
+    cycles: 10
+    spec_reference: "docs/specifications/running-shell-scripts.md"
+    testing_reference: "docs/specifications/shell-script-sqlite-testing.md"
+    tickets:
+      - id: WOS-200
+        title: "Script types and error handling infrastructure"
+        priority: critical
+        cycle: 1
+        time_estimate: 3_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "9/9 unit tests passing + 5 property tests (100%)"
+        spec_ref: "Section 3.3 (Script struct), Section 4.2 (Error types)"
+        requirements:
+          - "Script struct with path, content, shebang fields"
+          - "ScriptError enum (FileNotFound, InvalidShebang, ExecutionError, SyntaxError)"
+          - "Serialize + Deserialize + Clone + PartialEq + Debug"
+          - "Error display messages with context"
+        tests:
+          - "test_script_creation_with_shebang"
+          - "test_script_creation_without_shebang_fails"
+          - "test_script_error_serialization"
+          - "test_script_error_display_messages"
+          - "proptest_script_clone_equality"
+          - "test_script_validation_empty_content"
+        acceptance:
+          - "All error types properly structured"
+          - "Serialization roundtrip works"
+          - "Error messages are user-friendly"
+          - "Coverage ≥90%"
+          - "Mutation score ≥90%"
+        complexity_target: 8
+        coverage_target: 95
+        mutation_target: 95
+
+      - id: WOS-201
+        title: "ScriptLoader - shebang parsing and file loading"
+        priority: critical
+        cycle: 2-3
+        time_estimate: 5_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "14/14 unit tests passing + 5 property tests (100%)"
+        spec_ref: "Section 3.4 (ScriptLoader design), Section 4.3 (Shebang validation)"
+        requirements:
+          - "ScriptLoader::load(vfs: &VFS, path: &str) -> Result<Script>"
+          - "ScriptLoader::validate_shebang(content: &str) -> Result<()>"
+          - "Parse #!/bin/bash, #!/bin/sh shebangs"
+          - "Reject invalid shebangs (#!/usr/bin/python, etc.)"
+          - "Read script content from VFS"
+          - "Handle relative and absolute paths"
+        tests:
+          - "test_load_script_with_valid_shebang"
+          - "test_load_script_with_invalid_shebang"
+          - "test_load_script_file_not_found"
+          - "test_load_script_from_absolute_path"
+          - "test_load_script_from_relative_path"
+          - "test_validate_bash_shebang"
+          - "test_validate_sh_shebang"
+          - "test_reject_python_shebang"
+          - "test_reject_empty_shebang"
+          - "proptest_load_never_panics"
+          - "test_script_content_roundtrip"
+        acceptance:
+          - "VFS integration works correctly"
+          - "Shebang validation catches invalid interpreters"
+          - "Error messages indicate missing files"
+          - "Coverage ≥90%"
+          - "Mutation score ≥90%"
+        complexity_target: 12
+        coverage_target: 95
+        mutation_target: 95
+
+      - id: WOS-202
+        title: "ScriptExecutor - line-by-line execution engine"
+        priority: critical
+        cycle: 4-5
+        time_estimate: 6_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "11/11 unit tests + 2 property tests (100% passing)"
+        spec_ref: "Section 3.5 (ScriptExecutor), Section 4.4 (Execution model)"
+        requirements:
+          - "ScriptExecutor::execute(script: &Script, vfs: &mut VFS, ctx: &Context)"
+          - "Parse script into lines"
+          - "Execute each line via existing command handlers"
+          - "Accumulate output across lines"
+          - "Track exit status per line"
+          - "Stop on first error (bash default behavior)"
+          - "Support echo, ls, cat, mkdir, touch, rm commands in scripts"
+        tests:
+          - "test_execute_simple_script_single_command"
+          - "test_execute_script_multiple_commands"
+          - "test_execute_script_with_comments"
+          - "test_execute_script_with_empty_lines"
+          - "test_execute_script_stop_on_error"
+          - "test_execute_script_exit_status_propagation"
+          - "test_execute_script_output_accumulation"
+          - "test_execute_script_with_invalid_command"
+          - "proptest_execute_deterministic"
+          - "proptest_execute_never_panics"
+        acceptance:
+          - "All basic commands work in scripts"
+          - "Output matches sequential execution"
+          - "Error handling stops execution correctly"
+          - "Coverage ≥90%"
+          - "Mutation score ≥90%"
+        complexity_target: 15
+        coverage_target: 95
+        mutation_target: 95
+
+      - id: WOS-203
+        title: "Variable expansion in scripts"
+        priority: high
+        cycle: 6
+        time_estimate: 4_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "6/6 unit tests + 1 property test (100% passing)"
+        spec_ref: "Section 4.5 (Variable support), Section 5.2 (Variable scope)"
+        requirements:
+          - "Support VAR=value assignments in scripts"
+          - "Support $VAR expansion in commands"
+          - "Support ${VAR} brace syntax"
+          - "Script-local variables (don't pollute shell environment)"
+          - "Support export VAR=value for environment variables"
+        tests:
+          - "test_script_variable_assignment"
+          - "test_script_variable_expansion"
+          - "test_script_variable_brace_syntax"
+          - "test_script_variable_scope_isolation"
+          - "test_script_export_to_environment"
+          - "test_script_undefined_variable_expansion"
+          - "proptest_variable_expansion_consistent"
+        acceptance:
+          - "Variables work within scripts"
+          - "Variables don't leak to parent shell"
+          - "Exported variables persist"
+          - "Coverage ≥90%"
+          - "Mutation score ≥90%"
+        complexity_target: 12
+        coverage_target: 95
+        mutation_target: 95
+
+      - id: WOS-204
+        title: "bash command integration"
+        priority: critical
+        cycle: 7
+        time_estimate: 3_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "7/7 unit tests (100% passing)"
+        spec_ref: "Section 3.1 (bash command), Section 6.1 (Integration points)"
+        requirements:
+          - "Add 'bash' to command dispatcher in wos/src/lib.rs"
+          - "Parse 'bash script.sh' command"
+          - "Route to ScriptLoader + ScriptExecutor"
+          - "Return script output to terminal"
+          - "Handle script not found errors"
+        tests:
+          - "test_bash_command_execute_script"
+          - "test_bash_command_file_not_found"
+          - "test_bash_command_invalid_shebang"
+          - "test_bash_command_script_execution_error"
+          - "test_bash_command_output_display"
+          - "test_bash_command_with_arguments"
+        acceptance:
+          - "'bash script.sh' works from terminal"
+          - "Error messages are clear"
+          - "Output appears in terminal"
+          - "Coverage ≥90%"
+          - "Mutation score ≥90%"
+        complexity_target: 10
+        coverage_target: 95
+        mutation_target: 95
+
+      - id: WOS-205
+        title: "source command implementation"
+        priority: high
+        cycle: 8
+        time_estimate: 3_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "3/3 unit tests (100% passing)"
+        spec_ref: "Section 3.2 (source command), Section 5.3 (Shell context)"
+        requirements:
+          - "Add 'source' command to dispatcher"
+          - "Execute script in current shell context"
+          - "Variables persist after source completes"
+          - "Difference from 'bash': executes in-place vs. subprocess"
+        tests:
+          - "test_source_command_execute_script"
+          - "test_source_variables_persist"
+          - "test_source_vs_bash_variable_scope"
+          - "test_source_command_file_not_found"
+          - "test_source_command_invalid_shebang"
+        acceptance:
+          - "'source script.sh' works from terminal"
+          - "Variables persist in shell"
+          - "Behaves differently than 'bash'"
+          - "Coverage ≥90%"
+          - "Mutation score ≥90%"
+        complexity_target: 10
+        coverage_target: 95
+        mutation_target: 95
+
+      - id: WOS-206
+        title: "./script.sh executable script support"
+        priority: medium
+        cycle: 9
+        time_estimate: 3_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "4/4 unit tests (100% passing)"
+        spec_ref: "Section 3.3 (Executable scripts), Section 5.4 (Path resolution)"
+        requirements:
+          - "Detect ./script.sh pattern in command parser"
+          - "Read script file from current working directory"
+          - "Execute via ScriptLoader + ScriptExecutor"
+          - "Support paths like ../scripts/test.sh"
+        tests:
+          - "test_executable_script_dot_slash"
+          - "test_executable_script_relative_path"
+          - "test_executable_script_file_not_found"
+          - "test_executable_script_vs_bash_command"
+        acceptance:
+          - "'./script.sh' works from terminal"
+          - "Relative paths resolve correctly"
+          - "Error messages indicate missing files"
+          - "Coverage ≥90%"
+          - "Mutation score ≥90%"
+        complexity_target: 10
+        coverage_target: 95
+        mutation_target: 95
+
+      - id: WOS-207
+        title: "E2E Playwright tests for shell scripts"
+        priority: critical
+        cycle: 10
+        time_estimate: 4_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "35/35 E2E tests passing (100%) - 7 test cases × 5 browsers"
+        spec_ref: "Section 7 (Testing strategy), docs/specifications/shell-script-sqlite-testing.md"
+        testing_methodology: "SQLite-style with MC/DC coverage"
+        requirements:
+          - "E2E test: Create script in Vim, save, execute with bash"
+          - "E2E test: Variable assignment and expansion"
+          - "E2E test: source vs bash scope differences"
+          - "E2E test: ./script.sh execution"
+          - "E2E test: Script with multiple commands"
+          - "E2E test: Script error handling"
+          - "E2E test: Script not found error display"
+          - "Coverage: 100% MC/DC for script execution paths"
+        tests:
+          - "e2e/tests/13-shell-scripts.spec.ts"
+          - "test_create_and_execute_script_workflow"
+          - "test_script_variables_e2e"
+          - "test_source_vs_bash_e2e"
+          - "test_executable_script_e2e"
+          - "test_script_multi_command_e2e"
+          - "test_script_error_display_e2e"
+          - "test_script_not_found_e2e"
+        acceptance:
+          - "Full Vim → save → execute workflow works"
+          - "All script commands visible in terminal"
+          - "Error messages appear in UI"
+          - "100% MC/DC coverage for script paths"
+          - "All E2E tests passing"
+        complexity_target: 15
+        coverage_target: 100
+        mutation_target: 95
+
+    quality_requirements:
+      unit_test_coverage: "≥95%"
+      mutation_score: "≥95%"
+      e2e_test_coverage: "100% MC/DC"
+      property_tests: "≥5 per ticket"
+      complexity_max: 15
+      integration_tests: "≥3 per ticket"
+
+    success_metrics:
+      primary:
+        - "bash script.sh executes scripts from VFS"
+        - "source script.sh executes in current shell"
+        - "./script.sh works with relative paths"
+        - "Full Vim → execute workflow functional"
+      secondary:
+        - "Variable expansion works in scripts"
+        - "Error messages are clear and actionable"
+        - "All quality gates passing"
+      stretch:
+        - "Control flow (if/while/for) support"
+        - "Function definitions in scripts"
+        - "Nested script calls"
+
+    deliverables:
+      - "shared/src/script.rs - Script and ScriptError types"
+      - "wos/src/script_loader.rs - ScriptLoader implementation"
+      - "wos/src/script_executor.rs - ScriptExecutor implementation"
+      - "wos/src/lib.rs - bash/source/executable integration"
+      - "e2e/tests/13-shell-scripts.spec.ts - E2E test suite"
+      - "Unit tests: ≥50 tests across all components"
+      - "Property tests: ≥35 tests for invariants"
+      - "E2E tests: ≥15 tests for user workflows"
+
+    integration_points:
+      - "VirtualFileSystem (shared/src/vfs.rs) - read script files"
+      - "Command dispatcher (wos/src/lib.rs) - route bash/source commands"
+      - "Variable expansion (wos/src/lib.rs) - reuse existing logic"
+      - "Vim editor (userspace/src/programs.rs) - create script workflow"
+      - "Terminal interface (dist/wos/app.js) - display script output"
+
+    risks_and_mitigation:
+      risk_1:
+        description: "Complexity of control flow (if/while/for)"
+        impact: "High"
+        mitigation: "Start with linear scripts only; defer control flow to future phase"
+      risk_2:
+        description: "Variable scoping edge cases"
+        impact: "Medium"
+        mitigation: "Extensive property tests; reference bash validation"
+      risk_3:
+        description: "Nested script execution"
+        impact: "Medium"
+        mitigation: "Implement recursion limit; test depth boundaries"
+      risk_4:
+        description: "Mutation score target (95%)"
+        impact: "Low"
+        mitigation: "Write edge case tests upfront; use specification as guide"
+
+  # PHASE 1: Foundation + Quality Infrastructure (Weeks 1-3)

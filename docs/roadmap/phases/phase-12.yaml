@@ -1,0 +1,67 @@
+  - id: phase-12
+    name: "UX Overhaul: Icon Toolbar & Terminal Resize"
+    goal: "Replace accordion with professional icon toolbar interface, add terminal resize handle, and PAIML branding"
+    priority: HIGH
+    duration: 1_day
+    cycles: 4
+    status: completed
+    completion_date: "2025-10-23"
+    commit: "8eee774 (test fix) + be9efabcac (UX implementation)"
+    test_results: "14/14 Playwright tests passing (100%)"
+    tickets:
+      - id: WOS-UX-01
+        title: "Icon Toolbar Pattern (Chrome DevTools Style)"
+        status: completed
+        test_results: "4/4 tests passing (toolbar-test.spec.js)"
+        features:
+          - "8 icons in horizontal toolbar (Processes, Memory, Syscalls, Files, System, Debugger, Learning, Help)"
+          - "Single panel display (no stacking)"
+          - "Click active icon to toggle panel visibility"
+          - "localStorage persistence for active panel state"
+          - "Cyan accent color for active state"
+        files:
+          - "dist/wos/index.html - Toolbar HTML (lines 58-105)"
+          - "dist/wos/style.css - Toolbar CSS (lines 270-409)"
+          - "dist/wos/app.js - Panel activation logic (lines 391-463)"
+
+      - id: WOS-UX-02
+        title: "Terminal Resize Handle"
+        status: completed
+        test_results: "5/5 tests passing (terminal-resize-test.spec.js)"
+        features:
+          - "Bottom-right corner drag handle with diagonal dots pattern"
+          - "Resize range: 100-600px (default 200px)"
+          - "localStorage persistence across page reloads"
+          - "Visual feedback (hover, scale animation)"
+        files:
+          - "dist/wos/index.html - Resize handle HTML (line 54)"
+          - "dist/wos/style.css - Resize handle CSS (lines 169-226)"
+          - "dist/wos/app.js - Drag behavior (lines 465-526)"
+
+      - id: WOS-UX-03
+        title: "Pragmatic AI Labs Badge"
+        status: completed
+        test_results: "3/3 tests passing (paiml-badge-test.spec.js)"
+        features:
+          - "Top-right corner badge with logo + paiml.com link"
+          - "Opens https://paiml.com in new tab"
+          - "Responsive design (text hides on mobile)"
+          - "z-index 10000 (above tutorial overlay)"
+        files:
+          - "dist/wos/index.html - Badge HTML (lines 788-792)"
+          - "dist/wos/style.css - Badge CSS (lines 2245-2294)"
+          - "dist/wos/paiml-logo.svg - NEW logo asset"
+
+      - id: WOS-UX-04
+        title: "Help Menu Simplification"
+        status: completed
+        test_results: "2/2 tests passing (help-menu-test.spec.js)"
+        changes:
+          - "Removed 404 links (Retake Tutorial, Documentation, Contact)"
+          - "Single link: 'Made by Pragmatic AI Labs' → https://paiml.com"
+          - "Menu title: 'Help & Resources' → 'About'"
+        files:
+          - "dist/wos/index.html - Simplified menu (lines 771-786)"
+          - "dist/wos/app.js - Removed dead code (line 4364)"
+
+  # PHASE 12.1: Terminal State Visibility & Vim UX Improvements (BUG FIXES - COMPLETED ✅)

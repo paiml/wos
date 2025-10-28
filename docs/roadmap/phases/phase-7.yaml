@@ -1,0 +1,16 @@
+  - id: phase-7
+    name: "Advanced Features"
+    status: deferred
+    features:
+      - "Priority scheduling (WOS-022)"
+      - "Preemptive multitasking (WOS-023)"
+      - "Virtual memory paging (WOS-024)"
+      - "Network stack (WOS-025)"
+      - "Exec system call (WOS-026)"
+      - "Signals (WOS-027)"
+      - "Pipes and redirection (WOS-028)"
+      - "Multi-core support (WOS-029)"
+      - "Debugging tools (WOS-030)"
+      - "Special filesystems (DevFS, TmpFS)"
+      - "Shared memory IPC (WOS-013)"
+      - "Synchronization primitives (WOS-014)"

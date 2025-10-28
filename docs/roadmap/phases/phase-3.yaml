@@ -1,0 +1,87 @@
+  - id: phase-3
+    name: "File System"
+    goal: "VFS integration with file I/O operations"
+    duration: 3_weeks
+    cycles: 15
+    tickets:
+      - id: WOS-009
+        title: "Extend WASM Labs VFS for OS usage"
+        priority: critical
+        cycle: 16-17
+        time_estimate: 6_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Part of 70 syscall tests (sys_open, sys_close, fd table)"
+        spec_ref: "Section 3.8"
+        requirements:
+          - "Integrate wasm-labs-shared VFS"
+          - "File descriptor table per process"
+          - "sys_open(path, flags) -> fd"
+          - "sys_close(fd)"
+          - "Standard streams (stdin=0, stdout=1, stderr=2)"
+        tests:
+          - "test_sys_open_creates_fd"
+          - "test_sys_close_releases_fd"
+          - "test_standard_streams"
+          - "test_fd_table_per_process"
+        acceptance:
+          - "Open/close work correctly"
+          - "FD table isolated per process"
+          - "Standard streams available"
+          - "Coverage ≥85%"
+        complexity_target: 15
+        coverage_target: 85
+
+      - id: WOS-010
+        title: "File I/O operations (read, write)"
+        priority: critical
+        cycle: 18-20
+        time_estimate: 8_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Part of 70 syscall tests (sys_read, sys_write, read_write_cycle)"
+        spec_ref: "Section 3.8"
+        requirements:
+          - "sys_read(fd, count) -> bytes"
+          - "sys_write(fd, data) -> bytes written"
+          - "Handle EOF, errors"
+          - "Stdout/stderr buffering"
+        tests:
+          - "test_sys_read_from_file"
+          - "test_sys_write_to_file"
+          - "test_read_write_cycle"
+          - "test_eof_handling"
+          - "proptest_read_write_deterministic"
+        acceptance:
+          - "Read/write work correctly"
+          - "EOF handled properly"
+          - "Property tests pass"
+          - "Mutation score ≥90%"
+        complexity_target: 18
+        coverage_target: 90
+
+      - id: WOS-010A
+        title: "ProcFS (/proc) implementation"
+        priority: medium
+        cycle: 21
+        time_estimate: 4_hours
+        spec_ref: "Section 3.8"
+        requirements:
+          - "ProcFS mount at /proc"
+          - "/proc/PID/status (process info)"
+          - "/proc/PID/cmdline (command line)"
+          - "/proc/self (symlink to current process)"
+        tests:
+          - "test_procfs_mount"
+          - "test_read_proc_status"
+          - "test_read_proc_cmdline"
+          - "test_proc_self_symlink"
+        acceptance:
+          - "ProcFS accessible"
+          - "Process info readable"
+          - "/proc/self works"
+          - "Coverage ≥80%"
+        complexity_target: 12
+        coverage_target: 80
+
+  # PHASE 4: Basic IPC (Weeks 10-11)

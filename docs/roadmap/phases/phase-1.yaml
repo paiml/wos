@@ -1,0 +1,204 @@
+  - id: phase-1
+    name: "Foundation"
+    goal: "Core kernel structures with Toyota Way quality framework"
+    duration: 3_weeks
+    cycles: 15
+    tickets:
+      - id: WOS-001
+        title: "Project scaffolding and quality gate infrastructure"
+        priority: critical
+        cycle: 1
+        time_estimate: 4_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Workspace builds successfully, all quality gates configured"
+        spec_ref: "Section 5.1, 6.1"
+        requirements:
+          - "Cargo workspace setup (shared, kernel, userspace, wos crates)"
+          - "PMAT integration (.pmat-gates.toml)"
+          - "Pre-commit hooks (format, clippy, tests, complexity, SATD)"
+          - "GitHub Actions CI/CD"
+          - "wasm32-unknown-unknown target"
+          - "Toyota Way quality gates configured"
+        tests:
+          - "test_workspace_structure"
+          - "test_quality_gates_configured"
+          - "test_wasm_target_available"
+          - "test_pmat_integration"
+        acceptance:
+          - "cargo build --release --workspace succeeds"
+          - "Pre-commit hook blocks on quality violations"
+          - "PMAT TDG analysis runs successfully"
+          - "All crates compile"
+        complexity_target: 5
+        coverage_target: 100
+
+      - id: WOS-002
+        title: "Kernel state types and serialization"
+        priority: critical
+        cycle: 2
+        time_estimate: 3_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "17/17 tests passing (9 unit + 5 property + 3 integration)"
+        spec_ref: "Section 3.5, 7.1"
+        requirements:
+          - "KernelState struct with process table"
+          - "Process struct with PID, state, memory, files"
+          - "ProcessState enum (Ready, Running, Blocked, Terminated)"
+          - "Serialize + Deserialize + Clone + PartialEq"
+          - "Use im-rs for process table (persistent data structures)"
+        tests:
+          - "test_kernel_state_creation"
+          - "test_process_serialization_roundtrip"
+          - "test_process_state_transitions"
+          - "proptest_kernel_state_cloning_cheap"
+          - "bench_kernel_state_clone_under_100us"
+        acceptance:
+          - "All types serialize/deserialize correctly"
+          - "Process state transitions are valid"
+          - "Clone is O(1) with im-rs"
+          - "Coverage ≥85%"
+        complexity_target: 10
+        coverage_target: 90
+
+      - id: WOS-003
+        title: "Round-robin process scheduler"
+        priority: critical
+        cycle: 3-4
+        time_estimate: 6_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "15/15 tests passing (8 unit + 7 property)"
+        spec_ref: "Section 3.6, 7.3"
+        requirements:
+          - "Scheduler struct with ready queue"
+          - "schedule() -> Option<ProcessId> (select next process)"
+          - "Round-robin fairness algorithm"
+          - "No starvation guarantee"
+        tests:
+          - "test_scheduler_round_robin"
+          - "test_scheduler_handles_empty_queue"
+          - "test_scheduler_pid_uniqueness"
+          - "proptest_scheduler_fairness (10K iterations)"
+          - "proptest_no_starvation (10K iterations)"
+        acceptance:
+          - "Scheduler selects processes fairly"
+          - "No process is starved"
+          - "Property tests pass 10K iterations"
+          - "Mutation score ≥90%"
+        complexity_target: 15
+        coverage_target: 90
+
+      - id: WOS-004
+        title: "System call dispatcher"
+        priority: critical
+        cycle: 5
+        time_estimate: 4_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "70/70 syscall tests passing"
+        spec_ref: "Section 3.7, 7.3"
+        requirements:
+          - "SystemCall enum with variants (GetPid, Fork, Exit, etc.)"
+          - "dispatch_syscall() function"
+          - "Pure functional dispatch (state in, state out)"
+          - "Error handling with KernelError type"
+        tests:
+          - "test_syscall_dispatch_routing"
+          - "test_syscall_error_handling"
+          - "test_syscall_unknown_variant"
+          - "proptest_syscall_never_panics"
+        acceptance:
+          - "All syscall variants compile"
+          - "Dispatcher routes correctly"
+          - "Never panics on invalid input"
+          - "Coverage ≥85%"
+        complexity_target: 12
+        coverage_target: 85
+
+      - id: WOS-005
+        title: "Basic process syscalls (getpid, fork, exit, waitpid)"
+        priority: critical
+        cycle: 6-7
+        time_estimate: 8_hours
+        spec_ref: "Section 3.7"
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Part of 70 syscall tests (fork, exit, waitpid integrated)"
+        requirements:
+          - "sys_getpid() -> current process ID"
+          - "sys_fork() -> create child process"
+          - "sys_exit(code) -> terminate process"
+          - "sys_waitpid(pid) -> wait for child"
+          - "PID allocation and management"
+        tests:
+          - "test_sys_getpid"
+          - "test_sys_fork_creates_child"
+          - "test_sys_exit_terminates_process"
+          - "test_sys_waitpid_blocks_until_exit"
+          - "test_fork_wait_pipeline"
+          - "proptest_pid_uniqueness"
+          - "proptest_parent_child_relationship"
+        acceptance:
+          - "All syscalls work correctly"
+          - "PIDs are unique"
+          - "Parent-child relationships valid"
+          - "Property tests pass"
+          - "Mutation score ≥90%"
+        complexity_target: 18
+        coverage_target: 90
+
+      - id: WOS-005A
+        title: "Toyota Way quality gates and TDG monitoring"
+        priority: high
+        cycle: 8
+        time_estimate: 4_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "36/36 quality tests passing (TDG, thresholds, SARIF export)"
+        spec_ref: "Tech Review Section 1"
+        requirements:
+          - "TDG scoring infrastructure"
+          - "Real-time quality monitoring setup"
+          - "Quality ratchet pattern enforcement"
+          - "SATD detection (zero tolerance)"
+        tests:
+          - "test_tdg_calculation"
+          - "test_quality_gate_enforcement"
+          - "test_satd_detection"
+        acceptance:
+          - "TDG scores calculated correctly"
+          - "Quality gates block commits on violations"
+          - "Zero SATD policy enforced"
+        complexity_target: 10
+        coverage_target: 85
+
+      - id: WOS-005B
+        title: "Tracing infrastructure and time-travel debugging"
+        priority: medium
+        cycle: 9
+        time_estimate: 5_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "11/11 trace tests passing (history, time-travel, export)"
+        spec_ref: "Tech Review Section 9.2, 9.1"
+        requirements:
+          - "SystemCallTrace struct"
+          - "KernelHistory with state snapshots"
+          - "step_back() / step_forward() navigation"
+          - "Trace export (JSON)"
+        tests:
+          - "test_syscall_tracing"
+          - "test_time_travel_step_back"
+          - "test_time_travel_step_forward"
+          - "test_trace_export"
+        acceptance:
+          - "Syscalls are traced correctly"
+          - "Time-travel works for all operations"
+          - "Trace exports to JSON"
+          - "Coverage ≥85%"
+        complexity_target: 15
+        coverage_target: 85
+
+  # PHASE 2: Memory Management (Weeks 4-6)

@@ -1,0 +1,88 @@
+  - id: phase-2
+    name: "Memory Management"
+    goal: "Virtual memory with page allocation and protection"
+    duration: 3_weeks
+    cycles: 15
+    tickets:
+      - id: WOS-006
+        title: "Virtual memory structures"
+        priority: critical
+        cycle: 10-11
+        time_estimate: 6_hours
+        spec_ref: "Section 3.6, 7.3"
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Quality gates passing (PMAT integrated)"
+        requirements:
+          - "VirtualMemory struct with page table"
+          - "Page table using im::HashMap<VirtualPage, PhysicalPage>"
+          - "Address translation (virtual → physical)"
+          - "Memory layout (code, data, heap, stack)"
+        tests:
+          - "test_virtual_memory_creation"
+          - "test_address_translation"
+          - "test_page_table_operations"
+          - "proptest_address_translation_deterministic"
+        acceptance:
+          - "Address translation works correctly"
+          - "Page table operations are O(log n)"
+          - "Memory layout is correct"
+          - "Coverage ≥85%"
+        complexity_target: 15
+        coverage_target: 85
+
+      - id: WOS-007
+        title: "Memory allocation (mmap, munmap)"
+        priority: critical
+        cycle: 12-13
+        time_estimate: 8_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "58/58 memory tests passing (includes mmap/munmap + property tests)"
+        spec_ref: "Section 3.7, 7.3"
+        requirements:
+          - "sys_mmap(size, flags) -> allocate pages"
+          - "sys_munmap(addr, size) -> free pages"
+          - "Free page tracking"
+          - "Allocation never overlaps"
+        tests:
+          - "test_sys_mmap_allocates_pages"
+          - "test_sys_munmap_frees_pages"
+          - "test_mmap_munmap_cycle"
+          - "proptest_allocations_never_overlap (10K iterations)"
+          - "proptest_total_memory_bounded"
+        acceptance:
+          - "Allocations work correctly"
+          - "No overlapping allocations"
+          - "Free/allocate is deterministic"
+          - "Property tests pass"
+          - "Mutation score ≥90%"
+        complexity_target: 18
+        coverage_target: 90
+
+      - id: WOS-008
+        title: "Memory protection (page permissions)"
+        priority: high
+        cycle: 14-15
+        time_estimate: 5_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "58/58 memory tests passing (includes permission checking + violations)"
+        spec_ref: "Section 3.6"
+        requirements:
+          - "Page permissions (read, write, execute)"
+          - "Permission checking on memory access"
+          - "Protection violation errors"
+        tests:
+          - "test_page_permissions"
+          - "test_permission_violations"
+          - "test_read_only_pages"
+          - "test_execute_only_pages"
+        acceptance:
+          - "Permissions enforced correctly"
+          - "Violations return errors"
+          - "Coverage ≥85%"
+        complexity_target: 15
+        coverage_target: 85
+
+  # PHASE 3: File System (Weeks 7-9)

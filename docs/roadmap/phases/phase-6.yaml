@@ -1,0 +1,112 @@
+  - id: phase-6
+    name: "Browser Interface"
+    goal: "HTML terminal, WASM bindings, E2E tests"
+    duration: 3_weeks
+    cycles: 15
+    tickets:
+      - id: WOS-018
+        title: "WASM bindings with wasm-bindgen"
+        priority: critical
+        cycle: 33-34
+        time_estimate: 6_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "26/26 WASM binding tests passing (execute_command, state serialization, syscalls)"
+        spec_ref: "Section 6.6"
+        requirements:
+          - "WosWasm struct with #[wasm_bindgen]"
+          - "execute_command() export"
+          - "get_state() / set_state() for persistence"
+          - "JavaScript glue code"
+        tests:
+          - "test_wasm_exports_compile"
+          - "test_wasm_execute_command"
+          - "test_wasm_state_serialization"
+        acceptance:
+          - "WASM compiles with bindings"
+          - "JS can call Rust functions"
+          - "State serializes correctly"
+          - "Coverage ≥80%"
+        complexity_target: 10
+        coverage_target: 80
+
+      - id: WOS-019
+        title: "HTML terminal interface"
+        priority: critical
+        cycle: 35-37
+        time_estimate: 10_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "35/35 E2E tests passing (terminal rendering, command execution, history, persistence)"
+        spec_ref: "Section 6.6"
+        requirements:
+          - "Terminal UI (HTML/CSS)"
+          - "Input handling (keyboard, Enter, Ctrl+C)"
+          - "Output rendering (stdout, stderr)"
+          - "Command history (↑/↓ keys)"
+          - "localStorage persistence"
+        tests:
+          - "e2e_test_terminal_renders"
+          - "e2e_test_command_execution"
+          - "e2e_test_command_history"
+          - "e2e_test_persistence"
+        acceptance:
+          - "Terminal renders correctly"
+          - "Commands execute in browser"
+          - "History works"
+          - "State persists across reloads"
+          - "E2E tests pass (Playwright)"
+        complexity_target: 15
+        coverage_target: N/A  # E2E tests
+
+      - id: WOS-020
+        title: "Quality dashboard integration"
+        priority: medium
+        cycle: 38-39
+        time_estimate: 6_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Part of 40 quality/export tests (TDG metrics, dashboard display)"
+        spec_ref: "Tech Review Section 4"
+        requirements:
+          - "Embed quality metrics in UI"
+          - "TDG grade display"
+          - "Real-time quality monitoring"
+          - "Export quality reports (JSON, HTML)"
+        tests:
+          - "test_dashboard_displays_metrics"
+          - "test_export_quality_report"
+        acceptance:
+          - "Dashboard shows current TDG"
+          - "Reports export correctly"
+          - "UI integrates cleanly"
+        complexity_target: 10
+        coverage_target: 80
+
+      - id: WOS-021
+        title: "Multi-format export and final quality validation"
+        priority: high
+        cycle: 40
+        time_estimate: 4_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "Part of 40 quality/export tests (JSON, SARIF, HTML, Markdown export)"
+        spec_ref: "Tech Review Section 8"
+        requirements:
+          - "Export formats: JSON, SARIF, HTML, Markdown"
+          - "Final quality gate run"
+          - "TDG grade A+ validation"
+          - "Documentation completeness check"
+        tests:
+          - "test_export_all_formats"
+          - "test_final_quality_gates_pass"
+        acceptance:
+          - "All export formats work"
+          - "All quality gates pass"
+          - "TDG grade ≥ A (90+)"
+          - "Documentation 100% complete"
+        complexity_target: 8
+        coverage_target: 85
+
+  # PHASE 10: Enhanced Integrated Learning Environment (ILE) - NEW
+  # Based on docs/specifications/wos-enhanced-features-spec.md v2.0

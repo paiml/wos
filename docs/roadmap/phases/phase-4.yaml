@@ -1,0 +1,37 @@
+  - id: phase-4
+    name: "Inter-Process Communication"
+    goal: "Message passing between processes"
+    duration: 2_weeks
+    cycles: 10
+    tickets:
+      - id: WOS-012
+        title: "Message passing IPC"
+        priority: critical
+        cycle: 22-24
+        time_estimate: 8_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "6/6 IPC tests passing (send/recv + pipelines)"
+        spec_ref: "Section 3.7"
+        requirements:
+          - "Message struct with sender, receiver, payload"
+          - "sys_send(pid, message)"
+          - "sys_recv(timeout) -> message"
+          - "Message queues per process"
+          - "Blocking recv"
+        tests:
+          - "test_sys_send_delivers_message"
+          - "test_sys_recv_receives_message"
+          - "test_send_recv_pipeline"
+          - "test_recv_blocks_when_empty"
+          - "proptest_message_ordering_fifo"
+        acceptance:
+          - "Send/recv work correctly"
+          - "Messages delivered in order"
+          - "Blocking recv works"
+          - "Property tests pass"
+          - "Mutation score ≥90%"
+        complexity_target: 18
+        coverage_target: 90
+
+  # PHASE 5: User Space (Weeks 12-14)

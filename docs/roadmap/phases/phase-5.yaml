@@ -1,0 +1,92 @@
+  - id: phase-5
+    name: "User Space"
+    goal: "Init process, shell, and core user programs"
+    duration: 3_weeks
+    cycles: 15
+    tickets:
+      - id: WOS-015
+        title: "Init process (PID 1)"
+        priority: critical
+        cycle: 25-26
+        time_estimate: 5_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "12/12 init tests passing (100%)"
+        spec_ref: "Section 6.5"
+        requirements:
+          - "Init process (always PID 1)"
+          - "Launches shell on startup"
+          - "Reaps orphaned processes"
+          - "Never exits"
+        tests:
+          - "test_init_is_pid_1"
+          - "test_init_launches_shell"
+          - "test_init_reaps_orphans"
+          - "test_init_never_exits"
+        acceptance:
+          - "Init starts correctly"
+          - "Shell launches"
+          - "Orphans reparented to init"
+          - "Coverage ≥85%"
+        complexity_target: 15
+        coverage_target: 85
+
+      - id: WOS-016
+        title: "Shell process"
+        priority: critical
+        cycle: 27-29
+        time_estimate: 10_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "20/20 shell tests passing (100%)"
+        spec_ref: "Section 6.5"
+        requirements:
+          - "Command parser (nom-based)"
+          - "Built-in commands (cd, exit, help)"
+          - "External command execution (fork/exec)"
+          - "Command history"
+          - "Environment variables"
+        tests:
+          - "test_shell_parse_command"
+          - "test_shell_builtin_cd"
+          - "test_shell_builtin_exit"
+          - "test_shell_exec_external"
+          - "test_shell_history"
+          - "test_shell_env_vars"
+        acceptance:
+          - "Parser works correctly"
+          - "Built-ins work"
+          - "External commands execute"
+          - "History maintained"
+          - "Coverage ≥85%"
+        complexity_target: 20
+        coverage_target: 85
+
+      - id: WOS-017
+        title: "Core user programs (echo, ls, ps)"
+        priority: high
+        cycle: 30-32
+        time_estimate: 8_hours
+        status: completed
+        completion_date: "2025-10-22"
+        test_results: "26/26 program tests passing (echo, ls, ps, cat, grep, etc.)"
+        spec_ref: "Section 6.5"
+        requirements:
+          - "echo: print arguments"
+          - "ls: list files in directory"
+          - "ps: list running processes"
+          - "Each program uses syscalls"
+        tests:
+          - "test_echo_prints_args"
+          - "test_ls_lists_directory"
+          - "test_ps_lists_processes"
+          - "integration_test_shell_with_programs"
+        acceptance:
+          - "All programs work correctly"
+          - "Programs use syscalls properly"
+          - "Integration tests pass"
+          - "Coverage ≥80%"
+        complexity_target: 10
+        coverage_target: 80
+
+  # PHASE 6: Browser Interface (Weeks 15-17)

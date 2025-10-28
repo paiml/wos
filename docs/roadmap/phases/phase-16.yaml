@@ -1,0 +1,62 @@
+  - id: phase-16
+    name: "vim.wasm Integration Specification - Advanced Vim Features"
+    goal: "Create comprehensive specification for integrating vim.wasm advanced Vim features into WOS"
+    priority: HIGH
+    duration: 0.5_day
+    cycles: 1
+    status: completed
+    completion_date: "2025-10-27"
+    commits:
+      - "80d09ff: [WOS-SPEC] docs: Create comprehensive vim.wasm integration specification"
+    specification:
+      file: "docs/specifications/more-vim-features-wasm.md"
+      lines: "1390 lines"
+      research_source: "https://github.com/rhysd/vim.wasm"
+    scope:
+      current_state: "Basic modal editor (INSERT/NORMAL modes, :w, :q, basic editing)"
+      target_state: "Full Vim 8.2+ parity with advanced features"
+    roadmap:
+      phase_1_v0_3_0:
+        features: ["Visual Mode (character/line/block)", "Register System", "Marks & Jumps", "Basic Macros"]
+        size_impact: "+15KB WASM"
+        duration: "2 weeks"
+      phase_2_v0_4_0:
+        features: ["Syntax Highlighting (tree-sitter)", "Language Parsers"]
+        size_impact: "+150KB WASM"
+        duration: "3 weeks"
+      phase_3_v0_5_0:
+        features: ["VimScript Interpreter", "Configuration Support"]
+        size_impact: "+50KB WASM"
+        duration: "2 weeks"
+      phase_4_v0_6_0:
+        features: ["vim.wasm Integration", "Dual-Mode System (lite/full)"]
+        size_impact: "+10KB bridge, +1.7MB on-demand"
+        duration: "4 weeks"
+    architecture:
+      approach: "Hybrid system"
+      lite_mode: "Current Rust implementation (enhanced with Phase 1-3 features)"
+      full_mode: "vim.wasm loaded on-demand via iframe + postMessage bridge"
+      backward_compatibility: "Maintained throughout all phases"
+    technical_highlights:
+      - "Visual mode with character/line/block selection"
+      - "Named registers (\"a-\"z) and numbered registers (\"0-\"9)"
+      - "Mark navigation (ma, 'a) with global marks support"
+      - "tree-sitter parsing for syntax highlighting"
+      - "VimScript interpreter with security sandboxing"
+      - "vim.wasm bridge via iframe isolation"
+    quality_strategy:
+      unit_tests: "Full coverage for all Vim operations"
+      e2e_tests: "User workflow testing for each feature"
+      performance_targets: "<1ms key latency, <50ms mode switch"
+      progressive_enhancement: "Feature detection for browser capabilities"
+    deployment:
+      strategy: "Phased rollout with backward compatibility"
+      rollback: "Feature flags for safe deployment"
+      monitoring: "Performance and usage analytics"
+    notes:
+      - "Specification ready for team review and implementation planning"
+      - "All phases designed for incremental delivery"
+      - "Size estimates conservative (includes overhead)"
+      - "Security considerations documented for VimScript and vim.wasm"
+
+  # PHASE 15: Parser Unit Test Fixes (COMPLETED 2025-10-27)
