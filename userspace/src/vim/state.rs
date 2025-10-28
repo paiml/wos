@@ -1531,4 +1531,223 @@ mod tests {
         let buffer = state.current_buffer();
         assert_eq!(buffer.cursor.line, 1);
     }
+
+    // Parser state machine tests
+    #[test]
+    fn test_handle_normal_key_register_selection() {
+        let mut state = VimState::new_with_text("Hello\nWorld");
+
+        // Initially in Normal state
+        assert_eq!(state.parser_state, ParserState::Normal);
+
+        // Press " to start register selection
+        let result = state.handle_normal_key('"');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::AwaitingRegister);
+
+        // Press 'a' to select register a
+        let result = state.handle_normal_key('a');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::Normal);
+        assert_eq!(state.selected_register, Some(Register::Named('a')));
+    }
+
+    #[test]
+    fn test_handle_normal_key_set_mark() {
+        let mut state = VimState::new_with_text("Hello\nWorld");
+
+        // Press 'm' to start mark setting
+        let result = state.handle_normal_key('m');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::AwaitingMarkToSet);
+
+        // Press 'a' to set mark a
+        let result = state.handle_normal_key('a');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::Normal);
+
+        // Verify mark was set
+        let mark_id = MarkId::Local('a');
+        assert!(state.marks.contains_key(&mark_id));
+    }
+
+    #[test]
+    fn test_handle_normal_key_jump_to_mark_line() {
+        let mut state = VimState::new_with_text("Line 1\nLine 2\nLine 3");
+
+        // Set mark at line 2
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(2, 0);
+        state.set_mark(MarkId::Local('a')).unwrap();
+
+        // Move to line 0
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(0, 0);
+
+        // Press ' to start mark jump (line)
+        let result = state.handle_normal_key('\'');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::AwaitingMarkJumpLine);
+
+        // Press 'a' to jump to mark a
+        let result = state.handle_normal_key('a');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::Normal);
+
+        // Verify cursor jumped to mark
+        let buffer = state.current_buffer();
+        assert_eq!(buffer.cursor.line, 2);
+    }
+
+    #[test]
+    fn test_handle_normal_key_jump_to_mark_exact() {
+        let mut state = VimState::new_with_text("Line 1\nLine 2\nLine 3");
+
+        // Set mark at line 2, col 5
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(2, 5);
+        state.set_mark(MarkId::Local('b')).unwrap();
+
+        // Move to line 0
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(0, 0);
+
+        // Press ` to start mark jump (exact)
+        let result = state.handle_normal_key('`');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::AwaitingMarkJumpExact);
+
+        // Press 'b' to jump to mark b
+        let result = state.handle_normal_key('b');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::Normal);
+
+        // Verify cursor jumped to exact position
+        let buffer = state.current_buffer();
+        assert_eq!(buffer.cursor.line, 2);
+        assert_eq!(buffer.cursor.col, 5);
+    }
+
+    #[test]
+    fn test_handle_normal_key_yank_line() {
+        let mut state = VimState::new_with_text("Hello\nWorld");
+
+        // Press 'y' to start yank
+        let result = state.handle_normal_key('y');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::AwaitingYankTarget);
+
+        // Press 'y' to yank line
+        let result = state.handle_normal_key('y');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::Normal);
+
+        // Verify line was yanked
+        let register = state.get_current_register();
+        let content = state.paste_from_register(&register);
+        assert!(content.is_some());
+        assert_eq!(content.unwrap().text, "Hello");
+    }
+
+    #[test]
+    fn test_handle_normal_key_yank_invalid_target() {
+        let mut state = VimState::new_with_text("Hello\nWorld");
+
+        // Press 'y' to start yank
+        let result = state.handle_normal_key('y');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::AwaitingYankTarget);
+
+        // Press invalid target 'x'
+        let result = state.handle_normal_key('x');
+        assert!(result.is_err());
+        assert_eq!(state.parser_state, ParserState::Normal);
+    }
+
+    #[test]
+    fn test_handle_normal_key_paste() {
+        let mut state = VimState::new_with_text("Hello\nWorld");
+
+        // Yank line first
+        state.yank_line().unwrap();
+
+        // Move to line 1
+        let buffer = state.current_buffer_mut();
+        buffer.cursor = CursorPos::new(1, 0);
+
+        // Press 'p' to paste
+        let result = state.handle_normal_key('p');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::Normal);
+
+        // Verify paste occurred
+        let buffer = state.current_buffer();
+        assert_eq!(buffer.lines.len(), 3);
+        assert_eq!(buffer.lines[2], "Hello");
+    }
+
+    #[test]
+    fn test_handle_normal_key_register_and_yank_sequence() {
+        let mut state = VimState::new_with_text("Hello\nWorld");
+
+        // Select register 'a'
+        state.handle_normal_key('"').unwrap();
+        state.handle_normal_key('a').unwrap();
+
+        // Yank line to register 'a'
+        state.handle_normal_key('y').unwrap();
+        state.handle_normal_key('y').unwrap();
+
+        // Verify yanked to named register 'a'
+        let content = state.paste_from_register(&Register::Named('a'));
+        assert!(content.is_some());
+        assert_eq!(content.unwrap().text, "Hello");
+
+        // Verify register selection was cleared
+        assert_eq!(state.selected_register, None);
+    }
+
+    #[test]
+    fn test_handle_normal_key_invalid_in_normal_state() {
+        let mut state = VimState::new_with_text("Hello\nWorld");
+
+        // Try unhandled key
+        let result = state.handle_normal_key('z');
+        assert!(result.is_err());
+        assert_eq!(state.parser_state, ParserState::Normal);
+    }
+
+    #[test]
+    fn test_handle_normal_key_state_reset_after_mark_set() {
+        let mut state = VimState::new_with_text("Hello\nWorld");
+
+        // Start mark setting
+        state.handle_normal_key('m').unwrap();
+        assert_eq!(state.parser_state, ParserState::AwaitingMarkToSet);
+
+        // Complete mark setting
+        state.handle_normal_key('x').unwrap();
+        assert_eq!(state.parser_state, ParserState::Normal);
+
+        // Verify next command starts in Normal state
+        let result = state.handle_normal_key('m');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::AwaitingMarkToSet);
+    }
+
+    #[test]
+    fn test_handle_normal_key_state_reset_on_error() {
+        let mut state = VimState::new_with_text("Hello\nWorld");
+
+        // Start yank
+        state.handle_normal_key('y').unwrap();
+        assert_eq!(state.parser_state, ParserState::AwaitingYankTarget);
+
+        // Try invalid yank target
+        let result = state.handle_normal_key('z');
+        assert!(result.is_err());
+
+        // Verify state was reset
+        assert_eq!(state.parser_state, ParserState::Normal);
+    }
 }
