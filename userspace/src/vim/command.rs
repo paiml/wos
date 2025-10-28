@@ -45,6 +45,18 @@ pub enum VimCommand {
     /// Put (paste) after cursor (p)
     PutAfter,
 
+    // Marks and jumps
+    /// Set mark at cursor position (mx where x is mark name)
+    SetMark(char),
+    /// Jump to mark line ('x where x is mark name)
+    JumpToMarkLine(char),
+    /// Jump to mark exact position (`x where x is mark name)
+    JumpToMarkExact(char),
+
+    // Registers
+    /// Select register for next yank/delete/paste ("x where x is register name)
+    SelectRegister(char),
+
     // Undo/Redo
     /// Undo last change (u)
     Undo,
@@ -504,6 +516,10 @@ impl VimCommand {
             VimCommand::DeleteLine => "Delete line",
             VimCommand::YankLine => "Yank line",
             VimCommand::PutAfter => "Put after cursor",
+            VimCommand::SetMark(_) => "Set mark",
+            VimCommand::JumpToMarkLine(_) => "Jump to mark line",
+            VimCommand::JumpToMarkExact(_) => "Jump to mark exact",
+            VimCommand::SelectRegister(_) => "Select register",
             VimCommand::Undo => "Undo",
             VimCommand::Redo => "Redo",
             VimCommand::EnterInsertMode => "Enter insert mode",

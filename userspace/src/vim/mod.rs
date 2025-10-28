@@ -18,6 +18,6 @@ pub mod state;
 pub use buffer::{BufferMemento, CursorPos, VimBuffer};
 pub use command::VimCommand;
 pub use state::{
-    JumpEntry, JumpList, Mark, MarkId, Register, RegisterContent, RegisterType, SpecialMark,
-    VimError, VimMode, VimState,
+    JumpEntry, JumpList, Mark, MarkId, ParserState, Register, RegisterContent, RegisterType,
+    SpecialMark, VimError, VimMode, VimState,
 };

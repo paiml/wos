@@ -276,6 +276,29 @@ impl fmt::Display for VimMode {
     }
 }
 
+/// Parser state for handling multi-key sequences
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ParserState {
+    /// Default state - waiting for next command
+    #[default]
+    Normal,
+
+    /// Waiting for register name after " key
+    AwaitingRegister,
+
+    /// Waiting for mark name after m key (to set mark)
+    AwaitingMarkToSet,
+
+    /// Waiting for mark name after ' key (jump to line)
+    AwaitingMarkJumpLine,
+
+    /// Waiting for mark name after ` key (jump to exact position)
+    AwaitingMarkJumpExact,
+
+    /// Waiting for second y in yy command
+    AwaitingYankTarget,
+}
+
 /// Main vim editor state
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VimState {
@@ -308,6 +331,9 @@ pub struct VimState {
 
     /// Jump list for Ctrl-O/Ctrl-I navigation
     pub jump_list: JumpList,
+
+    /// Parser state for multi-key command sequences
+    pub parser_state: ParserState,
 }
 
 impl VimState {
@@ -330,6 +356,7 @@ impl VimState {
             selected_register: None,
             marks: im::HashMap::new(),
             jump_list: JumpList::new(),
+            parser_state: ParserState::Normal,
         }
     }
 
@@ -353,6 +380,7 @@ impl VimState {
             selected_register: None,
             marks: im::HashMap::new(),
             jump_list: JumpList::new(),
+            parser_state: ParserState::Normal,
         }
     }
 
@@ -720,6 +748,105 @@ impl VimState {
     /// Check if we can jump forward
     pub fn can_jump_forward(&self) -> bool {
         self.jump_list.can_jump_forward()
+    }
+
+    /// Handle a normal mode key press with parser state machine
+    ///
+    /// This method processes keys in normal mode, handling multi-key sequences
+    /// like "x (register selection), mx (set mark), 'x (jump to mark), etc.
+    ///
+    /// Returns Ok(true) if a command was executed and may have modified the buffer.
+    /// Returns Ok(false) if no modification occurred or command is incomplete.
+    pub fn handle_normal_key(&mut self, key: char) -> Result<bool, VimError> {
+        match self.parser_state {
+            ParserState::Normal => {
+                // First key of potential multi-key sequence
+                match key {
+                    '"' => {
+                        self.parser_state = ParserState::AwaitingRegister;
+                        Ok(false)
+                    }
+                    'm' => {
+                        self.parser_state = ParserState::AwaitingMarkToSet;
+                        Ok(false)
+                    }
+                    '\'' => {
+                        self.parser_state = ParserState::AwaitingMarkJumpLine;
+                        Ok(false)
+                    }
+                    '`' => {
+                        self.parser_state = ParserState::AwaitingMarkJumpExact;
+                        Ok(false)
+                    }
+                    'y' => {
+                        self.parser_state = ParserState::AwaitingYankTarget;
+                        Ok(false)
+                    }
+                    'p' => {
+                        // Paste after cursor
+                        self.paste_after()?;
+                        Ok(false)
+                    }
+                    _ => {
+                        // Try to parse as regular command
+                        Err(VimError::InvalidCommand(format!(
+                            "Key '{}' not handled by state machine",
+                            key
+                        )))
+                    }
+                }
+            }
+
+            ParserState::AwaitingRegister => {
+                // Second key after " - register name
+                self.set_current_register(Register::Named(key));
+                self.parser_state = ParserState::Normal;
+                Ok(false)
+            }
+
+            ParserState::AwaitingMarkToSet => {
+                // Second key after m - mark name
+                self.set_mark(MarkId::Local(key))?;
+                self.parser_state = ParserState::Normal;
+                Ok(false)
+            }
+
+            ParserState::AwaitingMarkJumpLine => {
+                // Second key after ' - jump to mark line
+                let mark_id = MarkId::Local(key);
+                self.jump_to_mark(&mark_id)?;
+                self.parser_state = ParserState::Normal;
+                Ok(false)
+            }
+
+            ParserState::AwaitingMarkJumpExact => {
+                // Second key after ` - jump to mark exact position
+                let mark_id = MarkId::Local(key);
+                self.jump_to_mark(&mark_id)?;
+                self.parser_state = ParserState::Normal;
+                Ok(false)
+            }
+
+            ParserState::AwaitingYankTarget => {
+                // Second key after y
+                match key {
+                    'y' => {
+                        // yy - yank line
+                        self.yank_line()?;
+                        self.parser_state = ParserState::Normal;
+                        Ok(false)
+                    }
+                    _ => {
+                        // Cancel yank
+                        self.parser_state = ParserState::Normal;
+                        Err(VimError::InvalidCommand(format!(
+                            "Invalid yank target: {}",
+                            key
+                        )))
+                    }
+                }
+            }
+        }
     }
 
     /// Update special marks automatically

@@ -5,21 +5,46 @@ use super::command::VimCommand;
 use super::state::VimError;
 
 /// Parse a normal mode key press into a vim command
+///
+/// Note: Multi-key sequences like "x, mx, 'x, `x, yy require parser state tracking
+/// in VimState.parser_state. This function handles single-key commands and
+/// the first key of multi-key sequences.
 pub fn parse_normal_key(key: char) -> Result<VimCommand, VimError> {
     match key {
+        // Navigation
         'h' => Ok(VimCommand::MoveLeft),
         'j' => Ok(VimCommand::MoveDown),
         'k' => Ok(VimCommand::MoveUp),
         'l' => Ok(VimCommand::MoveRight),
         '0' => Ok(VimCommand::MoveLineStart),
         '$' => Ok(VimCommand::MoveLineEnd),
+
+        // Insert mode
         'i' => Ok(VimCommand::InsertBefore),
         'a' => Ok(VimCommand::InsertAfter),
         'o' => Ok(VimCommand::InsertLineBelow),
         'O' => Ok(VimCommand::InsertLineAbove),
+
+        // Editing
         'x' => Ok(VimCommand::DeleteChar),
+        'p' => Ok(VimCommand::PutAfter),
         'u' => Ok(VimCommand::Undo),
+
+        // Mode commands
         ':' => Ok(VimCommand::EnterCommandMode),
+
+        // Multi-key sequence markers (handled by VimState)
+        // These return InvalidCommand to signal they need state handling
+        '"' => Err(VimError::InvalidCommand("Awaiting register name".into())),
+        'm' => Err(VimError::InvalidCommand("Awaiting mark name".into())),
+        '\'' => Err(VimError::InvalidCommand(
+            "Awaiting mark for line jump".into(),
+        )),
+        '`' => Err(VimError::InvalidCommand(
+            "Awaiting mark for exact jump".into(),
+        )),
+        'y' => Err(VimError::InvalidCommand("Awaiting yank target".into())),
+
         _ => Err(VimError::InvalidCommand(format!("Unknown key: {}", key))),
     }
 }
