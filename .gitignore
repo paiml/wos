@@ -26,3 +26,10 @@ dist/wos/wos_bg.wasm
 dist/wos/wos.js
 dist/wos/wos_bg.wasm.d.ts
 .env.deploy
+
+# Playwright E2E test artifacts
+test-results/
+test-if-elif-manual.html
+
+# Playwright screenshots (may change during development)
+tests/e2e/screenshots/*.png
