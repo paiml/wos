@@ -1499,7 +1499,7 @@ mod tests {
     }
 
     // WOS-202 Test 5: test_execute_script_stop_on_error
-    // TODO: Enhance test executor to handle error propagation
+    // DEFERRED: This test requires enhanced test executor with error propagation support
     #[test]
     #[ignore = "Test executor needs error handling support"]
     fn test_execute_script_stop_on_error() {
@@ -1567,7 +1567,7 @@ mod tests {
     }
 
     // WOS-202 Test 8: test_execute_script_with_invalid_command
-    // TODO: Enhance test executor to return non-zero exit codes
+    // DEFERRED: This test requires enhanced test executor with exit code support
     #[test]
     #[ignore = "Test executor needs exit code support"]
     fn test_execute_script_with_invalid_command() {
@@ -1713,7 +1713,7 @@ mod tests {
     }
 
     // WOS-203 Test 4: test_script_variable_scope_isolation
-    // TODO: Enhance test executor to support variable scoping
+    // DEFERRED: This test requires enhanced test executor with variable scoping support
     #[test]
     #[ignore = "Test executor needs variable scoping support"]
     fn test_script_variable_scope_isolation() {

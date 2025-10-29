@@ -4126,7 +4126,7 @@ environment: production
         assert!(output.contains("hello"));
     }
 
-    // TODO: Requires full WosWasm command execution which depends on ScriptExecutor with real executor
+    // DEFERRED: This test requires full WosWasm command execution with enhanced ScriptExecutor
     #[test]
     #[ignore = "Depends on enhanced test executor"]
     fn test_bash_command_script_execution_error() {
@@ -4238,7 +4238,7 @@ environment: production
         assert_eq!(wos.variables.get("FOO"), Some(&"bar".to_string()));
     }
 
-    // TODO: Requires full WosWasm variable scoping which depends on ScriptExecutor with real executor
+    // DEFERRED: This test requires full WosWasm variable scoping with enhanced ScriptExecutor
     #[test]
     #[ignore = "Depends on enhanced test executor"]
     fn test_source_vs_bash_variable_scope() {
