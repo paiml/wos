@@ -332,6 +332,18 @@ pub struct VimState {
     /// Jump list for Ctrl-O/Ctrl-I navigation
     pub jump_list: JumpList,
 
+    /// Macro recording state - which register is being recorded to (None if not recording)
+    pub macro_recording: Option<Register>,
+
+    /// Buffer of keystrokes being recorded for current macro
+    pub macro_buffer: String,
+
+    /// Macros stored in registers (separate from yank/delete registers conceptually)
+    pub macros: im::HashMap<Register, String>,
+
+    /// Last executed macro register (for @@ command)
+    pub last_macro: Option<Register>,
+
     /// Parser state for multi-key command sequences
     pub parser_state: ParserState,
 }
@@ -356,6 +368,10 @@ impl VimState {
             selected_register: None,
             marks: im::HashMap::new(),
             jump_list: JumpList::new(),
+            macro_recording: None,
+            macro_buffer: String::new(),
+            macros: im::HashMap::new(),
+            last_macro: None,
             parser_state: ParserState::Normal,
         }
     }
@@ -380,6 +396,10 @@ impl VimState {
             selected_register: None,
             marks: im::HashMap::new(),
             jump_list: JumpList::new(),
+            macro_recording: None,
+            macro_buffer: String::new(),
+            macros: im::HashMap::new(),
+            last_macro: None,
             parser_state: ParserState::Normal,
         }
     }
@@ -854,6 +874,62 @@ impl VimState {
         let buffer = self.current_buffer();
         let mark = Mark::new(self.active_buffer, buffer.cursor.line, buffer.cursor.col);
         self.marks.insert(MarkId::Special(special), mark);
+    }
+
+    // ============================================================================
+    // Macro Recording and Playback
+    // ============================================================================
+
+    /// Start recording a macro to the specified register
+    pub fn start_macro_recording(&mut self, register: Register) {
+        self.macro_recording = Some(register);
+        self.macro_buffer.clear();
+    }
+
+    /// Stop recording the current macro and save it to the register
+    pub fn stop_macro_recording(&mut self) {
+        if let Some(register) = self.macro_recording.take() {
+            let macro_content = self.macro_buffer.clone();
+            self.macros.insert(register, macro_content);
+            self.macro_buffer.clear();
+        }
+    }
+
+    /// Check if currently recording a macro
+    pub fn is_recording_macro(&self) -> bool {
+        self.macro_recording.is_some()
+    }
+
+    /// Get the register currently being recorded to
+    pub fn recording_register(&self) -> Option<&Register> {
+        self.macro_recording.as_ref()
+    }
+
+    /// Record a keystroke to the current macro buffer
+    pub fn record_keystroke(&mut self, ch: char) {
+        if self.is_recording_macro() {
+            self.macro_buffer.push(ch);
+        }
+    }
+
+    /// Get a macro from a register
+    pub fn get_macro(&self, register: &Register) -> Option<String> {
+        self.macros.get(register).cloned()
+    }
+
+    /// Set a macro in a register (for testing or manual setup)
+    pub fn set_macro(&mut self, register: Register, content: String) {
+        self.macros.insert(register, content);
+    }
+
+    /// Set the last executed macro register (for @@ command)
+    pub fn set_last_executed_macro(&mut self, register: Register) {
+        self.last_macro = Some(register);
+    }
+
+    /// Get the last executed macro register
+    pub fn last_executed_macro(&self) -> Option<&Register> {
+        self.last_macro.as_ref()
     }
 }
 
