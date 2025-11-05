@@ -499,4 +499,229 @@ mod tests {
         shell.execute_builtin(&cmd);
         assert_eq!(shell.cwd, "/home");
     }
+
+    // Property-based tests using proptest
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Property: parse_command never panics on any input
+            #[test]
+            fn proptest_parse_command_never_panics(
+                input in "\\PC*"
+            ) {
+                let _ = Shell::parse_command(&input);
+                // If we get here, we didn't panic
+                prop_assert!(true);
+            }
+
+            /// Property: parse_command is deterministic
+            #[test]
+            fn proptest_parse_command_deterministic(
+                input in "[a-zA-Z0-9 \\t\\n\\-_/]{0,100}"
+            ) {
+                let result1 = Shell::parse_command(&input);
+                let result2 = Shell::parse_command(&input);
+                prop_assert_eq!(result1, result2);
+            }
+
+            /// Property: Empty/whitespace input returns None
+            #[test]
+            fn proptest_parse_command_empty(
+                whitespace in "[ \\t\\n]*"
+            ) {
+                let result = Shell::parse_command(&whitespace);
+                prop_assert!(result.is_none());
+            }
+
+            /// Property: Non-empty trimmed input returns Some
+            #[test]
+            fn proptest_parse_command_nonempty(
+                cmd in "[a-z]{1,20}",
+                args in prop::collection::vec("[a-z0-9]{1,15}", 0..10)
+            ) {
+                let input = format!("{} {}", cmd, args.join(" "));
+                let result = Shell::parse_command(&input);
+
+                prop_assert!(result.is_some());
+                let command = result.unwrap();
+                prop_assert_eq!(&command.name, &cmd);
+                prop_assert_eq!(command.args.len(), args.len());
+            }
+
+            /// Property: normalize_path never panics
+            #[test]
+            fn proptest_normalize_path_never_panics(
+                path in "[a-zA-Z0-9/.]{0,100}"
+            ) {
+                let _ = Shell::normalize_path(&path);
+                prop_assert!(true);
+            }
+
+            /// Property: normalize_path always starts with /
+            #[test]
+            fn proptest_normalize_path_starts_with_slash(
+                path in "[a-zA-Z0-9/.]{1,100}"
+            ) {
+                let normalized = Shell::normalize_path(&path);
+                prop_assert!(normalized.starts_with('/'));
+            }
+
+            /// Property: normalize_path is idempotent
+            #[test]
+            fn proptest_normalize_path_idempotent(
+                parts in prop::collection::vec("[a-z]{1,10}", 0..10)
+            ) {
+                let path = format!("/{}", parts.join("/"));
+                let normalized1 = Shell::normalize_path(&path);
+                let normalized2 = Shell::normalize_path(&normalized1);
+                prop_assert_eq!(normalized1, normalized2);
+            }
+
+            /// Property: normalize_path handles .. correctly
+            #[test]
+            fn proptest_normalize_path_parent_directory(
+                depth in 1..10usize
+            ) {
+                // Create path like /a/b/c/../.. which should normalize to /a
+                let mut path = String::from("/");
+                for i in 0..depth {
+                    path.push_str(&format!("dir{}/", i));
+                }
+                path.push_str("../");
+
+                let normalized = Shell::normalize_path(&path);
+
+                // Should have removed the last dir and the ..
+                if depth > 1 {
+                    let expected_dir = format!("dir{}", depth - 2);
+                    let removed_dir = format!("dir{}", depth - 1);
+                    prop_assert!(normalized.contains(&expected_dir));
+                    prop_assert!(!normalized.contains(&removed_dir));
+                }
+            }
+
+            /// Property: add_to_history never panics
+            #[test]
+            fn proptest_add_to_history_never_panics(
+                lines in prop::collection::vec("\\PC*", 0..50)
+            ) {
+                let mut shell = Shell::new(1);
+                for line in lines {
+                    shell.add_to_history(line);
+                }
+                prop_assert!(true);
+            }
+
+            /// Property: add_to_history preserves order
+            #[test]
+            fn proptest_add_to_history_order(
+                lines in prop::collection::vec("[a-z]{1,20}", 1..20)
+            ) {
+                let mut shell = Shell::new(1);
+                for line in &lines {
+                    shell.add_to_history(line.clone());
+                }
+
+                prop_assert_eq!(shell.history.len(), lines.len());
+                for (i, line) in lines.iter().enumerate() {
+                    prop_assert_eq!(&shell.history[i], line);
+                }
+            }
+
+            /// Property: add_to_history skips empty lines
+            #[test]
+            fn proptest_add_to_history_skips_empty(
+                whitespace in prop::collection::vec("[ \\t]*", 0..20)
+            ) {
+                let mut shell = Shell::new(1);
+                for line in whitespace {
+                    shell.add_to_history(line);
+                }
+
+                // All whitespace-only lines should be skipped
+                prop_assert_eq!(shell.history.len(), 0);
+            }
+
+            /// Property: set_env/get_env round-trip
+            #[test]
+            fn proptest_env_roundtrip(
+                key in "[A-Z_]{1,20}",
+                value in "[a-zA-Z0-9/:.]{1,50}"
+            ) {
+                let mut shell = Shell::new(1);
+                shell.set_env(key.clone(), value.clone());
+
+                let retrieved = shell.get_env(&key);
+                prop_assert!(retrieved.is_some());
+                prop_assert_eq!(retrieved.unwrap(), &value);
+            }
+
+            /// Property: set_env overwrites previous value
+            #[test]
+            fn proptest_env_overwrite(
+                key in "[A-Z_]{1,20}",
+                value1 in "[a-z]{1,20}",
+                value2 in "[a-z]{1,20}"
+            ) {
+                let mut shell = Shell::new(1);
+                shell.set_env(key.clone(), value1);
+                shell.set_env(key.clone(), value2.clone());
+
+                let retrieved = shell.get_env(&key);
+                prop_assert_eq!(retrieved.unwrap(), &value2);
+            }
+
+            /// Property: builtin_cd with absolute path sets cwd correctly
+            #[test]
+            fn proptest_cd_absolute_path(
+                parts in prop::collection::vec("[a-z]{1,10}", 1..10)
+            ) {
+                let mut shell = Shell::new(1);
+                let path = format!("/{}", parts.join("/"));
+                let cmd = Command::new("cd".to_string(), vec![path.clone()]);
+
+                shell.execute_builtin(&cmd);
+
+                // Should normalize the path
+                let normalized = Shell::normalize_path(&path);
+                prop_assert_eq!(shell.cwd, normalized);
+            }
+
+            /// Property: execute_builtin returns true for known commands
+            #[test]
+            fn proptest_execute_builtin_known(
+                builtin in prop_oneof![
+                    Just("cd".to_string()),
+                    Just("exit".to_string()),
+                    Just("help".to_string()),
+                    Just("pwd".to_string()),
+                    Just("export".to_string()),
+                    Just("history".to_string()),
+                ]
+            ) {
+                let mut shell = Shell::new(1);
+                let cmd = Command::new(builtin, vec![]);
+
+                let is_builtin = shell.execute_builtin(&cmd);
+                prop_assert!(is_builtin);
+            }
+
+            /// Property: execute_builtin returns false for unknown commands
+            #[test]
+            fn proptest_execute_builtin_unknown(
+                cmd_name in "[a-z]{1,20}".prop_filter(
+                    "Not a builtin",
+                    |s| !matches!(s.as_str(), "cd" | "exit" | "help" | "pwd" | "export" | "history")
+                )
+            ) {
+                let mut shell = Shell::new(1);
+                let cmd = Command::new(cmd_name, vec![]);
+
+                let is_builtin = shell.execute_builtin(&cmd);
+                prop_assert!(!is_builtin);
+            }
+        }
+    }
 }
