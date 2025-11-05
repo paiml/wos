@@ -997,12 +997,11 @@ impl WosWasm {
         let text_chars: Vec<char> = text.chars().collect();
         let pattern_chars: Vec<char> = pattern.chars().collect();
 
-        self.match_glob_recursive(&text_chars, 0, &pattern_chars, 0)
+        Self::match_glob_recursive(&text_chars, 0, &pattern_chars, 0)
     }
 
     /// Recursive glob matching
     fn match_glob_recursive(
-        &self,
         text: &[char],
         t_idx: usize,
         pattern: &[char],
@@ -1022,12 +1021,12 @@ impl WosWasm {
             '*' => {
                 // * matches zero or more characters
                 // Try matching zero characters (skip *)
-                if self.match_glob_recursive(text, t_idx, pattern, p_idx + 1) {
+                if Self::match_glob_recursive(text, t_idx, pattern, p_idx + 1) {
                     return true;
                 }
                 // Try matching one or more characters
                 for i in t_idx..text.len() {
-                    if self.match_glob_recursive(text, i + 1, pattern, p_idx + 1) {
+                    if Self::match_glob_recursive(text, i + 1, pattern, p_idx + 1) {
                         return true;
                     }
                 }
@@ -1038,7 +1037,7 @@ impl WosWasm {
                 if t_idx >= text.len() {
                     return false;
                 }
-                self.match_glob_recursive(text, t_idx + 1, pattern, p_idx + 1)
+                Self::match_glob_recursive(text, t_idx + 1, pattern, p_idx + 1)
             }
             '[' => {
                 // Character class [abc], [a-z], [!abc], [^abc]
@@ -1054,7 +1053,7 @@ impl WosWasm {
                 if end >= pattern.len() {
                     // No closing ] - treat [ as literal
                     if t_idx < text.len() && text[t_idx] == '[' {
-                        return self.match_glob_recursive(text, t_idx + 1, pattern, p_idx + 1);
+                        return Self::match_glob_recursive(text, t_idx + 1, pattern, p_idx + 1);
                     }
                     return false;
                 }
@@ -1098,7 +1097,7 @@ impl WosWasm {
                 let final_match = if negated { !matches } else { matches };
 
                 if final_match {
-                    self.match_glob_recursive(text, t_idx + 1, pattern, end + 1)
+                    Self::match_glob_recursive(text, t_idx + 1, pattern, end + 1)
                 } else {
                     false
                 }
@@ -1108,7 +1107,7 @@ impl WosWasm {
                 if t_idx >= text.len() || text[t_idx] != p_char {
                     return false;
                 }
-                self.match_glob_recursive(text, t_idx + 1, pattern, p_idx + 1)
+                Self::match_glob_recursive(text, t_idx + 1, pattern, p_idx + 1)
             }
         }
     }
