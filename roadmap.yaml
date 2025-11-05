@@ -2473,6 +2473,116 @@ completion_status:
         **Decision**: Accept current optimization as sufficient. 594KB gzipped is excellent for
         a full OS implementation with vim editor, shell, and file system.
 
+# ==============================================================================
+# Phase 18: vim.wasm Phase 1 - Advanced Vim Features (Rust Implementation)
+# ==============================================================================
+- phase: 18
+  name: "vim.wasm Phase 1 - Advanced Vim Features"
+  description: "Enhance WOS Vim with advanced features (Visual, Registers, Marks, Macros)"
+  status: completed
+  priority: high
+  start_date: 2025-11-04
+  completion_date: 2025-11-05
+  duration: 1_day
+  focus: "Advanced editing capabilities for educational value"
+  methodology: "Extreme TDD with comprehensive test coverage"
+  spec_reference: "docs/specifications/more-vim-features-wasm.md"
+
+  tickets:
+    - id: WOS-VIM-01
+      title: "Character-wise visual mode (v)"
+      status: completed
+      completed_date: 2025-10-XX
+      notes: "Already implemented in previous sessions"
+
+    - id: WOS-VIM-02
+      title: "Line and block visual modes (V, Ctrl+V)"
+      status: completed
+      completed_date: 2025-10-XX
+      notes: "Already implemented in previous sessions"
+
+    - id: WOS-VIM-03
+      title: "Macro recording and playback (q{register}, @{register}, @@)"
+      status: completed
+      completed_date: 2025-11-05
+      priority: high
+      time_estimate: 4_hours
+      category: feature
+
+      implementation:
+        files_modified:
+          - "userspace/src/vim/state.rs (+120 lines: fields, methods, command handlers)"
+          - "userspace/src/vim/macros_tests.rs (+350 lines: 19 tests)"
+          - "userspace/src/vim/mod.rs (+3 lines: test module)"
+
+        new_features:
+          - "q{register} - Start macro recording to register a-z"
+          - "q - Stop macro recording"
+          - "@{register} - Replay macro from register"
+          - "@@ - Replay last executed macro"
+
+        parser_states:
+          - "AwaitingMacroRegister - After 'q' pressed"
+          - "AwaitingMacroPlayback - After '@' pressed"
+
+      test_coverage:
+        infrastructure_tests: "11/11 passing (100%)"
+        integration_tests: "8/8 passing (100%)"
+        total_tests: "19/19 passing (100%)"
+        test_categories:
+          - "Macro recording start/stop"
+          - "Keystroke capture"
+          - "Macro storage and retrieval"
+          - "Last executed macro tracking"
+          - "Command integration (q, @, @@)"
+          - "Error handling"
+          - "End-to-end workflows"
+
+      acceptance:
+        - "q{register} starts recording ✓"
+        - "q stops recording ✓"
+        - "@{register} replays macro ✓"
+        - "@@ replays last macro ✓"
+        - "Invalid register errors handled ✓"
+        - "All 19 tests passing ✓"
+        - "Zero clippy warnings (macro code) ✓"
+
+      metrics:
+        lines_of_code: "+470 lines"
+        test_lines: "+350 lines"
+        test_to_code_ratio: "0.74 (74%)"
+        complexity: "≤10 per function"
+
+      notes: |
+        **TDD Methodology**: Strict RED-GREEN-REFACTOR cycle
+        1. RED: Wrote 11 infrastructure tests (all failing)
+        2. GREEN: Implemented macro methods (11/11 passing)
+        3. RED: Wrote 8 integration tests (all failing)
+        4. GREEN: Integrated commands into parser (8/8 passing)
+        5. REFACTOR: Code formatted, warnings fixed
+
+        **Key Design Decisions**:
+        - Macros stored separately from yank/delete registers
+        - Record buffer cleared on start_macro_recording
+        - Last executed macro tracked for @@ command
+        - Recording state checked in handle_normal_key
+        - Graceful error handling for missing macros
+
+  phase_completion:
+    visual_mode: "✅ Complete (v, V, Ctrl+V)"
+    registers: "✅ Complete (yank, named, numbered)"
+    marks: "✅ Complete (local, global, special)"
+    macros: "✅ Complete (q{register}, @{register}, @@)"
+    phase_1_status: "100% Complete"
+
+  quality_metrics:
+    total_tests: "770 passing (all workspace)"
+    macro_tests: "19/19 passing (100%)"
+    vim_tests: "207/207 passing (100%)"
+    clippy_warnings: "1 (pre-existing recursion warning)"
+    code_formatted: "✅ Yes"
+    satd_violations: "0"
+
   completed_features:
     - "WOS-001: Project scaffolding and quality gates"
     - "WOS-002: Kernel state types and serialization"

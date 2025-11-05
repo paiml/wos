@@ -3,8 +3,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::vim::buffer::BufferId;
-    use crate::vim::state::{Register, RegisterType, VimMode, VimState};
+    use crate::vim::state::{ParserState, Register, VimState};
 
     #[test]
     fn test_macro_recording_start() {
@@ -193,5 +192,167 @@ mod tests {
 
         // Should only have the first keystroke
         assert_eq!(state.get_macro(&Register::Named('a')).unwrap(), "i");
+    }
+
+    // ============================================================================
+    // Command Integration Tests (q, @, @@)
+    // ============================================================================
+
+    #[test]
+    fn test_q_command_starts_recording() {
+        let mut state = VimState::new();
+
+        // Press 'q' in normal mode
+        let result = state.handle_normal_key('q');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::AwaitingMacroRegister);
+        assert!(!state.is_recording_macro());
+
+        // Press 'a' to select register
+        let result = state.handle_normal_key('a');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::Normal);
+        assert!(state.is_recording_macro());
+        assert_eq!(state.recording_register(), Some(&Register::Named('a')));
+    }
+
+    #[test]
+    fn test_q_command_stops_recording() {
+        let mut state = VimState::new();
+
+        // Start recording to register 'a'
+        state.start_macro_recording(Register::Named('a'));
+        state.record_keystroke('i');
+        state.record_keystroke('t');
+        state.record_keystroke('e');
+        state.record_keystroke('s');
+        state.record_keystroke('t');
+        state.record_keystroke('\x1b');
+
+        // Press 'q' while recording to stop
+        assert!(state.is_recording_macro());
+        let result = state.handle_normal_key('q');
+        assert!(result.is_ok());
+        assert!(!state.is_recording_macro());
+
+        // Verify macro was saved
+        assert_eq!(state.get_macro(&Register::Named('a')).unwrap(), "itest\x1b");
+    }
+
+    #[test]
+    fn test_q_command_invalid_register() {
+        let mut state = VimState::new();
+
+        // Press 'q' then invalid character
+        state.handle_normal_key('q').unwrap();
+        let result = state.handle_normal_key('1'); // Numbers not allowed
+        assert!(result.is_err());
+        assert_eq!(state.parser_state, ParserState::Normal);
+        assert!(!state.is_recording_macro());
+    }
+
+    #[test]
+    fn test_at_command_replays_macro() {
+        let mut state = VimState::new();
+
+        // Set up a macro in register 'a'
+        state.set_macro(Register::Named('a'), "itest\x1b".to_string());
+
+        // Press '@' in normal mode
+        let result = state.handle_normal_key('@');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::AwaitingMacroPlayback);
+
+        // Press 'a' to replay macro from register 'a'
+        let result = state.handle_normal_key('a');
+        assert!(result.is_ok());
+        assert_eq!(state.parser_state, ParserState::Normal);
+        assert_eq!(state.last_executed_macro(), Some(&Register::Named('a')));
+    }
+
+    #[test]
+    fn test_at_command_no_macro_error() {
+        let mut state = VimState::new();
+
+        // Press '@' then 'b' (no macro in register 'b')
+        state.handle_normal_key('@').unwrap();
+        let result = state.handle_normal_key('b');
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No macro recorded"));
+    }
+
+    #[test]
+    fn test_double_at_replays_last_macro() {
+        let mut state = VimState::new();
+
+        // Set up macros in two registers
+        state.set_macro(Register::Named('a'), "ia\x1b".to_string());
+        state.set_macro(Register::Named('b'), "ib\x1b".to_string());
+
+        // Execute macro 'a'
+        state.handle_normal_key('@').unwrap();
+        state.handle_normal_key('a').unwrap();
+
+        // Now execute @@
+        state.handle_normal_key('@').unwrap();
+        let result = state.handle_normal_key('@');
+        assert!(result.is_ok());
+        assert_eq!(state.last_executed_macro(), Some(&Register::Named('a')));
+    }
+
+    #[test]
+    fn test_double_at_no_previous_macro() {
+        let mut state = VimState::new();
+
+        // Try @@ without having executed any macro
+        state.handle_normal_key('@').unwrap();
+        let result = state.handle_normal_key('@');
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No previous macro"));
+    }
+
+    #[test]
+    fn test_macro_workflow_end_to_end() {
+        let mut state = VimState::new();
+
+        // 1. Start recording with qa
+        state.handle_normal_key('q').unwrap();
+        state.handle_normal_key('a').unwrap();
+        assert!(state.is_recording_macro());
+
+        // 2. Record some keystrokes
+        state.record_keystroke('i');
+        state.record_keystroke('h');
+        state.record_keystroke('e');
+        state.record_keystroke('l');
+        state.record_keystroke('l');
+        state.record_keystroke('o');
+        state.record_keystroke('\x1b');
+
+        // 3. Stop recording with q
+        state.handle_normal_key('q').unwrap();
+        assert!(!state.is_recording_macro());
+
+        // 4. Verify macro was saved
+        assert_eq!(
+            state.get_macro(&Register::Named('a')).unwrap(),
+            "ihello\x1b"
+        );
+
+        // 5. Replay with @a
+        state.handle_normal_key('@').unwrap();
+        let result = state.handle_normal_key('a');
+        assert!(result.is_ok());
+
+        // 6. Replay again with @@
+        state.handle_normal_key('@').unwrap();
+        let result = state.handle_normal_key('@');
+        assert!(result.is_ok());
     }
 }

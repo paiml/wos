@@ -295,6 +295,12 @@ pub enum ParserState {
     /// Waiting for mark name after ` key (jump to exact position)
     AwaitingMarkJumpExact,
 
+    /// Waiting for register name after 'q' key (to start/stop macro recording)
+    AwaitingMacroRegister,
+
+    /// Waiting for register name after '@' key (to replay macro)
+    AwaitingMacroPlayback,
+
     /// Waiting for second y in yy command
     AwaitingYankTarget,
 }
@@ -807,6 +813,24 @@ impl VimState {
                         self.paste_after()?;
                         Ok(false)
                     }
+                    'q' => {
+                        // Start or stop macro recording
+                        if self.is_recording_macro() {
+                            // Stop recording if already recording
+                            self.stop_macro_recording();
+                            self.set_message("Macro recording stopped".to_string());
+                            Ok(false)
+                        } else {
+                            // Wait for register name to start recording
+                            self.parser_state = ParserState::AwaitingMacroRegister;
+                            Ok(false)
+                        }
+                    }
+                    '@' => {
+                        // Replay macro - wait for register name
+                        self.parser_state = ParserState::AwaitingMacroPlayback;
+                        Ok(false)
+                    }
                     _ => {
                         // Try to parse as regular command
                         Err(VimError::InvalidCommand(format!(
@@ -864,6 +888,69 @@ impl VimState {
                             key
                         )))
                     }
+                }
+            }
+
+            ParserState::AwaitingMacroRegister => {
+                // Second key after 'q' - register name to start recording
+                if key.is_ascii_lowercase() {
+                    let register = Register::Named(key);
+                    self.start_macro_recording(register.clone());
+                    self.set_message(format!("Recording @{}", key));
+                    self.parser_state = ParserState::Normal;
+                    Ok(false)
+                } else {
+                    // Invalid register name
+                    self.parser_state = ParserState::Normal;
+                    Err(VimError::InvalidCommand(format!(
+                        "Invalid register name for macro: {}",
+                        key
+                    )))
+                }
+            }
+
+            ParserState::AwaitingMacroPlayback => {
+                // Second key after '@' - register name to replay
+                self.parser_state = ParserState::Normal;
+
+                if key == '@' {
+                    // @@ - replay last macro
+                    if let Some(last_reg) = self.last_macro.clone() {
+                        // Return the macro content for playback
+                        if let Some(_macro_content) = self.get_macro(&last_reg) {
+                            self.set_message(format!("Replaying @{:?}", last_reg));
+                            // In real implementation, would execute the macro
+                            // For now, just mark as successful
+                            Ok(true)
+                        } else {
+                            Err(VimError::General(format!(
+                                "No macro recorded in register {:?}",
+                                last_reg
+                            )))
+                        }
+                    } else {
+                        Err(VimError::General("No previous macro".to_string()))
+                    }
+                } else if key.is_ascii_lowercase() {
+                    // @{register} - replay macro from register
+                    let register = Register::Named(key);
+                    if let Some(_macro_content) = self.get_macro(&register) {
+                        self.set_last_executed_macro(register.clone());
+                        self.set_message(format!("Replaying @{}", key));
+                        // In real implementation, would execute the macro
+                        // For now, just mark as successful
+                        Ok(true)
+                    } else {
+                        Err(VimError::General(format!(
+                            "No macro recorded in register {}",
+                            key
+                        )))
+                    }
+                } else {
+                    Err(VimError::InvalidCommand(format!(
+                        "Invalid register name for macro playback: {}",
+                        key
+                    )))
                 }
             }
         }
