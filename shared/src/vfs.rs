@@ -359,4 +359,189 @@ mod tests {
         assert!(files.contains(&PathBuf::from("/file2.txt")));
         assert!(files.contains(&PathBuf::from("/file3.txt")));
     }
+
+    // Property-based tests using proptest
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Property: File count always equals list_files().len()
+            #[test]
+            fn proptest_file_count_consistency(
+                paths in prop::collection::vec(
+                    prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
+                    0..50
+                ),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let mut unique_paths = std::collections::HashSet::new();
+
+                for path_str in paths {
+                    let path = PathBuf::from(&path_str);
+                    if unique_paths.insert(path_str) {
+                        let _ = vfs.create_file(path, vec![]);
+                    }
+                }
+
+                prop_assert_eq!(vfs.file_count(), vfs.list_files().len());
+                prop_assert_eq!(vfs.file_count(), unique_paths.len());
+            }
+
+            /// Property: Read after write returns written content
+            #[test]
+            fn proptest_read_after_write(
+                path in prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
+                content in prop::collection::vec(any::<u8>(), 0..1024),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let path = PathBuf::from(path);
+
+                vfs.create_file(path.clone(), content.clone()).unwrap();
+                let read_content = vfs.read_file(&path).unwrap();
+
+                prop_assert_eq!(read_content, content);
+            }
+
+            /// Property: Cloning preserves all state
+            #[test]
+            fn proptest_clone_preserves_state(
+                operations in prop::collection::vec(
+                    (
+                        prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
+                        prop::collection::vec(any::<u8>(), 0..256),
+                    ),
+                    0..30
+                ),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+
+                for (path_str, content) in operations {
+                    let path = PathBuf::from(path_str);
+                    let _ = vfs.create_file(path, content);
+                }
+
+                let cloned = vfs.clone();
+                prop_assert_eq!(vfs.file_count(), cloned.file_count());
+                prop_assert_eq!(vfs.list_files(), cloned.list_files());
+                prop_assert_eq!(vfs, cloned);
+            }
+
+            /// Property: Delete followed by create succeeds
+            #[test]
+            fn proptest_delete_then_create(
+                path in prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
+                content1 in prop::collection::vec(any::<u8>(), 0..256),
+                content2 in prop::collection::vec(any::<u8>(), 0..256),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let path = PathBuf::from(path);
+
+                vfs.create_file(path.clone(), content1).unwrap();
+                vfs.delete_file(&path).unwrap();
+                let result = vfs.create_file(path.clone(), content2.clone());
+
+                prop_assert!(result.is_ok());
+                let read_content = vfs.read_file(&path).unwrap();
+                prop_assert_eq!(read_content, content2);
+            }
+
+            /// Property: Multiple writes preserve last write
+            #[test]
+            fn proptest_multiple_writes(
+                path in prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
+                writes in prop::collection::vec(
+                    prop::collection::vec(any::<u8>(), 0..256),
+                    1..20
+                ),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let path = PathBuf::from(path);
+
+                vfs.create_file(path.clone(), vec![]).unwrap();
+
+                let mut last_content = vec![];
+                for content in writes {
+                    vfs.write_file(&path, content.clone()).unwrap();
+                    last_content = content;
+                }
+
+                let read_content = vfs.read_file(&path).unwrap();
+                prop_assert_eq!(read_content, last_content);
+            }
+
+            /// Property: Failed operations don't change file count (atomicity)
+            #[test]
+            fn proptest_atomicity_on_failure(
+                existing_path in prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
+                nonexistent_path in prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
+            ) {
+                prop_assume!(existing_path != nonexistent_path);
+
+                let mut vfs = VirtualFileSystem::new();
+                let existing = PathBuf::from(existing_path);
+                let nonexistent = PathBuf::from(nonexistent_path);
+
+                vfs.create_file(existing.clone(), vec![]).unwrap();
+                let count_before = vfs.file_count();
+
+                // Try operations that should fail
+                let _ = vfs.create_file(existing.clone(), vec![]); // AlreadyExists
+                let _ = vfs.read_file(&nonexistent); // NotFound
+                let _ = vfs.write_file(&nonexistent, vec![]); // NotFound
+                let _ = vfs.delete_file(&nonexistent); // NotFound
+
+                prop_assert_eq!(vfs.file_count(), count_before);
+            }
+
+            /// Property: Permission changes are idempotent
+            #[test]
+            fn proptest_permission_idempotent(
+                path in prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
+                read in any::<bool>(),
+                write in any::<bool>(),
+                execute in any::<bool>(),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let path = PathBuf::from(path);
+                let perms = FilePermissions { read, write, execute };
+
+                vfs.create_file(path.clone(), vec![]).unwrap();
+
+                // Set permissions multiple times
+                vfs.set_permissions(&path, perms.clone()).unwrap();
+                vfs.set_permissions(&path, perms.clone()).unwrap();
+                vfs.set_permissions(&path, perms.clone()).unwrap();
+
+                let final_perms = vfs.get_permissions(&path).unwrap();
+                prop_assert_eq!(final_perms, perms);
+            }
+
+            /// Property: Exists is consistent with list_files
+            #[test]
+            fn proptest_exists_consistency(
+                paths in prop::collection::vec(
+                    prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
+                    0..30
+                ),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let mut unique_paths = std::collections::HashSet::new();
+
+                for path_str in &paths {
+                    let path = PathBuf::from(path_str);
+                    if unique_paths.insert(path_str.clone()) {
+                        let _ = vfs.create_file(path, vec![]);
+                    }
+                }
+
+                let file_list = vfs.list_files();
+                for path_str in unique_paths {
+                    let path = PathBuf::from(path_str);
+                    prop_assert!(vfs.exists(&path));
+                    prop_assert!(file_list.contains(&path));
+                }
+            }
+        }
+    }
 }

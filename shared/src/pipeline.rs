@@ -6,7 +6,7 @@
 use crate::parser::parse_command;
 
 /// Operator type for command chaining
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operator {
     /// Pipe: cmd1 | cmd2 (pass stdout of cmd1 to stdin of cmd2)
     Pipe,
@@ -898,5 +898,179 @@ mod arith_tests {
             stage.command.args[0], "$((2 + 3))",
             "Argument should preserve arithmetic expression intact"
         );
+    }
+
+    // Property-based tests using proptest
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Property: Pipeline parser never panics on any input
+            #[test]
+            fn proptest_pipeline_never_panics(
+                input in "\\PC*"
+            ) {
+                let _ = parse_pipeline(&input);
+                // If we get here, we didn't panic
+                prop_assert!(true);
+            }
+
+            /// Property: Pipeline parser is deterministic
+            #[test]
+            fn proptest_pipeline_deterministic(
+                input in "[a-zA-Z0-9 \\t\\n|&;><\"'\\\\$(){}]{0,200}"
+            ) {
+                let result1 = parse_pipeline(&input);
+                let result2 = parse_pipeline(&input);
+                prop_assert_eq!(result1.stages.len(), result2.stages.len());
+
+                for (stage1, stage2) in result1.stages.iter().zip(result2.stages.iter()) {
+                    prop_assert_eq!(&stage1.command.name, &stage2.command.name);
+                    prop_assert_eq!(&stage1.command.args, &stage2.command.args);
+                    prop_assert_eq!(stage1.operator, stage2.operator);
+                }
+            }
+
+            /// Property: Empty and whitespace-only inputs produce empty pipeline
+            #[test]
+            fn proptest_empty_pipeline(
+                whitespace in "[ \\t\\n]*"
+            ) {
+                let pipeline = parse_pipeline(&whitespace);
+                prop_assert_eq!(pipeline.stages.len(), 0);
+            }
+
+            /// Property: Single command produces single-stage pipeline
+            #[test]
+            fn proptest_single_command(
+                cmd in "[a-z]{1,20}",
+                args in prop::collection::vec("[a-z0-9]{1,15}", 0..10)
+            ) {
+                let input = format!("{} {}", cmd, args.join(" "));
+                let pipeline = parse_pipeline(&input);
+
+                prop_assert_eq!(pipeline.stages.len(), 1);
+                prop_assert_eq!(&pipeline.stages[0].command.name, &cmd);
+                prop_assert!(pipeline.stages[0].operator.is_none());
+            }
+
+            /// Property: Pipe operator creates two stages
+            #[test]
+            fn proptest_pipe_operator(
+                cmd1 in "[a-z]{1,10}",
+                cmd2 in "[a-z]{1,10}"
+            ) {
+                let input = format!("{} | {}", cmd1, cmd2);
+                let pipeline = parse_pipeline(&input);
+
+                prop_assert_eq!(pipeline.stages.len(), 2);
+                prop_assert_eq!(&pipeline.stages[0].command.name, &cmd1);
+                prop_assert_eq!(pipeline.stages[0].operator, Some(Operator::Pipe));
+                prop_assert_eq!(&pipeline.stages[1].command.name, &cmd2);
+                prop_assert!(pipeline.stages[1].operator.is_none());
+            }
+
+            /// Property: AND operator creates two stages
+            #[test]
+            fn proptest_and_operator(
+                cmd1 in "[a-z]{1,10}",
+                cmd2 in "[a-z]{1,10}"
+            ) {
+                let input = format!("{} && {}", cmd1, cmd2);
+                let pipeline = parse_pipeline(&input);
+
+                prop_assert_eq!(pipeline.stages.len(), 2);
+                prop_assert_eq!(&pipeline.stages[0].command.name, &cmd1);
+                prop_assert_eq!(pipeline.stages[0].operator, Some(Operator::And));
+                prop_assert_eq!(&pipeline.stages[1].command.name, &cmd2);
+            }
+
+            /// Property: OR operator creates two stages
+            #[test]
+            fn proptest_or_operator(
+                cmd1 in "[a-z]{1,10}",
+                cmd2 in "[a-z]{1,10}"
+            ) {
+                let input = format!("{} || {}", cmd1, cmd2);
+                let pipeline = parse_pipeline(&input);
+
+                prop_assert_eq!(pipeline.stages.len(), 2);
+                prop_assert_eq!(&pipeline.stages[0].command.name, &cmd1);
+                prop_assert_eq!(pipeline.stages[0].operator, Some(Operator::Or));
+                prop_assert_eq!(&pipeline.stages[1].command.name, &cmd2);
+            }
+
+            /// Property: Semicolon operator creates two stages
+            #[test]
+            fn proptest_semicolon_operator(
+                cmd1 in "[a-z]{1,10}",
+                cmd2 in "[a-z]{1,10}"
+            ) {
+                let input = format!("{} ; {}", cmd1, cmd2);
+                let pipeline = parse_pipeline(&input);
+
+                prop_assert_eq!(pipeline.stages.len(), 2);
+                prop_assert_eq!(&pipeline.stages[0].command.name, &cmd1);
+                prop_assert_eq!(pipeline.stages[0].operator, Some(Operator::Semicolon));
+                prop_assert_eq!(&pipeline.stages[1].command.name, &cmd2);
+            }
+
+            /// Property: Multiple operators create correct number of stages
+            #[test]
+            fn proptest_multiple_stages(
+                cmds in prop::collection::vec("[a-z]{1,10}", 1..10)
+            ) {
+                // Build pipeline: cmd1 | cmd2 | cmd3 | ...
+                let input = cmds.join(" | ");
+                let pipeline = parse_pipeline(&input);
+
+                prop_assert_eq!(pipeline.stages.len(), cmds.len());
+
+                // Check each stage
+                for (i, cmd) in cmds.iter().enumerate() {
+                    prop_assert_eq!(&pipeline.stages[i].command.name, cmd);
+                    if i < cmds.len() - 1 {
+                        prop_assert_eq!(pipeline.stages[i].operator, Some(Operator::Pipe));
+                    } else {
+                        prop_assert!(pipeline.stages[i].operator.is_none());
+                    }
+                }
+            }
+
+            /// Property: Stdout redirection is detected
+            #[test]
+            fn proptest_stdout_redirection(
+                cmd in "[a-z]{1,10}",
+                file in "[a-z]{1,15}\\.txt"
+            ) {
+                let input = format!("{} > {}", cmd, file);
+                let pipeline = parse_pipeline(&input);
+
+                prop_assert_eq!(pipeline.stages.len(), 1);
+                prop_assert_eq!(&pipeline.stages[0].command.name, &cmd);
+                prop_assert_eq!(pipeline.stages[0].command.redirections.len(), 1);
+
+                match &pipeline.stages[0].command.redirections[0] {
+                    Redirection::StdoutOverwrite(f) => prop_assert_eq!(f, &file),
+                    _ => prop_assert!(false, "Expected StdoutOverwrite redirection"),
+                }
+            }
+
+            /// Property: Operators inside quotes are treated as literals
+            #[test]
+            fn proptest_quoted_operators(
+                cmd in "[a-z]{1,10}",
+                text in "[a-z]{1,10}"
+            ) {
+                let input = format!("{} '| {} &&'", cmd, text);
+                let pipeline = parse_pipeline(&input);
+
+                // Should be single stage (operators in quotes)
+                prop_assert_eq!(pipeline.stages.len(), 1);
+                prop_assert_eq!(&pipeline.stages[0].command.name, &cmd);
+                prop_assert!(pipeline.stages[0].operator.is_none());
+            }
+        }
     }
 }

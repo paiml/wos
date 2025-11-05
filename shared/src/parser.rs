@@ -609,4 +609,150 @@ mod tests {
         // Space outside ${...} should end token
         assert_eq!(should_end_token(' ', false, false, 0, 0), true);
     }
+
+    // Property-based tests using proptest
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Property: Parser never panics on any input
+            #[test]
+            fn proptest_parser_never_panics(
+                input in "\\PC*"
+            ) {
+                let _ = parse_command(&input);
+                // If we get here, we didn't panic
+                prop_assert!(true);
+            }
+
+            /// Property: Parser is deterministic (same input = same output)
+            #[test]
+            fn proptest_parser_deterministic(
+                input in "[a-zA-Z0-9 \\t\\n\"'\\\\$(){}\\[\\]]{0,100}"
+            ) {
+                let result1 = parse_command(&input);
+                let result2 = parse_command(&input);
+                prop_assert_eq!(result1, result2);
+            }
+
+            /// Property: Empty and whitespace-only inputs handled correctly
+            #[test]
+            fn proptest_empty_input(
+                whitespace in "[ \\t\\n]*"
+            ) {
+                let (cmd, args) = parse_command(&whitespace);
+                prop_assert_eq!(cmd, "");
+                prop_assert_eq!(args, Vec::<String>::new());
+            }
+
+            /// Property: Command name is always first token
+            #[test]
+            fn proptest_command_is_first_token(
+                cmd in "[a-z]{1,20}",
+                args in prop::collection::vec("[a-z0-9]{1,15}", 0..10)
+            ) {
+                let input = format!("{} {}", cmd, args.join(" "));
+                let (parsed_cmd, parsed_args) = parse_command(&input);
+
+                prop_assert_eq!(parsed_cmd, cmd);
+                prop_assert_eq!(parsed_args.len(), args.len());
+            }
+
+            /// Property: Parsing preserves non-empty command
+            #[test]
+            fn proptest_nonempty_command_preserved(
+                cmd in "[a-zA-Z][a-zA-Z0-9_]{0,19}"
+            ) {
+                let (parsed_cmd, _) = parse_command(&cmd);
+                prop_assert!(!parsed_cmd.is_empty());
+                prop_assert_eq!(parsed_cmd, cmd);
+            }
+
+            /// Property: Number of tokens matches expected count
+            #[test]
+            fn proptest_token_count(
+                words in prop::collection::vec("[a-z]{1,10}", 1..20)
+            ) {
+                let input = words.join(" ");
+                let (cmd, args) = parse_command(&input);
+
+                prop_assert!(!cmd.is_empty());
+                prop_assert_eq!(args.len(), words.len() - 1);
+            }
+
+            /// Property: Backslash in single quotes is literal
+            #[test]
+            fn proptest_single_quote_literal(
+                text in "[a-zA-Z0-9\\\\]{1,20}"
+            ) {
+                let input = format!("echo '{}'", text);
+                let (cmd, args) = parse_command(&input);
+
+                prop_assert_eq!(cmd, "echo");
+                prop_assert_eq!(args.len(), 1);
+                // Single quotes preserve content literally (including the quotes)
+                prop_assert!(args[0].contains(&text));
+            }
+
+            /// Property: Multiple spaces collapse to single separator
+            #[test]
+            fn proptest_whitespace_collapse(
+                words in prop::collection::vec("[a-z]{1,10}", 2..10)
+            ) {
+                // Build input with variable spacing (1-5 spaces between words)
+                let mut input = words[0].clone();
+                for i in 1..words.len() {
+                    let num_spaces = (i % 5) + 1; // 1-5 spaces
+                    input.push_str(&" ".repeat(num_spaces));
+                    input.push_str(&words[i]);
+                }
+
+                let (cmd, args) = parse_command(&input);
+
+                prop_assert_eq!(&cmd, &words[0]);
+                prop_assert_eq!(args.len(), words.len() - 1);
+                for i in 0..args.len() {
+                    prop_assert_eq!(&args[i], &words[i + 1]);
+                }
+            }
+
+            /// Property: Escaped characters are handled without panic
+            #[test]
+            fn proptest_escape_handling(
+                chars in prop::collection::vec(any::<char>(), 0..50)
+            ) {
+                let mut input = String::from("echo ");
+                for ch in chars {
+                    input.push('\\');
+                    input.push(ch);
+                }
+
+                // Should not panic
+                let _ = parse_command(&input);
+                prop_assert!(true);
+            }
+
+            /// Property: Parser handles nested structures gracefully
+            #[test]
+            fn proptest_nested_structures(
+                depth in 0..10usize,
+                content in "[a-z]{1,10}"
+            ) {
+                let mut input = String::from("echo ");
+                for _ in 0..depth {
+                    input.push_str("$(");
+                }
+                input.push_str(&content);
+                for _ in 0..depth {
+                    input.push(')');
+                }
+
+                // Should not panic
+                let (cmd, args) = parse_command(&input);
+                prop_assert_eq!(cmd, "echo");
+                prop_assert!(!args.is_empty());
+            }
+        }
+    }
 }
