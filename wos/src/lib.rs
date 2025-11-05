@@ -1001,12 +1001,7 @@ impl WosWasm {
     }
 
     /// Recursive glob matching
-    fn match_glob_recursive(
-        text: &[char],
-        t_idx: usize,
-        pattern: &[char],
-        p_idx: usize,
-    ) -> bool {
+    fn match_glob_recursive(text: &[char], t_idx: usize, pattern: &[char], p_idx: usize) -> bool {
         // Base cases
         if p_idx == pattern.len() && t_idx == text.len() {
             return true; // Both exhausted - match
