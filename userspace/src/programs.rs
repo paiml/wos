@@ -880,4 +880,214 @@ mod tests {
 
         assert!(vim.exit_requested);
     }
+
+    // Property-based tests using proptest
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Property: Echo output generation never panics
+            #[test]
+            fn proptest_echo_never_panics(
+                args in prop::collection::vec("\\PC*", 0..50)
+            ) {
+                let mut echo = Echo::new(1, args);
+                echo.generate_output();
+                let _ = echo.get_output();
+                prop_assert!(true);
+            }
+
+            /// Property: Echo is deterministic
+            #[test]
+            fn proptest_echo_deterministic(
+                args in prop::collection::vec("[a-zA-Z0-9 ]{0,30}", 0..20)
+            ) {
+                let mut echo1 = Echo::new(1, args.clone());
+                let mut echo2 = Echo::new(1, args);
+
+                echo1.generate_output();
+                echo2.generate_output();
+
+                prop_assert_eq!(echo1.get_output(), echo2.get_output());
+            }
+
+            /// Property: Echo joins args with spaces
+            #[test]
+            fn proptest_echo_joins_with_spaces(
+                args in prop::collection::vec("[a-z]{1,10}", 1..20)
+            ) {
+                let mut echo = Echo::new(1, args.clone());
+                echo.generate_output();
+
+                let output = echo.get_output();
+                let expected = format!("{}\n", args.join(" "));
+
+                prop_assert_eq!(output, expected);
+            }
+
+            /// Property: Echo output always ends with newline or is empty
+            #[test]
+            fn proptest_echo_output_format(
+                args in prop::collection::vec("[a-z]{1,10}", 0..20)
+            ) {
+                let mut echo = Echo::new(1, args);
+                echo.generate_output();
+
+                let output = echo.get_output();
+                prop_assert!(output.is_empty() || output.ends_with('\n'));
+            }
+
+            /// Property: Echo with empty args produces empty output
+            #[test]
+            fn proptest_echo_empty_args_empty_output(
+                _x in any::<()>()
+            ) {
+                let mut echo = Echo::new(1, vec![]);
+                echo.generate_output();
+
+                prop_assert_eq!(echo.get_output(), "");
+            }
+
+            /// Property: Ls output generation never panics
+            #[test]
+            fn proptest_ls_generate_never_panics(
+                files in prop::collection::vec("[a-z]{1,20}", 0..50)
+            ) {
+                let mut ls = Ls::new(1);
+                ls.files = files;
+                ls.generate_output();
+
+                prop_assert!(true);
+            }
+
+            /// Property: Ls output is deterministic
+            #[test]
+            fn proptest_ls_deterministic(
+                files in prop::collection::vec("[a-z]{1,20}", 0..30)
+            ) {
+                let mut ls1 = Ls::new(1);
+                let mut ls2 = Ls::new(1);
+
+                ls1.files = files.clone();
+                ls2.files = files;
+
+                ls1.generate_output();
+                ls2.generate_output();
+
+                prop_assert_eq!(ls1.get_output(), ls2.get_output());
+            }
+
+            /// Property: Ls output contains all files
+            #[test]
+            fn proptest_ls_output_contains_files(
+                files in prop::collection::vec("[a-z]{1,20}", 1..30)
+            ) {
+                let mut ls = Ls::new(1);
+                ls.files = files.clone();
+                ls.generate_output();
+
+                let output = ls.get_output();
+                // Each file should appear in the output
+                for file in &files {
+                    prop_assert!(output.contains(file));
+                }
+            }
+
+            /// Property: Ps output generation never panics
+            #[test]
+            fn proptest_ps_generate_never_panics(
+                num_processes in 0..50usize
+            ) {
+                let mut ps = Ps::new(1);
+                // Create dummy process data
+                for i in 0..num_processes {
+                    ps.processes.push(ProcessInfo {
+                        pid: i as u32,
+                        ppid: Some(0),
+                        state: "R".to_string(),
+                    });
+                }
+                ps.generate_output();
+
+                prop_assert!(true);
+            }
+
+            /// Property: Ps output is deterministic
+            #[test]
+            fn proptest_ps_deterministic(
+                num_processes in 0..30usize
+            ) {
+                let mut ps1 = Ps::new(1);
+                let mut ps2 = Ps::new(1);
+
+                for i in 0..num_processes {
+                    let info = ProcessInfo {
+                        pid: i as u32,
+                        ppid: Some(0),
+                        state: "R".to_string(),
+                    };
+                    ps1.processes.push(info.clone());
+                    ps2.processes.push(info);
+                }
+
+                ps1.generate_output();
+                ps2.generate_output();
+
+                prop_assert_eq!(ps1.get_output(), ps2.get_output());
+            }
+
+            /// Property: Ps output has one line per process (plus header)
+            #[test]
+            fn proptest_ps_output_lines(
+                num_processes in 1..30usize
+            ) {
+                let mut ps = Ps::new(1);
+                for i in 0..num_processes {
+                    ps.processes.push(ProcessInfo {
+                        pid: i as u32,
+                        ppid: Some(0),
+                        state: "R".to_string(),
+                    });
+                }
+                ps.generate_output();
+
+                let output = ps.get_output();
+                let lines: Vec<&str> = output.lines().collect();
+
+                // Header + one line per process
+                prop_assert_eq!(lines.len(), num_processes + 1);
+            }
+
+            /// Property: Echo cloning preserves state
+            #[test]
+            fn proptest_echo_clone(
+                args in prop::collection::vec("[a-z]{1,15}", 0..20)
+            ) {
+                let mut echo = Echo::new(1, args);
+                echo.generate_output();
+
+                let cloned = echo.clone();
+
+                prop_assert_eq!(echo.get_output(), cloned.get_output());
+                prop_assert_eq!(echo.pid, cloned.pid);
+                prop_assert_eq!(echo.args, cloned.args);
+            }
+
+            /// Property: Ls cloning preserves state
+            #[test]
+            fn proptest_ls_clone(
+                files in prop::collection::vec("[a-z]{1,15}", 0..20)
+            ) {
+                let mut ls = Ls::new(1);
+                ls.files = files;
+                ls.generate_output();
+
+                let cloned = ls.clone();
+
+                prop_assert_eq!(ls.get_output(), cloned.get_output());
+                prop_assert_eq!(ls.files, cloned.files);
+            }
+        }
+    }
 }
