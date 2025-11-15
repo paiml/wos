@@ -2195,4 +2195,165 @@ mod coverage_red_tests {
         assert!(exec_result.output.contains("before"));
         assert!(exec_result.output.contains("after"));
     }
+
+    // Lines 229-237: if CONDITION; then syntax (single line)
+    #[test]
+    fn test_if_semicolon_then_syntax() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nif true; then\necho success\nfi".to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+        let mut executor = create_test_executor();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars, &mut executor);
+        assert!(result.is_ok());
+        let exec_result = result.unwrap();
+        assert!(exec_result.output.contains("success"));
+    }
+
+    // Lines 269-290: elif block handling
+    #[test]
+    fn test_if_elif_else_all_branches() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nif false\nthen\necho from-if\nelif true\nthen\necho from-elif\nelse\necho from-else\nfi"
+                .to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+        let mut executor = create_test_executor();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars, &mut executor);
+        assert!(result.is_ok());
+        let exec_result = result.unwrap();
+        assert!(exec_result.output.contains("from-elif"));
+        assert!(!exec_result.output.contains("from-if"));
+        assert!(!exec_result.output.contains("from-else"));
+    }
+
+    // Lines 383-420: elif execution with variable assignments
+    #[test]
+    fn test_elif_with_variable_assignment() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content:
+                "#!/bin/bash\nif false\nthen\nX=1\nelif true\nthen\nX=2\nelse\nX=3\nfi\necho $X"
+                    .to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+        let mut executor = create_test_executor();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars, &mut executor);
+        assert!(result.is_ok());
+        // X should be 2 from elif branch
+        assert_eq!(vars.get("X"), Some(&"2".to_string()));
+    }
+
+    // Lines 333-336: else block execution
+    #[test]
+    fn test_if_else_executes_else_branch() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nif false\nthen\necho never\nelse\necho always\nfi".to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+        let mut executor = create_test_executor();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars, &mut executor);
+        assert!(result.is_ok());
+        let exec_result = result.unwrap();
+        assert!(exec_result.output.contains("always"));
+        assert!(!exec_result.output.contains("never"));
+    }
+
+    // Lines 353-366: Variable assignment with arithmetic in if block
+    #[test]
+    fn test_if_block_arithmetic_assignment() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nif true\nthen\nX=$((1+2))\nfi\necho $X".to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+        let mut executor = create_test_executor();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars, &mut executor);
+        assert!(result.is_ok());
+        // X should be evaluated to 3
+        assert_eq!(vars.get("X"), Some(&"3".to_string()));
+    }
+
+    // Lines 421-441: else block variable assignments
+    #[test]
+    fn test_else_block_variable_assignment() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nif false\nthen\nY=1\nelse\nY=5\nfi".to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+        let mut executor = create_test_executor();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars, &mut executor);
+        assert!(result.is_ok());
+        assert_eq!(vars.get("Y"), Some(&"5".to_string()));
+    }
+
+    // Test multiple elif branches
+    #[test]
+    fn test_multiple_elif_branches() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nif false\nthen\necho first\nelif false\nthen\necho second\nelif true\nthen\necho third\nfi"
+                .to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+        let mut executor = create_test_executor();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars, &mut executor);
+        assert!(result.is_ok());
+        let exec_result = result.unwrap();
+        assert!(exec_result.output.contains("third"));
+        assert!(!exec_result.output.contains("first"));
+        assert!(!exec_result.output.contains("second"));
+    }
+
+    // Test elif with semicolon syntax
+    #[test]
+    fn test_elif_semicolon_then() {
+        let script = Script {
+            path: "/test.sh".to_string(),
+            content: "#!/bin/bash\nif false; then\necho no\nelif true; then\necho yes\nfi"
+                .to_string(),
+            shebang: "#!/bin/bash".to_string(),
+        };
+
+        let mut vfs = create_test_vfs();
+        let mut vars = create_test_vars();
+        let mut executor = create_test_executor();
+
+        let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars, &mut executor);
+        assert!(result.is_ok());
+        let exec_result = result.unwrap();
+        assert!(exec_result.output.contains("yes"));
+    }
 }
