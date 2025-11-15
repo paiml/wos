@@ -880,4 +880,253 @@ mod tests {
 
         assert!(vim.exit_requested);
     }
+
+    // Property-based tests (PMAT Protocol: 100 cases per property)
+    #[cfg(test)]
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+
+            #[test]
+            fn proptest_echo_never_panics(args in prop::collection::vec(any::<String>(), 0..20)) {
+                let mut echo = Echo::new(1, args);
+                echo.generate_output();
+                let _output = echo.get_output();
+            }
+
+            #[test]
+            fn proptest_echo_output_deterministic(args in prop::collection::vec(any::<String>(), 0..20)) {
+                let mut echo1 = Echo::new(1, args.clone());
+                let mut echo2 = Echo::new(1, args);
+
+                echo1.generate_output();
+                echo2.generate_output();
+
+                prop_assert_eq!(echo1.get_output(), echo2.get_output());
+            }
+
+            #[test]
+            fn proptest_echo_main_loop_never_panics(args in prop::collection::vec(any::<String>(), 0..20)) {
+                let mut echo = Echo::new(1, args);
+                let state = KernelState::new();
+
+                let _syscall1 = echo_main_loop(&mut echo, &state);
+                let _syscall2 = echo_main_loop(&mut echo, &state);
+            }
+        }
+    }
+
+    #[test]
+    fn test_ps_process_state_blocked() {
+        let mut state = KernelState::new();
+        let mut proc1 = Process::new(1, None);
+        proc1.state = wos_kernel::ProcessState::Blocked;
+        state.add_process(proc1);
+
+        let mut ps = Ps::new(2);
+        ps.list_processes(&state);
+
+        assert_eq!(ps.processes.len(), 1);
+        assert_eq!(ps.processes[0].state, "S");
+    }
+
+    #[test]
+    fn test_ps_process_state_terminated() {
+        let mut state = KernelState::new();
+        let mut proc1 = Process::new(1, None);
+        proc1.state = wos_kernel::ProcessState::Terminated(0);
+        state.add_process(proc1);
+
+        let mut ps = Ps::new(2);
+        ps.list_processes(&state);
+
+        assert_eq!(ps.processes.len(), 1);
+        assert_eq!(ps.processes[0].state, "Z");
+    }
+
+    #[test]
+    fn test_vim_visual_char_mode_escape() {
+        let mut vim = Vim::new(2, None);
+        vim.vim_state = crate::vim::VimState::new_with_text("Hello\nWorld");
+
+        // Enter visual character mode
+        vim.process_input('v').unwrap();
+        assert!(matches!(
+            vim.vim_state.mode,
+            crate::vim::VimMode::Visual(VisualMode::Character)
+        ));
+
+        // Press ESC to exit
+        vim.process_input('\x1b').unwrap();
+        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
+        assert_eq!(vim.vim_state.current_buffer().visual_anchor, None);
+    }
+
+    #[test]
+    fn test_vim_visual_line_mode_escape() {
+        let mut vim = Vim::new(2, None);
+        vim.vim_state = crate::vim::VimState::new_with_text("Hello\nWorld");
+
+        // Enter visual line mode
+        vim.process_input('V').unwrap();
+        assert!(matches!(
+            vim.vim_state.mode,
+            crate::vim::VimMode::Visual(VisualMode::Line)
+        ));
+
+        // Press ESC to exit
+        vim.process_input('\x1b').unwrap();
+        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
+    }
+
+    #[test]
+    fn test_vim_visual_block_mode_escape() {
+        let mut vim = Vim::new(2, None);
+        vim.vim_state = crate::vim::VimState::new_with_text("Hello\nWorld");
+
+        // Enter visual block mode (Ctrl+v)
+        vim.process_input('\x16').unwrap();
+        assert!(matches!(
+            vim.vim_state.mode,
+            crate::vim::VimMode::Visual(VisualMode::Block)
+        ));
+
+        // Press ESC to exit
+        vim.process_input('\x1b').unwrap();
+        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
+    }
+
+    #[test]
+    fn test_vim_visual_mode_navigation() {
+        let mut vim = Vim::new(2, None);
+        vim.vim_state = crate::vim::VimState::new_with_text("Hello\nWorld\nTest");
+
+        // Enter visual mode and navigate
+        vim.process_input('v').unwrap();
+        vim.process_input('l').unwrap(); // Move right
+        vim.process_input('j').unwrap(); // Move down
+        vim.process_input('h').unwrap(); // Move left
+        vim.process_input('k').unwrap(); // Move up
+
+        assert!(matches!(
+            vim.vim_state.mode,
+            crate::vim::VimMode::Visual(VisualMode::Character)
+        ));
+    }
+
+    #[test]
+    fn test_vim_visual_mode_unknown_key() {
+        let mut vim = Vim::new(2, None);
+        vim.vim_state = crate::vim::VimState::new_with_text("Hello");
+
+        // Enter visual mode
+        vim.process_input('v').unwrap();
+
+        // Press unknown key (should be ignored)
+        vim.process_input('z').unwrap();
+
+        // Should still be in visual mode
+        assert!(matches!(
+            vim.vim_state.mode,
+            crate::vim::VimMode::Visual(VisualMode::Character)
+        ));
+    }
+
+    #[test]
+    fn test_vim_command_mode_escape() {
+        let mut vim = Vim::new(2, None);
+
+        // Enter command mode
+        vim.process_input(':').unwrap();
+        vim.process_input('w').unwrap();
+
+        // Press ESC to cancel
+        vim.process_input('\x1b').unwrap();
+
+        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
+        assert!(!vim.exit_requested);
+    }
+
+    #[test]
+    fn test_vim_command_mode_quit_variations() {
+        // Test :wq
+        let mut vim = Vim::new(2, None);
+        vim.process_input(':').unwrap();
+        vim.process_input('w').unwrap();
+        vim.process_input('q').unwrap();
+        vim.process_input('\n').unwrap();
+        assert!(vim.exit_requested);
+
+        // Test :x
+        let mut vim = Vim::new(2, None);
+        vim.process_input(':').unwrap();
+        vim.process_input('x').unwrap();
+        vim.process_input('\n').unwrap();
+        assert!(vim.exit_requested);
+
+        // Test :q!
+        let mut vim = Vim::new(2, None);
+        vim.process_input(':').unwrap();
+        vim.process_input('q').unwrap();
+        vim.process_input('!').unwrap();
+        vim.process_input('\n').unwrap();
+        assert!(vim.exit_requested);
+    }
+
+    #[test]
+    fn test_vim_normal_mode_unknown_key() {
+        let mut vim = Vim::new(2, None);
+        vim.vim_state = crate::vim::VimState::new_with_text("Hello");
+
+        // Press unknown key in normal mode (should be ignored)
+        vim.process_input('z').unwrap();
+        vim.process_input('q').unwrap();
+        vim.process_input('m').unwrap();
+
+        // Should still be in normal mode
+        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
+    }
+
+    #[test]
+    fn test_vim_insert_mode_backspace_variations() {
+        let mut vim = Vim::new(2, None);
+
+        // Test \x08 (backspace)
+        vim.process_input('i').unwrap();
+        vim.process_input('H').unwrap();
+        vim.process_input('i').unwrap();
+        vim.process_input('\x08').unwrap(); // Backspace
+        assert_eq!(vim.vim_state.current_buffer().text(), "H");
+
+        // Test \x7f (DEL)
+        vim.process_input('\x7f').unwrap(); // DEL
+        assert_eq!(vim.vim_state.current_buffer().text(), "");
+    }
+
+    #[test]
+    fn test_vim_render_screen_with_modified_flag() {
+        let mut vim = Vim::new(2, Some(PathBuf::from("/test.txt")));
+        vim.vim_state = crate::vim::VimState::new_with_text("Hello");
+        vim.vim_state.current_buffer_mut().modified = true;
+
+        vim.render_screen();
+
+        let screen = vim.get_screen();
+        assert!(screen.contains("[+]"));
+        assert!(screen.contains("/test.txt"));
+    }
+
+    #[test]
+    fn test_vim_render_screen_with_message() {
+        let mut vim = Vim::new(2, None);
+        vim.vim_state.set_message("Test message".to_string());
+
+        vim.render_screen();
+
+        let screen = vim.get_screen();
+        assert!(screen.contains("Test message"));
+    }
 }
