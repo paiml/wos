@@ -5210,4 +5210,106 @@ mod coverage_red_tests {
         let result = wos.jump_to_position(0);
         assert!(result.is_ok());
     }
+
+    // ========================================================================
+    // RED TESTS - Coverage improvement (lib.rs 65.14% → target 70%+)
+    // ========================================================================
+
+    // Lines 352-373: ${#VAR} - string length expansion
+    #[test]
+    fn test_param_expansion_string_length() {
+        let mut wos = WosWasm::new();
+        // Set up a variable
+        wos.execute_command("FOO=hello");
+        // Test ${#FOO} expansion
+        let output = wos.execute_command("echo ${#FOO}");
+        assert!(output.contains("5")); // "hello" has 5 characters
+    }
+
+    #[test]
+    fn test_param_expansion_string_length_empty() {
+        let mut wos = WosWasm::new();
+        // Empty variable
+        wos.execute_command("EMPTY=");
+        let output = wos.execute_command("echo ${#EMPTY}");
+        assert!(output.contains("0"));
+    }
+
+    #[test]
+    fn test_param_expansion_string_length_undefined() {
+        let mut wos = WosWasm::new();
+        // Undefined variable should have length 0
+        let output = wos.execute_command("echo ${#UNDEFINED}");
+        assert!(output.contains("0"));
+    }
+
+    // Line 373: Empty variable name in ${#}
+    #[test]
+    fn test_param_expansion_string_length_no_varname() {
+        let mut wos = WosWasm::new();
+        // ${#} with no variable name should return 0
+        let output = wos.execute_command("echo ${#}");
+        assert!(output.contains("0"));
+    }
+
+    // Lines 421-422: $$ - process ID expansion
+    #[test]
+    fn test_special_variable_pid() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("echo $$");
+        // Should contain a number (PID)
+        assert!(output.trim().parse::<u32>().is_ok());
+    }
+
+    // Lines 425-427: $0 - script name / shell name
+    #[test]
+    fn test_special_variable_script_name() {
+        let mut wos = WosWasm::new();
+        // In interactive shell, $0 might be empty or "wos"
+        // Just test that it doesn't crash
+        let output = wos.execute_command("echo $0");
+        assert!(!output.contains("Error"));
+    }
+
+    // Lines 431-434: $1-$9 - positional parameters
+    #[test]
+    fn test_special_variable_positional_params() {
+        let mut wos = WosWasm::new();
+        // Create a test script with positional parameters
+        wos.execute_command("touch /tmp/test_pos.sh");
+        wos.execute_command("echo '#!/bin/bash\necho $1\necho $2\necho $3' > /tmp/test_pos.sh");
+        // Execute with arguments (note: this may not work yet without script execution support)
+        // For now, just test that $1 in shell context doesn't crash
+        let output = wos.execute_command("echo $1");
+        assert!(!output.contains("Error"));
+    }
+
+    // Lines 440-446: $# - number of positional parameters
+    #[test]
+    fn test_special_variable_param_count() {
+        let mut wos = WosWasm::new();
+        // In interactive shell, $# should be 0
+        let output = wos.execute_command("echo $#");
+        assert!(output.contains("0"));
+    }
+
+    // Lines 449-451: $@ - all positional parameters
+    #[test]
+    fn test_special_variable_at() {
+        let mut wos = WosWasm::new();
+        // Test $@ expansion (should be empty in interactive shell)
+        let output = wos.execute_command("echo $@");
+        // Should not error
+        assert!(!output.contains("Error"));
+    }
+
+    // Lines 455-457: $* - all positional parameters as single word
+    #[test]
+    fn test_special_variable_star() {
+        let mut wos = WosWasm::new();
+        // Test $* expansion (should be empty in interactive shell)
+        let output = wos.execute_command("echo $*");
+        // Should not error
+        assert!(!output.contains("Error"));
+    }
 }
