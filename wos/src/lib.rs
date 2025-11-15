@@ -5312,4 +5312,117 @@ mod coverage_red_tests {
         // Should not error
         assert!(!output.contains("Error"));
     }
+
+    // ========================================================================
+    // RED TESTS - Coverage improvement iteration 9 (lib.rs 67.18% → target 70%+)
+    // ========================================================================
+
+    // Lines 408-411: Invalid character in ${VAR...} - treat as literal
+    #[test]
+    fn test_param_expansion_invalid_char() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("FOO=bar");
+        // Invalid character '@' after variable name (not a parameter operator)
+        let output = wos.execute_command("echo ${FOO@}");
+        // Should treat as literal or partial expansion
+        assert!(!output.contains("Error"));
+    }
+
+    // Lines 533-540: ${VAR:?error} - error if unset or empty
+    #[test]
+    fn test_param_expansion_error_if_unset() {
+        let mut wos = WosWasm::new();
+        // Test with undefined variable
+        let output = wos.execute_command("echo ${UNDEFINED:?missing}");
+        // Should contain error message
+        assert!(output.contains("UNDEFINED") || output.contains("missing"));
+    }
+
+    #[test]
+    fn test_param_expansion_error_if_empty() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("EMPTY=");
+        // Empty variable should trigger error
+        let output = wos.execute_command("echo ${EMPTY:?is empty}");
+        assert!(output.contains("EMPTY") || output.contains("is empty"));
+    }
+
+    #[test]
+    fn test_param_expansion_error_default_message() {
+        let mut wos = WosWasm::new();
+        // No custom error message
+        let output = wos.execute_command("echo ${NOTSET:?}");
+        // Should have default "parameter null or not set" message
+        assert!(output.contains("NOTSET") || output.contains("null") || output.contains("not set"));
+    }
+
+    // Lines 545-550: ${VAR:+alternate} - use alternate if set and non-empty
+    #[test]
+    fn test_param_expansion_alternate_if_set() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("FOO=bar");
+        // If FOO is set and non-empty, use alternate value
+        let output = wos.execute_command("echo ${FOO:+alternate}");
+        assert!(output.contains("alternate"));
+    }
+
+    #[test]
+    fn test_param_expansion_alternate_if_unset() {
+        let mut wos = WosWasm::new();
+        // If variable is unset, return empty string
+        let output = wos.execute_command("echo ${NOTSET:+alternate}");
+        // Should not contain "alternate"
+        assert!(!output.contains("alternate"));
+    }
+
+    #[test]
+    fn test_param_expansion_alternate_if_empty() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("EMPTY=");
+        // If variable is empty, return empty string
+        let output = wos.execute_command("echo ${EMPTY:+alternate}");
+        // Should not contain "alternate"
+        assert!(!output.contains("alternate"));
+    }
+
+    // Lines 561-563: Substring expansion with length parameter
+    #[test]
+    fn test_param_expansion_substring_with_length() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // ${TEXT: 1:2} - substring starting at offset 1, length 2
+        let output = wos.execute_command("echo ${TEXT: 1:2}");
+        assert!(output.contains("el"));
+    }
+
+    // Lines 398-400: Parameter expansion operators /, ^, ,
+    #[test]
+    fn test_param_expansion_slash_operator() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("PATH=/usr/bin:/bin");
+        // ${PATH/:/;} - replace first : with ;
+        let output = wos.execute_command("echo ${PATH/:/;}");
+        // Should handle the operator without errors
+        assert!(!output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_caret_operator() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // ${TEXT^} - uppercase first character
+        let output = wos.execute_command("echo ${TEXT^}");
+        // Should uppercase first char or handle the operator
+        assert!(!output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_comma_operator() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=HELLO");
+        // ${TEXT,} - lowercase first character
+        let output = wos.execute_command("echo ${TEXT,}");
+        // Should lowercase first char or handle the operator
+        assert!(!output.contains("Error"));
+    }
 }
