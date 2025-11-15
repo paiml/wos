@@ -147,4 +147,83 @@ mod tests {
             VimCommand::EnterNormalMode
         ));
     }
+
+    // ========================================================================
+    // RED TESTS - Coverage improvement (vim/parser.rs 71.88% → 100%)
+    // ========================================================================
+
+    #[test]
+    fn test_parse_normal_key_put_after() {
+        // Line 30: 'p' => Ok(VimCommand::PutAfter)
+        assert!(matches!(parse_normal_key('p'), Ok(VimCommand::PutAfter)));
+    }
+
+    #[test]
+    fn test_parse_normal_key_register_sequence() {
+        // Lines 38-41: '"' => Err(VimError::InvalidCommand("Awaiting register name".into()))
+        let result = parse_normal_key('"');
+        assert!(result.is_err());
+        if let Err(VimError::InvalidCommand(msg)) = result {
+            assert_eq!(msg, "Awaiting register name");
+        }
+    }
+
+    #[test]
+    fn test_parse_normal_key_mark_line_jump() {
+        // Lines 40-42: '\'' => Err(VimError::InvalidCommand("Awaiting mark for line jump".into()))
+        let result = parse_normal_key('\'');
+        assert!(result.is_err());
+        if let Err(VimError::InvalidCommand(msg)) = result {
+            assert_eq!(msg, "Awaiting mark for line jump");
+        }
+    }
+
+    #[test]
+    fn test_parse_normal_key_mark_exact_jump() {
+        // Lines 43-45: '`' => Err(VimError::InvalidCommand("Awaiting mark for exact jump".into()))
+        let result = parse_normal_key('`');
+        assert!(result.is_err());
+        if let Err(VimError::InvalidCommand(msg)) = result {
+            assert_eq!(msg, "Awaiting mark for exact jump");
+        }
+    }
+
+    #[test]
+    fn test_parse_normal_key_yank_sequence() {
+        // Line 46: 'y' => Err(VimError::InvalidCommand("Awaiting yank target".into()))
+        let result = parse_normal_key('y');
+        assert!(result.is_err());
+        if let Err(VimError::InvalidCommand(msg)) = result {
+            assert_eq!(msg, "Awaiting yank target");
+        }
+    }
+
+    #[test]
+    fn test_parse_normal_key_mark_set() {
+        // Lines 39: 'm' => Err(VimError::InvalidCommand("Awaiting mark name".into()))
+        let result = parse_normal_key('m');
+        assert!(result.is_err());
+        if let Err(VimError::InvalidCommand(msg)) = result {
+            assert_eq!(msg, "Awaiting mark name");
+        }
+    }
+
+    #[test]
+    fn test_parse_insert_key_special_unknown() {
+        // Line 59: _ => VimCommand::InsertChar(key) for special keys
+        // Test that unknown special keys still insert the character
+        assert!(matches!(
+            parse_insert_key('\x01', true), // Ctrl+A (special but unknown)
+            VimCommand::InsertChar('\x01')
+        ));
+    }
+
+    #[test]
+    fn test_parse_insert_key_carriage_return() {
+        // Line 58: '\r' => VimCommand::InsertNewline
+        assert!(matches!(
+            parse_insert_key('\r', true),
+            VimCommand::InsertNewline
+        ));
+    }
 }
