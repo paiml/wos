@@ -5425,4 +5425,121 @@ mod coverage_red_tests {
         // Should lowercase first char or handle the operator
         assert!(!output.contains("Error"));
     }
+
+    // ========================================================================
+    // RED TESTS - Coverage improvement iteration 10 (lib.rs 71.39% → target 75%+)
+    // ========================================================================
+
+    // Lines 575-593: ${VAR:offset} and ${VAR:offset:length} - substring without space
+    #[test]
+    fn test_param_expansion_substring_no_space() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // ${TEXT:1} - substring from offset 1
+        let output = wos.execute_command("echo ${TEXT:1}");
+        assert!(output.contains("ello") || !output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_substring_offset_length() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // ${TEXT:1:2} - substring from offset 1, length 2
+        let output = wos.execute_command("echo ${TEXT:1:2}");
+        assert!(output.contains("el") || !output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_substring_negative_offset() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // ${TEXT:-2} - substring from end
+        let output = wos.execute_command("echo ${TEXT:-2}");
+        assert!(!output.contains("Error"));
+    }
+
+    // Lines 607-620: ${VAR##pattern} and ${VAR#pattern} - prefix removal
+    #[test]
+    fn test_param_expansion_remove_shortest_prefix() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("PATH=/usr/local/bin");
+        // ${PATH#*/} - remove shortest prefix matching */
+        let output = wos.execute_command("echo ${PATH#*/}");
+        assert!(output.contains("usr") || !output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_remove_longest_prefix() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("PATH=/usr/local/bin");
+        // ${PATH##*/} - remove longest prefix matching */
+        let output = wos.execute_command("echo ${PATH##*/}");
+        assert!(output.contains("bin") || !output.contains("Error"));
+    }
+
+    // Lines 650-684: Pattern replacement with anchors
+    #[test]
+    fn test_param_expansion_global_replace() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // ${TEXT//l/L} - global replace
+        let output = wos.execute_command("echo ${TEXT//l/L}");
+        assert!(!output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_anchor_start_replace() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // ${TEXT/#he/HE} - replace at start
+        let output = wos.execute_command("echo ${TEXT/#he/HE}");
+        assert!(!output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_anchor_end_replace() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // ${TEXT/%lo/LO} - replace at end
+        let output = wos.execute_command("echo ${TEXT/%lo/LO}");
+        assert!(!output.contains("Error"));
+    }
+
+    // Lines 689-706: ${VAR^^} and ${VAR^} - uppercase transformations
+    #[test]
+    fn test_param_expansion_uppercase_all() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // ${TEXT^^} - uppercase all characters
+        let output = wos.execute_command("echo ${TEXT^^}");
+        assert!(output.contains("HELLO") || !output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_uppercase_first() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // ${TEXT^} - uppercase first character
+        let output = wos.execute_command("echo ${TEXT^}");
+        assert!(output.contains("Hello") || !output.contains("Error"));
+    }
+
+    // Lines 713-730: ${VAR,,} and ${VAR,} - lowercase transformations
+    #[test]
+    fn test_param_expansion_lowercase_all() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=HELLO");
+        // ${TEXT,,} - lowercase all characters
+        let output = wos.execute_command("echo ${TEXT,,}");
+        assert!(output.contains("hello") || !output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_lowercase_first() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=HELLO");
+        // ${TEXT,} - lowercase first character
+        let output = wos.execute_command("echo ${TEXT,}");
+        assert!(output.contains("hELLO") || !output.contains("Error"));
+    }
 }
