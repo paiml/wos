@@ -585,7 +585,7 @@ Since all planned roadmap work is complete, future work is open-ended. Potential
 
 ### Repository
 
-- **GitHub**: https://github.com/noahgift/wos (now: https://github.com/paiml/wos)
+- **GitHub**: https://github.com/paiml/wos (now: https://github.com/paiml/wos)
 - **Production**: https://interactive.paiml.com/wos/
 - **Documentation**: https://github.com/paiml/wos/tree/main/docs
 

@@ -132,9 +132,9 @@ projects: [
 
 See WebOS in action:
 
-[![WebOS Demo](https://img.shields.io/badge/Demo-Watch%20Video-blue)](./docs/webos-showcase-demo.webm)
+[![WebOS Demo](https://img.shields.io/badge/Demo-Watch%20Video-blue)](./webos-showcase-demo.webm)
 
-![WebOS Demo](docs/webos-showcase-demo.webm)
+![WebOS Demo](webos-showcase-demo.webm)
 ```
 
 ## Notes

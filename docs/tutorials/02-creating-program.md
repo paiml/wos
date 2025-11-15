@@ -535,11 +535,10 @@ pub fn main(
 ## Next Steps
 
 - [Tutorial 3: Understanding the Scheduler](03-understanding-scheduler.md)
-- [Tutorial 4: Implementing Pipes](04-implementing-pipes.md)
 - [API Reference](../API.md)
 
 ## Further Reading
 
-- [Unix Process Management](https://en.wikipedia.org/wiki/Process_management_(computing))
-- [Tree Command (Unix)](https://en.wikipedia.org/wiki/Tree_(command))
+- [Unix Process Management](https://en.wikipedia.org/wiki/Process_management_%28computing%29)
+- [Tree Command (Unix)](https://en.wikipedia.org/wiki/Tree_%28command%29)
 - [Command-Line Interface Guidelines](https://clig.dev/)

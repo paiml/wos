@@ -720,7 +720,7 @@ sys_recv_from(fd) -> (data, addr)
 - [Tutorials](tutorials/)
 - [Roadmap](../roadmap.yaml)
 - [Specification](specifications/wos-spec-v1.md)
-- [Source Code](https://github.com/noahgift/wos)
+- Source Code (see repository)
 
 ---
 

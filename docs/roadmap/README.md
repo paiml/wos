@@ -185,7 +185,7 @@ With v0.3.0 complete and all roadmap phases finished (except deferred phase-7), 
 
 ## Contact & Contributing
 
-- **Repository**: https://github.com/noahgift/wos
+- **Repository**: https://github.com/paiml/wos
 - **Issues**: Use GitHub Issues for bug reports
 - **Discussions**: Use GitHub Discussions for questions
 

@@ -524,13 +524,11 @@ Requirements:
 
 ## Next Steps
 
-- [Tutorial 4: Implementing Pipes](04-implementing-pipes.md)
-- [Tutorial 5: Advanced Memory Management](05-advanced-memory.md)
 - [Architecture Guide](../ARCHITECTURE.md)
 
 ## Further Reading
 
-- [Process Scheduling Algorithms](https://en.wikipedia.org/wiki/Scheduling_(computing))
+- [Process Scheduling Algorithms](https://en.wikipedia.org/wiki/Scheduling_%28computing%29)
 - [Round-Robin Scheduling](https://en.wikipedia.org/wiki/Round-robin_scheduling)
 - [Multi-Level Feedback Queue](https://en.wikipedia.org/wiki/Multilevel_feedback_queue)
 - [Linux CFS Scheduler](https://www.kernel.org/doc/html/latest/scheduler/sched-design-CFS.html)

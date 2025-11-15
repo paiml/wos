@@ -705,5 +705,5 @@ let userspace_ver = userspace_version(); // "0.1.0"
 
 - [Architecture Guide](ARCHITECTURE.md)
 - [Tutorials](tutorials/)
-- [Source Code](https://github.com/noahgift/wos)
+- Source Code (see repository)
 - [Specification](specifications/wos-spec-v1.md)

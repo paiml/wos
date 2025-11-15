@@ -53,7 +53,7 @@ Hands-on tutorials for learning WOS development.
 
 ```bash
 # Clone repository
-git clone https://github.com/noahgift/wos
+git clone https://github.com/paiml/wos
 cd wos
 
 # Run tests
@@ -86,8 +86,6 @@ make serve
    └── 03-understanding-scheduler.md (Scheduling internals)
 
 4. Advanced Tutorials
-   ├── 04-implementing-pipes.md
-   ├── 05-advanced-memory.md
    └── 06-building-shell.md
 
 5. Contribute
@@ -172,8 +170,8 @@ All tutorial code meets these standards:
 
 ## Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/noahgift/wos/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/noahgift/wos/discussions)
+- **Issues**: GitHub Issues (check repository)
+- **Discussions**: GitHub Discussions (check repository)
 - **Documentation**: [docs/](../)
 
 ## Contributing

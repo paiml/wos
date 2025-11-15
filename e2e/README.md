@@ -379,7 +379,7 @@ Potential additional test coverage:
 
 - [Playwright Documentation](https://playwright.dev/)
 - [Playwright Best Practices](https://playwright.dev/docs/best-practices)
-- [Test Selectors](https://playwright.dev/docs/selectors)
+- [Test Selectors](https://playwright.dev/docs/api/class-locator)
 - [Debugging Guide](https://playwright.dev/docs/debug)
 - [CI/CD Integration](https://playwright.dev/docs/ci)
 

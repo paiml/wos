@@ -47,7 +47,7 @@ We are committed to providing a welcoming and inspiring community for everyone.
 
 ```bash
 # Clone repository
-git clone https://github.com/noahgift/wos
+git clone https://github.com/paiml/wos
 cd wos
 
 # Install Rust target
@@ -84,7 +84,7 @@ wos/
 
 ### 1. Find or Create an Issue
 
-- Check [existing issues](https://github.com/noahgift/wos/issues)
+- Check existing issues (check repository)
 - Comment that you're working on it
 - Create new issue if needed with clear description
 
@@ -556,8 +556,8 @@ cargo flamegraph --bench syscalls
 ### Resources
 
 - **Documentation**: [docs/](.)
-- **Issues**: [GitHub Issues](https://github.com/noahgift/wos/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/noahgift/wos/discussions)
+- **Issues**: GitHub Issues (check repository)
+- **Discussions**: GitHub Discussions (check repository)
 
 ### Ask Questions
 
@@ -585,4 +585,4 @@ Every contribution, no matter how small, helps improve WOS. Thank you for being 
 
 ---
 
-**Questions?** Open a [discussion](https://github.com/noahgift/wos/discussions) or reach out to maintainers.
+**Questions?** Open a discussion (check repository) or reach out to maintainers.

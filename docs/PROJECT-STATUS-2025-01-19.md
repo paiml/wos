@@ -292,20 +292,20 @@ npm run coverage:summary
 ## References
 
 ### Documentation
-- [Technical Specification](docs/specifications/wos-spec-v1.md)
-- [Quality Review](docs/specifications/wos-tech-review.md)
-- [Implementation Roadmap](roadmap.yaml)
-- [Development Guidelines](CLAUDE.md)
+- [Technical Specification](specifications/wos-spec-v1.md)
+- [Quality Review](specifications/wos-tech-review.md)
+- [Implementation Roadmap](roadmap/)
+- [Development Guidelines](../CLAUDE.md)
 
 ### Session Summaries
-- [E2E Performance Fix](docs/session-summaries/2025-01-19-e2e-perf-fix.md)
-- [E2E URL Fix](docs/session-summaries/2025-01-19-e2e-url-fix.md)
-- [Phase 9 Completion](docs/session-summaries/)
+- [E2E Performance Fix](session-summaries/2025-01-19-e2e-perf-fix.md)
+- [E2E URL Fix](session-summaries/2025-01-19-e2e-url-fix.md)
+- [Phase 9 Completion](session-summaries/)
 
 ### External Resources
 - [Rust Programming Language](https://www.rust-lang.org/)
 - [WebAssembly](https://webassembly.org/)
-- [wasm-bindgen](https://rustwasm.github.io/wasm-bindgen/)
+- [wasm-bindgen](https://rustwasm.github.io/docs/wasm-bindgen/)
 - [Playwright Testing](https://playwright.dev/)
 
 ## Conclusion

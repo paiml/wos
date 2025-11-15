@@ -3157,5 +3157,5 @@ make quality-complete    # Complete quality validation
 ---
 
 **Document maintained by**: WOS Development Team
-**Questions?**: See [CONTRIBUTING.md](../../CONTRIBUTING.md)
+**Questions?**: See [CONTRIBUTING.md](../CONTRIBUTING.md)
 **Last updated**: 2025-10-15

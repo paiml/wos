@@ -33,3 +33,22 @@ test-if-elif-manual.html
 
 # Playwright screenshots (may change during development)
 tests/e2e/screenshots/*.png
+
+# Cruft files
+*.tmp
+*.bak
+*~
+*.swp
+*.swo
+
+# Team-specific editor configs
+.idea/
+.vscode/
+.vs/
+*.sublime-project
+*.sublime-workspace
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+desktop.ini

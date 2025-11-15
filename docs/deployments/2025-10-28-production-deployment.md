@@ -220,7 +220,7 @@ If issues are discovered in production:
 ## References
 
 - **Production URL**: https://interactive.paiml.com/wos/
-- **Repository**: github.com/noahgift/wos
+- **Repository**: github.com/paiml/wos
 - **Specification**: docs/specifications/wos-spec-v1.md
 - **Roadmap**: roadmap.yaml (16/16 phases complete)
 - **CLAUDE.md**: Project guidelines and development workflow

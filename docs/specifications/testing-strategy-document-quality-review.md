@@ -737,7 +737,7 @@ TDG = (
 
 **Example**:
 - "See [PROGRESS.md](../../PROGRESS.md)"
-- "See [CONTRIBUTING.md](../../CONTRIBUTING.md)"
+- "See [CONTRIBUTING.md](../CONTRIBUTING.md)"
 
 **Verdict**: Excellent cross-referencing.
 
