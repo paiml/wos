@@ -1,4 +1,7 @@
-.PHONY: help build test coverage quality wasm clean hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-all cleanup-processes check-memory link-dev deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config bashrs-check bashrs-fix
+# Disable built-in implicit rules for faster Make execution
+.SUFFIXES:
+
+.PHONY: help build test coverage quality wasm clean dist fmt hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-scripts lint-all cleanup-processes check-memory link-dev deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config bashrs-check bashrs-fix bashrs-audit bashrs-score bashrs-test bashrs-coverage bashrs-format bashrs-purify
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
@@ -57,7 +60,7 @@ help:
 	@echo "  make canary-terminal  Run terminal canary tests"
 	@echo ""
 	@echo "🎯 Quality Gates:"
-	@echo "  make quality          Fast quality checks (<30s, includes PMAT)"
+	@echo "  make quality          Fast quality checks (<30s, includes PMAT + bashrs)"
 	@echo "  make quality-complete Complete quality validation (~5min)"
 	@echo "  make fmt              Format code"
 	@echo "  make clippy           Run clippy lints"
@@ -70,6 +73,14 @@ help:
 	@echo "  make pmat-gates       Run all PMAT quality gates"
 	@echo "  make pmat-roadmap-status      Check roadmap/ticket status"
 	@echo "  make pmat-roadmap-validate    Validate roadmap quality gates"
+	@echo "  make bashrs-check     Fast bashrs validation (lint + score)"
+	@echo "  make bashrs-audit     Comprehensive bashrs audit"
+	@echo "  make bashrs-score     Score all shell scripts"
+	@echo "  make bashrs-test      Run bashrs test framework"
+	@echo "  make bashrs-coverage  Generate bashrs coverage reports"
+	@echo "  make bashrs-format    Format shell scripts"
+	@echo "  make bashrs-purify    Purify scripts (determinism + safety)"
+	@echo "  make bashrs-fix       Auto-fix all bashrs issues"
 	@echo "  make mutants          Run mutation tests (~10-15min)"
 	@echo "  make mutants-check    Verify mutation score ≥90%"
 	@echo "  make mutants-diff     Show diffs for caught mutants"
@@ -340,28 +351,107 @@ pmat-roadmap-validate:
 # bashrs: Shell Script Quality Validation
 # ============================================================================
 
-bashrs-check:
-	@echo "🔍 Running bashrs validation..."
-	@echo "📁 Checking shell implementations..."
-	@# bashrs validates shell script patterns in Rust code
-	@# Currently validates: quoting, command substitution, variable expansion
-	@if command -v bashrs >/dev/null 2>&1; then \
-		bashrs --version; \
-		echo "✅ bashrs validation passed"; \
-	else \
-		echo "⚠️  bashrs not installed - skipping"; \
-		echo "   Install with: cargo install bashrs"; \
-	fi
+# ============================================================================
+# bashrs Integration - Full Capabilities
+# ============================================================================
 
-bashrs-fix:
-	@echo "🔧 Auto-fixing bashrs violations..."
-	@if command -v bashrs >/dev/null 2>&1; then \
-		echo "✅ bashrs auto-fix would run here"; \
-		echo "   (bashrs fix userspace/src/*.rs --backup)"; \
-	else \
-		echo "⚠️  bashrs not installed"; \
-		echo "   Install with: cargo install bashrs"; \
+bashrs-check: bashrs-lint bashrs-score
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ bashrs validation passed"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+bashrs-lint:
+	@echo "🔍 Linting shell scripts with bashrs..."
+	@which bashrs > /dev/null 2>&1 || (echo "❌ bashrs not found. Install: cargo install bashrs" && exit 1)
+	@FOUND_ERRORS=0; \
+	for script in $$(find scripts -name "*.sh" 2>/dev/null); do \
+		echo "  Linting $$script..."; \
+		OUTPUT=$$(bashrs lint "$$script" 2>&1); \
+		echo "$$OUTPUT" | grep -q "^\[error\]" && FOUND_ERRORS=1 || true; \
+	done; \
+	echo "  Linting Makefile..."; \
+	OUTPUT=$$(bashrs make lint Makefile 2>&1); \
+	echo "$$OUTPUT" | grep "Summary:" | grep -q "^Summary: [1-9].*error" && FOUND_ERRORS=1 || true; \
+	if [ $$FOUND_ERRORS -eq 1 ]; then \
+		echo "❌ bashrs linting failed (errors found)"; \
+		exit 1; \
 	fi
+	@echo "✓ bashrs linting passed (warnings allowed)"
+
+bashrs-score:
+	@echo "📊 Scoring shell scripts with bashrs..."
+	@which bashrs > /dev/null 2>&1 || (echo "❌ bashrs not found. Install: cargo install bashrs" && exit 1)
+	@echo ""
+	@echo "Scripts Quality Scores:"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@for script in Makefile scripts/*.sh; do \
+		if [ -f "$$script" ]; then \
+			echo ""; \
+			bashrs score "$$script" 2>&1 | grep -A 3 "Overall Grade\|Overall Score" || true; \
+		fi; \
+	done
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+bashrs-audit:
+	@echo "🔍 Running comprehensive bashrs audit..."
+	@which bashrs > /dev/null 2>&1 || (echo "❌ bashrs not found. Install: cargo install bashrs" && exit 1)
+	@echo ""
+	@for script in Makefile scripts/*.sh; do \
+		if [ -f "$$script" ]; then \
+			echo ""; \
+			echo "Auditing $$script..."; \
+			bashrs audit "$$script" || true; \
+		fi; \
+	done
+
+bashrs-test:
+	@echo "🧪 Running bashrs test framework..."
+	@which bashrs > /dev/null 2>&1 || (echo "❌ bashrs not found. Install: cargo install bashrs" && exit 1)
+	@for script in scripts/*.sh; do \
+		if [ -f "$$script" ]; then \
+			echo "  Testing $$script..."; \
+			bashrs test "$$script" || echo "⚠️  No tests found for $$script"; \
+		fi; \
+	done
+
+bashrs-coverage:
+	@echo "📊 Generating bashrs coverage report..."
+	@which bashrs > /dev/null 2>&1 || (echo "❌ bashrs not found. Install: cargo install bashrs" && exit 1)
+	@mkdir -p target/bashrs-coverage
+	@for script in scripts/*.sh; do \
+		if [ -f "$$script" ]; then \
+			echo "  Coverage for $$script..."; \
+			bashrs coverage "$$script" > "target/bashrs-coverage/$$(basename $$script).coverage" 2>&1 || true; \
+		fi; \
+	done
+	@echo "✓ Coverage reports generated in target/bashrs-coverage/"
+
+bashrs-format:
+	@echo "🎨 Formatting shell scripts with bashrs..."
+	@which bashrs > /dev/null 2>&1 || (echo "❌ bashrs not found. Install: cargo install bashrs" && exit 1)
+	@for script in scripts/*.sh; do \
+		if [ -f "$$script" ]; then \
+			echo "  Formatting $$script..."; \
+			bashrs format "$$script" || true; \
+		fi; \
+	done
+	@echo "✓ Shell scripts formatted"
+
+bashrs-purify:
+	@echo "🔧 Purifying shell scripts with bashrs..."
+	@which bashrs > /dev/null 2>&1 || (echo "❌ bashrs not found. Install: cargo install bashrs" && exit 1)
+	@for script in scripts/*.sh; do \
+		if [ -f "$$script" ]; then \
+			echo "  Purifying $$script..."; \
+			bashrs purify "$$script" --backup || true; \
+		fi; \
+	done
+	@echo "✓ Shell scripts purified (backups created)"
+
+bashrs-fix: bashrs-format bashrs-purify
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ bashrs auto-fix complete"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 quality: fmt clippy test-unit pmat-complexity pmat-satd pmat-entropy pmat-dead-code bashrs-check
 # pmat-tdg temporarily disabled due to sled backend unavailability (reinstalling with --features sled-backend)

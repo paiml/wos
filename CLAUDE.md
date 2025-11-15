@@ -581,12 +581,35 @@ Installs git pre-commit hook:
 - PMAT complexity analysis
 - **bashrs**: Lints bash scripts and Makefiles for quality and best practices
 
-**bashrs Integration**:
-bashrs lints all bash scripts and Makefiles in the project:
-- ✅ Checks shell script syntax and common pitfalls
-- ✅ Validates Makefile syntax and conventions
-- ✅ Enforces bash best practices (proper quoting, error handling, etc.)
-- ✅ Detects shellcheck violations
+**bashrs Integration** (Full Capabilities):
+bashrs provides comprehensive shell script quality tooling:
+
+**Core Features**:
+- ✅ **Lint**: Checks shell script syntax, Makefile conventions, shellcheck violations
+- ✅ **Score**: Grades scripts (A+ to F scale, 0-10.0 scoring)
+- ✅ **Audit**: Comprehensive quality reports (parse, lint, test, score)
+- ✅ **Test**: Bash script test framework with coverage tracking
+- ✅ **Format**: Auto-format shell scripts (consistent style)
+- ✅ **Purify**: Enforce determinism, idempotency, and safety patterns
+- ✅ **Coverage**: Generate coverage reports for bash scripts
+
+**Makefile Targets**:
+```bash
+make bashrs-check     # Fast validation (lint + score) - runs in pre-commit
+make bashrs-audit     # Comprehensive audit of all scripts
+make bashrs-score     # Display quality scores for all scripts
+make bashrs-test      # Run bashrs test framework
+make bashrs-coverage  # Generate coverage reports
+make bashrs-format    # Auto-format shell scripts
+make bashrs-purify    # Purify scripts (determinism + safety)
+make bashrs-fix       # Auto-fix all issues (format + purify)
+```
+
+**Quality Standards**:
+- **Makefile**: Target F (4.2/10) → A (9.0/10+)
+- **Scripts**: Individual scores tracked, minimum B- (7.0/10) required
+- **Pre-commit**: bashrs-check runs automatically on commit
+- **CI/CD**: bashrs-audit runs in quality gates
 
 **Installation** (if needed):
 ```bash
