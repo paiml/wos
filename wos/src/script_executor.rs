@@ -1950,7 +1950,6 @@ mod proptests {
 #[cfg(test)]
 mod coverage_red_tests {
     use super::*;
-    use std::path::PathBuf;
 
     fn create_test_executor() -> impl FnMut(&str) -> (String, i32) {
         move |line: &str| {
