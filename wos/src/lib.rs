@@ -5070,3 +5070,144 @@ mod test_ls_exit {
         );
     }
 }
+
+// ========================================================================
+// RED TESTS - Coverage improvement (wos/lib.rs 62.95% → target 85%+)
+// ========================================================================
+
+#[cfg(test)]
+mod coverage_red_tests {
+    use super::*;
+
+    // Lines 82-83: Default trait implementation
+    #[test]
+    fn test_wos_wasm_default_trait() {
+        let wos: WosWasm = Default::default();
+        assert_eq!(wos.state.processes.len(), 2); // init + shell
+        assert_eq!(wos.last_exit_code, 0);
+        assert_eq!(wos.variables.len(), 0);
+        assert_eq!(wos.positional_params[0], "wos");
+    }
+
+    // Lines 162-167: cd and pwd builtins
+    #[test]
+    fn test_handle_cd_no_args() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("cd");
+        // cd with no args should stay in current directory
+        assert_eq!(output, "");
+        assert_eq!(wos.last_exit_code, 0);
+    }
+
+    #[test]
+    fn test_handle_pwd_builtin() {
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("pwd");
+        assert_eq!(output.trim(), "/");
+    }
+
+    // Line 180: Empty pipeline handling
+    #[test]
+    fn test_execute_empty_pipeline_after_expansion() {
+        let mut wos = WosWasm::new();
+        // Command that becomes empty after expansion
+        let output = wos.execute_command("   ");
+        assert_eq!(output, "");
+    }
+
+    // Lines 221-236: Assignment validation edge cases
+    #[test]
+    fn test_parse_assignment_empty_name() {
+        let wos = WosWasm::new();
+        // Empty name before =
+        assert_eq!(wos.parse_assignment("=value"), None);
+    }
+
+    #[test]
+    fn test_parse_assignment_name_with_space() {
+        let wos = WosWasm::new();
+        // Name contains space (invalid)
+        assert_eq!(wos.parse_assignment("MY VAR=value"), None);
+    }
+
+    #[test]
+    fn test_parse_assignment_starts_with_digit() {
+        let wos = WosWasm::new();
+        // Name starts with digit (invalid)
+        assert_eq!(wos.parse_assignment("9VAR=value"), None);
+    }
+
+    #[test]
+    fn test_parse_assignment_invalid_chars() {
+        let wos = WosWasm::new();
+        // Name contains invalid characters
+        assert_eq!(wos.parse_assignment("MY-VAR=value"), None);
+    }
+
+    // Lines 257-258: Empty export handling
+    #[test]
+    fn test_handle_export_empty_args() {
+        let mut wos = WosWasm::new();
+        // export with trailing space and nothing after
+        let output = wos.execute_command("export    ");
+        // Should handle empty args gracefully
+        assert!(output.contains("Unknown command") || output.is_empty());
+    }
+
+    // Lines 2704-2705, 2710-2713: WASM API methods
+    #[test]
+    fn test_get_current_working_directory() {
+        let wos = WosWasm::new();
+        let cwd = wos.get_current_working_directory();
+        assert_eq!(cwd, "/");
+    }
+
+    #[test]
+    fn test_get_current_user() {
+        let wos = WosWasm::new();
+        let user = wos.get_current_user();
+        assert_eq!(user, "root");
+    }
+
+    // Lines 2748-2752: Kernel history export error handling
+    #[test]
+    fn test_get_kernel_history_empty() {
+        let wos = WosWasm::new();
+        let history = wos.get_kernel_history();
+        // Should return valid JSON array
+        assert!(history.starts_with('['));
+        assert!(history.ends_with(']'));
+    }
+
+    // Lines 2760-2763: Current state export error handling
+    #[test]
+    fn test_get_current_state_json() {
+        let wos = WosWasm::new();
+        let state = wos.get_current_state();
+        // Should return valid JSON object
+        assert!(state.starts_with('{'));
+        assert!(state.ends_with('}'));
+        // Should be parseable
+        let _: serde_json::Value = serde_json::from_str(&state).unwrap();
+    }
+
+    // Lines 2771-2779: Jump to position error handling
+    #[test]
+    fn test_jump_to_position_invalid() {
+        let mut wos = WosWasm::new();
+        // Try to jump to invalid position
+        let result = wos.jump_to_position(9999);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Invalid position");
+    }
+
+    #[test]
+    fn test_jump_to_position_valid() {
+        let mut wos = WosWasm::new();
+        // Execute a command to add to history
+        wos.execute_command("echo test");
+        // Jump to position 0 (initial state)
+        let result = wos.jump_to_position(0);
+        assert!(result.is_ok());
+    }
+}
