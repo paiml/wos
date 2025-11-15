@@ -1750,4 +1750,89 @@ mod tests {
         // Verify state was reset
         assert_eq!(state.parser_state, ParserState::Normal);
     }
+
+    // ========================================================================
+    // RED TESTS - Coverage improvement (vim/state.rs 83.96% → target 95%+)
+    // Priority: Lines 576-583 (multi-line yank), 886-892 (error Display)
+    // ========================================================================
+
+    #[test]
+    fn test_yank_visual_character_multiline() {
+        // Lines 576-583: Multi-line character yank
+        let mut state = VimState::new_with_text("Line1\nLine2\nLine3");
+
+        // Enter visual character mode
+        state.mode = VimMode::Visual(VisualMode::Character);
+        state.current_buffer_mut().cursor = CursorPos { line: 0, col: 2 }; // "ne1"
+        state.current_buffer_mut().visual_anchor = Some(CursorPos { line: 0, col: 2 });
+
+        // Move to line 2, col 2
+        state.current_buffer_mut().cursor = CursorPos { line: 2, col: 2 };
+
+        // Yank the selection
+        state.yank_visual().unwrap();
+
+        // Verify yanked text includes newlines
+        let yanked = state.registers.get(&Register::Unnamed).unwrap();
+        assert!(yanked.text.contains("ne1"));
+        assert!(yanked.text.contains('\n'));
+        assert!(yanked.text.contains("Line2"));
+        assert!(yanked.text.contains("Lin"));
+    }
+
+    #[test]
+    fn test_yank_visual_character_multiline_middle() {
+        // Lines 585-586: Middle line in multi-line yank
+        let mut state = VimState::new_with_text("AAAA\nBBBB\nCCCC\nDDDD");
+
+        state.mode = VimMode::Visual(VisualMode::Character);
+        state.current_buffer_mut().cursor = CursorPos { line: 1, col: 1 }; // Start at "BBB"
+        state.current_buffer_mut().visual_anchor = Some(CursorPos { line: 1, col: 1 });
+
+        // Extend to line 3
+        state.current_buffer_mut().cursor = CursorPos { line: 3, col: 1 };
+
+        state.yank_visual().unwrap();
+
+        let yanked = state.registers.get(&Register::Unnamed).unwrap();
+        // Should include BBB, full CCCC line, and DD
+        assert!(yanked.text.contains("BBB"));
+        assert!(yanked.text.contains("CCCC"));
+        assert!(yanked.text.contains("DD"));
+    }
+
+    #[test]
+    fn test_vim_error_display_invalid_command() {
+        // Lines 886-892: VimError Display implementation
+        let err = VimError::InvalidCommand("foo".to_string());
+        assert_eq!(format!("{}", err), "E492: Not an editor command: foo");
+    }
+
+    #[test]
+    fn test_vim_error_display_buffer_not_found() {
+        // Lines 886-892: BufferNotFound variant
+        let err = VimError::BufferNotFound(BufferId(42));
+        assert_eq!(format!("{}", err), "E86: Buffer 42 does not exist");
+    }
+
+    #[test]
+    fn test_vim_error_display_file_error() {
+        // Lines 886-892: FileError variant
+        let err = VimError::FileError("Cannot write file".to_string());
+        assert_eq!(format!("{}", err), "E212: Cannot write file");
+    }
+
+    #[test]
+    fn test_vim_error_display_invalid_mode() {
+        // Lines 886-892: InvalidMode variant
+        let err = VimError::InvalidMode(VimMode::Normal);
+        assert_eq!(format!("{}", err), "E488: Trailing characters: NORMAL");
+    }
+
+    #[test]
+    fn test_vim_error_display_general() {
+        // Lines 886-892: General variant
+        let err = VimError::General("Something went wrong".to_string());
+        assert_eq!(format!("{}", err), "Something went wrong");
+    }
 }
