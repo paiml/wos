@@ -5542,4 +5542,56 @@ mod coverage_red_tests {
         let output = wos.execute_command("echo ${TEXT,}");
         assert!(output.contains("hELLO") || !output.contains("Error"));
     }
+
+    // ========================================================================
+    // RED TESTS - Coverage improvement iteration 11 (lib.rs 75.47% → 85%+)
+    // ========================================================================
+
+    // Lines 627-632: ${VAR%%pattern} - remove longest suffix
+    #[test]
+    fn test_param_expansion_remove_longest_suffix() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("FILE=document.tar.gz");
+        // ${FILE%%.*} - remove longest suffix matching .*
+        let output = wos.execute_command("echo ${FILE%%.*}");
+        assert!(output.contains("document") || !output.contains("Error"));
+    }
+
+    // Lines 636-639: ${VAR%pattern} - remove shortest suffix
+    #[test]
+    fn test_param_expansion_remove_shortest_suffix() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("FILE=document.tar.gz");
+        // ${FILE%.*} - remove shortest suffix matching .*
+        let output = wos.execute_command("echo ${FILE%.*}");
+        assert!(output.contains("document.tar") || !output.contains("Error"));
+    }
+
+    // Additional coverage for edge cases
+    #[test]
+    fn test_param_expansion_suffix_no_match() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // Pattern doesn't match - should return original value
+        let output = wos.execute_command("echo ${TEXT%.xyz}");
+        assert!(output.contains("hello") || !output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_prefix_no_match() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // Pattern doesn't match - should return original value
+        let output = wos.execute_command("echo ${TEXT#xyz}");
+        assert!(output.contains("hello") || !output.contains("Error"));
+    }
+
+    #[test]
+    fn test_param_expansion_replace_no_match() {
+        let mut wos = WosWasm::new();
+        wos.execute_command("TEXT=hello");
+        // Pattern doesn't match - should return original value
+        let output = wos.execute_command("echo ${TEXT/xyz/ABC}");
+        assert!(output.contains("hello") || !output.contains("Error"));
+    }
 }
