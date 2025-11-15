@@ -93,4 +93,70 @@ mod tests {
         ctx.advance_time(500);
         assert_eq!(ctx.simulated_time, 1500);
     }
+
+    // ========================================================================
+    // RED TESTS - Coverage improvement (shared/context.rs 72.22% → 100%)
+    // ========================================================================
+
+    #[test]
+    fn test_next_random_generates_values() {
+        // Lines 49-52: RNG generation with existing rng
+        let mut ctx = ExecutionContext::new(42);
+        let val1 = ctx.next_random();
+        let val2 = ctx.next_random();
+
+        // Values should be different (deterministic but advancing)
+        assert_ne!(val1, val2);
+    }
+
+    #[test]
+    fn test_next_random_deterministic() {
+        // Lines 49-52: Same seed produces same sequence
+        let mut ctx1 = ExecutionContext::new(42);
+        let mut ctx2 = ExecutionContext::new(42);
+
+        assert_eq!(ctx1.next_random(), ctx2.next_random());
+        assert_eq!(ctx1.next_random(), ctx2.next_random());
+        assert_eq!(ctx1.next_random(), ctx2.next_random());
+    }
+
+    #[test]
+    fn test_next_random_reinitializes_rng() {
+        // Lines 55-56: RNG re-initialization path
+        let mut ctx = ExecutionContext::new(42);
+
+        // Clear the RNG to force re-initialization
+        ctx.rng = None;
+
+        // This should re-initialize and return a value
+        let val = ctx.next_random();
+
+        // Should be the first value from seed 42
+        let mut expected_ctx = ExecutionContext::new(42);
+        assert_eq!(val, expected_ctx.next_random());
+
+        // RNG should now be Some again
+        assert!(ctx.rng.is_some());
+    }
+
+    #[test]
+    fn test_next_random_after_deserialization() {
+        // Lines 55-56: Simulate deserialization scenario where rng is None
+        let ctx = ExecutionContext {
+            rng: None, // Simulates deserializ ation (rng is skipped)
+            rng_seed: 123,
+            simulated_time: 0,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        };
+
+        let mut ctx_mut = ctx;
+        let val = ctx_mut.next_random();
+
+        // Should successfully generate a value
+        assert!(val > 0 || val == 0); // Any u64 is valid
+
+        // RNG should be initialized now
+        assert!(ctx_mut.rng.is_some());
+    }
 }
