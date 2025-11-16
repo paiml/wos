@@ -77,6 +77,12 @@ pub struct Process {
     pub message_queue: im::Vector<Message>,
     /// Wakeup time in microseconds (for sleeping processes)
     pub wakeup_time: Option<u64>,
+    /// Pending signals waiting to be delivered
+    pub pending_signals: crate::signals::SignalSet,
+    /// Blocked signals that won't be delivered
+    pub blocked_signals: crate::signals::SignalSet,
+    /// Signal handlers (signal number -> action)
+    pub signal_handlers: im::HashMap<u32, crate::signals::SignalAction>,
 }
 
 impl Process {
@@ -97,6 +103,9 @@ impl Process {
             memory: VirtualMemory::new(),
             message_queue: im::Vector::new(),
             wakeup_time: None,
+            pending_signals: crate::signals::SignalSet::new(),
+            blocked_signals: crate::signals::SignalSet::new(),
+            signal_handlers: im::HashMap::new(),
         }
     }
 
