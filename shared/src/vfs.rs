@@ -3052,6 +3052,337 @@ mod tests {
         assert!(stat2.ctime > stat1.ctime);
     }
 
+    // ============================================================================
+    // WOS-FS-006: Path Normalization and Resolution Tests
+    // ============================================================================
+
+    // WOS-FS-006 Test 1: Resolve single dot (current directory)
+    #[test]
+    fn test_resolve_single_dot() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Path with ./ should resolve to same file
+        let content = vfs.read_file(&PathBuf::from("/./test.txt")).unwrap();
+        assert_eq!(content, b"content");
+
+        // Multiple dots should also resolve
+        let content2 = vfs.read_file(&PathBuf::from("/./././test.txt")).unwrap();
+        assert_eq!(content2, b"content");
+    }
+
+    // WOS-FS-006 Test 2: Resolve double dot (parent directory)
+    #[test]
+    fn test_resolve_double_dot() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/dir1/dir2/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Path with .. should navigate to parent
+        let content = vfs
+            .read_file(&PathBuf::from("/dir1/dir2/../dir2/test.txt"))
+            .unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Test 3: Resolve multiple parent references
+    #[test]
+    fn test_resolve_multiple_parent_refs() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/a/b/c/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // ../../ should go up two levels
+        let content = vfs
+            .read_file(&PathBuf::from("/a/b/c/../../b/c/test.txt"))
+            .unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Test 4: Handle multiple slashes
+    #[test]
+    fn test_handle_multiple_slashes() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Multiple slashes should be treated as single slash
+        let content = vfs.read_file(&PathBuf::from("///test.txt")).unwrap();
+        assert_eq!(content, b"content");
+
+        let content2 = vfs.read_file(&PathBuf::from("/.//.//test.txt")).unwrap();
+        assert_eq!(content2, b"content");
+    }
+
+    // WOS-FS-006 Test 5: Canonicalize complex path
+    #[test]
+    fn test_canonicalize_complex_path() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/a/b/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Complex path with ., .., and //
+        let content = vfs
+            .read_file(&PathBuf::from("/a/./b/../b//test.txt"))
+            .unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Test 6: Parent of root should stay at root
+    #[test]
+    fn test_parent_of_root() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // /../ from root should stay at root
+        let content = vfs.read_file(&PathBuf::from("/../test.txt")).unwrap();
+        assert_eq!(content, b"content");
+
+        // Multiple parents from root
+        let content2 = vfs.read_file(&PathBuf::from("/../../test.txt")).unwrap();
+        assert_eq!(content2, b"content");
+    }
+
+    // WOS-FS-006 Test 7: Normalize path removes redundant components
+    #[test]
+    fn test_normalize_path_basic() {
+        let normalized = VirtualFileSystem::normalize_path(&PathBuf::from("/a/./b"));
+        assert_eq!(normalized, PathBuf::from("/a/b"));
+
+        let normalized2 = VirtualFileSystem::normalize_path(&PathBuf::from("/a//b"));
+        assert_eq!(normalized2, PathBuf::from("/a/b"));
+    }
+
+    // WOS-FS-006 Test 8: Normalize path handles parent references
+    #[test]
+    fn test_normalize_path_parent() {
+        let normalized = VirtualFileSystem::normalize_path(&PathBuf::from("/a/b/../c"));
+        assert_eq!(normalized, PathBuf::from("/a/c"));
+
+        let normalized2 = VirtualFileSystem::normalize_path(&PathBuf::from("/a/b/c/../../d"));
+        assert_eq!(normalized2, PathBuf::from("/a/d"));
+    }
+
+    // WOS-FS-006 Test 9: Normalize path with only dots
+    #[test]
+    fn test_normalize_path_only_dots() {
+        let normalized = VirtualFileSystem::normalize_path(&PathBuf::from("/."));
+        assert_eq!(normalized, PathBuf::from("/"));
+
+        let normalized2 = VirtualFileSystem::normalize_path(&PathBuf::from("/./././."));
+        assert_eq!(normalized2, PathBuf::from("/"));
+    }
+
+    // WOS-FS-006 Test 10: Normalize path with trailing slash
+    #[test]
+    fn test_normalize_path_trailing_slash() {
+        let normalized = VirtualFileSystem::normalize_path(&PathBuf::from("/a/b/"));
+        assert_eq!(normalized, PathBuf::from("/a/b"));
+
+        let normalized2 = VirtualFileSystem::normalize_path(&PathBuf::from("/a/b//"));
+        assert_eq!(normalized2, PathBuf::from("/a/b"));
+    }
+
+    // WOS-FS-006 Test 11: Create file with normalized path
+    #[test]
+    fn test_create_file_with_normalized_path() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create file with complex path
+        vfs.create_file(PathBuf::from("/a/./b/../b/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Should be accessible via normalized path
+        let content = vfs.read_file(&PathBuf::from("/a/b/test.txt")).unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Test 12: List directory with normalized path
+    #[test]
+    fn test_list_directory_normalized() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/dir/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // List directory via normalized path
+        let files = vfs.list_directory(&PathBuf::from("/./dir")).unwrap();
+        assert_eq!(files.len(), 1);
+        assert!(files.contains(&"test.txt".to_string()));
+    }
+
+    // WOS-FS-006 Test 13: Delete file with normalized path
+    #[test]
+    fn test_delete_file_normalized() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/a/b/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Delete via complex path
+        vfs.delete_file(&PathBuf::from("/a/./b/../b//test.txt"))
+            .unwrap();
+
+        // File should not exist
+        assert!(vfs.read_file(&PathBuf::from("/a/b/test.txt")).is_err());
+    }
+
+    // WOS-FS-006 Test 14: Symlink with normalized path
+    #[test]
+    fn test_symlink_normalized_path() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/target.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Create symlink with complex path
+        vfs.create_symlink(
+            PathBuf::from("/./link.txt"),
+            PathBuf::from("/../target.txt"),
+        )
+        .unwrap();
+
+        // Should resolve to target
+        let content = vfs.read_file(&PathBuf::from("/link.txt")).unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Test 15: Stat with normalized path
+    #[test]
+    fn test_stat_normalized_path() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/a/b/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Stat via complex path
+        let stat = vfs.stat(&PathBuf::from("/a/./b/../b//test.txt")).unwrap();
+        assert_eq!(stat.file_type, FileType::RegularFile);
+        assert_eq!(stat.size, 7);
+    }
+
+    // ============================================================================
+    // WOS-FS-006: Path Normalization Integration Tests
+    // ============================================================================
+
+    // WOS-FS-006 Integration Test 1: Normalized paths with hard links
+    #[test]
+    fn test_integration_normalization_with_hardlinks() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/original.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Create hard link with normalized path
+        vfs.link(
+            PathBuf::from("/./original.txt"),
+            PathBuf::from("/dir/../link.txt"),
+        )
+        .unwrap();
+
+        // Both paths should resolve to same inode
+        let stat1 = vfs.stat(&PathBuf::from("/original.txt")).unwrap();
+        let stat2 = vfs.stat(&PathBuf::from("/link.txt")).unwrap();
+        assert_eq!(stat1.ino, stat2.ino);
+        assert_eq!(stat1.nlinks, 2);
+    }
+
+    // WOS-FS-006 Integration Test 2: Normalized paths with symlinks
+    #[test]
+    fn test_integration_normalization_with_symlinks() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/a/target.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Create symlink with complex normalized paths
+        vfs.create_symlink(
+            PathBuf::from("/./a/../a/link.txt"),
+            PathBuf::from("./target.txt"),
+        )
+        .unwrap();
+
+        // Should resolve correctly
+        let content = vfs.read_file(&PathBuf::from("/a/link.txt")).unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Integration Test 3: Normalized paths with permissions
+    #[test]
+    fn test_integration_normalization_with_permissions() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Set permissions via normalized path
+        vfs.chmod(&PathBuf::from("/./test.txt"), 0o644).unwrap();
+
+        // Check via different normalized path
+        let stat = vfs.stat(&PathBuf::from("//test.txt")).unwrap();
+        assert_eq!(stat.mode & 0o777, 0o644);
+    }
+
+    // WOS-FS-006 Integration Test 4: Normalized paths with directory traversal
+    #[test]
+    fn test_integration_normalization_directory_traversal() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/a/b/c/file1.txt"), b"1".to_vec())
+            .unwrap();
+        vfs.create_file(PathBuf::from("/a/b/file2.txt"), b"2".to_vec())
+            .unwrap();
+
+        // List directory with normalized path
+        let files = vfs
+            .list_directory(&PathBuf::from("/a/b/c/../../b"))
+            .unwrap();
+        assert_eq!(files.len(), 2); // c/ and file2.txt
+    }
+
+    // WOS-FS-006 Integration Test 5: Normalized paths with multiple operations
+    #[test]
+    fn test_integration_normalization_multi_operation() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create with normalized path
+        vfs.create_file(PathBuf::from("/./dir/../dir/test.txt"), b"initial".to_vec())
+            .unwrap();
+
+        // Write with different normalized path
+        vfs.write_file(&PathBuf::from("//dir/./test.txt"), b"updated".to_vec())
+            .unwrap();
+
+        // Read with yet another normalized path
+        let content = vfs
+            .read_file(&PathBuf::from("/dir//../dir/test.txt"))
+            .unwrap();
+        assert_eq!(content, b"updated");
+
+        // Delete with normalized path
+        vfs.delete_file(&PathBuf::from("/./dir//test.txt")).unwrap();
+        assert!(!vfs.exists(&PathBuf::from("/dir/test.txt")));
+    }
+
+    // WOS-FS-006 Integration Test 6: Normalized paths stress test
+    #[test]
+    fn test_integration_normalization_stress() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create deeply nested structure
+        vfs.create_file(PathBuf::from("/a/b/c/d/e/f/test.txt"), b"deep".to_vec())
+            .unwrap();
+
+        // Access with complex normalized path
+        let content = vfs
+            .read_file(&PathBuf::from(
+                "/a/./b/../b/c/./d/../d/e/f/../../e/f/test.txt",
+            ))
+            .unwrap();
+        assert_eq!(content, b"deep");
+
+        // Verify stat works
+        let stat = vfs
+            .stat(&PathBuf::from("/a/b/c/d/e/f/../../e/f/test.txt"))
+            .unwrap();
+        assert_eq!(stat.file_type, FileType::RegularFile);
+        assert_eq!(stat.size, 4);
+    }
+
     // Property-based tests using proptest
     mod proptests {
         use super::*;
@@ -3457,6 +3788,123 @@ mod tests {
                         }
                     }
                 }
+            }
+
+            // ====================================================================
+            // WOS-FS-006: Path Normalization Property Tests
+            // ====================================================================
+
+            /// Property: Normalized paths are idempotent
+            #[test]
+            fn proptest_normalization_idempotent(
+                components in prop::collection::vec(
+                    prop::string::string_regex("[a-z]{1,10}").unwrap(),
+                    1..10
+                ),
+            ) {
+                // Build path with components
+                let path_str = format!("/{}", components.join("/"));
+                let path = PathBuf::from(&path_str);
+
+                // Normalize once
+                let normalized1 = VirtualFileSystem::normalize_path(&path);
+                // Normalize again
+                let normalized2 = VirtualFileSystem::normalize_path(&normalized1);
+
+                // Should be the same
+                prop_assert_eq!(normalized1, normalized2);
+            }
+
+            /// Property: Normalized paths never contain . or ..
+            #[test]
+            fn proptest_normalized_no_dots(
+                components in prop::collection::vec(
+                    prop::oneof![
+                        Just(".".to_string()),
+                        Just("..".to_string()),
+                        prop::string::string_regex("[a-z]{1,10}").unwrap(),
+                    ],
+                    1..15
+                ),
+            ) {
+                let path_str = format!("/{}", components.join("/"));
+                let path = PathBuf::from(&path_str);
+
+                let normalized = VirtualFileSystem::normalize_path(&path);
+                let normalized_str = normalized.to_str().unwrap();
+
+                // Normalized path should not contain /. or /..
+                prop_assert!(!normalized_str.contains("/."));
+            }
+
+            /// Property: Normalized paths never have consecutive slashes
+            #[test]
+            fn proptest_normalized_no_consecutive_slashes(
+                components in prop::collection::vec(
+                    prop::string::string_regex("[a-z]{1,10}").unwrap(),
+                    1..10
+                ),
+                extra_slashes in prop::collection::vec(any::<bool>(), 1..10),
+            ) {
+                // Build path with random extra slashes
+                let mut path_str = String::from("/");
+                for (i, component) in components.iter().enumerate() {
+                    path_str.push_str(component);
+                    if i < components.len() - 1 {
+                        path_str.push('/');
+                        if i < extra_slashes.len() && extra_slashes[i] {
+                            path_str.push('/');
+                        }
+                    }
+                }
+                let path = PathBuf::from(&path_str);
+
+                let normalized = VirtualFileSystem::normalize_path(&path);
+                let normalized_str = normalized.to_str().unwrap();
+
+                // Should not contain //
+                prop_assert!(!normalized_str.contains("//"));
+            }
+
+            /// Property: Path operations work with normalized and unnormalized paths
+            #[test]
+            fn proptest_operations_with_normalization(
+                dir in prop::string::string_regex("[a-z]{1,10}").unwrap(),
+                file in prop::string::string_regex("[a-z]{1,10}\\.txt").unwrap(),
+                content in prop::collection::vec(any::<u8>(), 0..100),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+
+                // Create file with simple path
+                let simple_path = PathBuf::from(format!("/{}/{}", dir, file));
+                vfs.create_file(simple_path.clone(), content.clone()).ok();
+
+                // Read with complex path
+                let complex_path = PathBuf::from(format!("/./{}/../{}/{}", dir, dir, file));
+                if let Ok(read_content) = vfs.read_file(&complex_path) {
+                    prop_assert_eq!(read_content, content);
+                }
+            }
+
+            /// Property: Parent references never escape root
+            #[test]
+            fn proptest_parent_refs_bounded_at_root(
+                num_parents in 1..20_usize,
+                filename in prop::string::string_regex("[a-z]{1,10}\\.txt").unwrap(),
+            ) {
+                // Create path with excessive parent references: /../../../file.txt
+                let mut path_str = String::from("/");
+                for _ in 0..num_parents {
+                    path_str.push_str("../");
+                }
+                path_str.push_str(&filename);
+                let path = PathBuf::from(&path_str);
+
+                let normalized = VirtualFileSystem::normalize_path(&path);
+                let normalized_str = normalized.to_str().unwrap();
+
+                // Should resolve to /filename (parent refs bounded at root)
+                prop_assert_eq!(normalized_str, format!("/{}", filename));
             }
         }
     }
