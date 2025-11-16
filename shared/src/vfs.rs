@@ -1059,6 +1059,173 @@ mod tests {
         );
     }
 
+    // ========================================================================
+    // WOS-FS-002: Symbolic Link Support Tests (RED PHASE)
+    // ========================================================================
+
+    #[test]
+    fn test_create_symlink() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create target file
+        vfs.create_file(PathBuf::from("/target.txt"), b"content".to_vec()).unwrap();
+
+        // Create symlink
+        let result = vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/target.txt"));
+        assert!(result.is_ok(), "Should create symlink successfully");
+        assert!(vfs.is_symlink(&PathBuf::from("/link.txt")), "Path should be a symlink");
+    }
+
+    #[test]
+    fn test_readlink() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/target.txt"), vec![]).unwrap();
+        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/target.txt")).unwrap();
+
+        let target = vfs.readlink(&PathBuf::from("/link.txt")).unwrap();
+        assert_eq!(target, PathBuf::from("/target.txt"), "Should return correct target");
+    }
+
+    #[test]
+    fn test_read_through_symlink() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create target file with content
+        let content = b"Hello via symlink".to_vec();
+        vfs.create_file(PathBuf::from("/target.txt"), content.clone()).unwrap();
+
+        // Create symlink
+        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/target.txt")).unwrap();
+
+        // Read through symlink
+        let read_content = vfs.read_file(&PathBuf::from("/link.txt")).unwrap();
+        assert_eq!(read_content, content, "Should read file through symlink");
+    }
+
+    #[test]
+    fn test_symlink_to_directory() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_directory(PathBuf::from("/targetdir")).unwrap();
+        vfs.create_symlink(PathBuf::from("/linkdir"), PathBuf::from("/targetdir")).unwrap();
+
+        // Should be able to list through symlink
+        let result = vfs.list_directory(&PathBuf::from("/linkdir"));
+        assert!(result.is_ok(), "Should list directory through symlink");
+    }
+
+    #[test]
+    fn test_symlink_chain() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec()).unwrap();
+        vfs.create_symlink(PathBuf::from("/link1"), PathBuf::from("/file.txt")).unwrap();
+        vfs.create_symlink(PathBuf::from("/link2"), PathBuf::from("/link1")).unwrap();
+        vfs.create_symlink(PathBuf::from("/link3"), PathBuf::from("/link2")).unwrap();
+
+        // Should follow chain
+        let content = vfs.read_file(&PathBuf::from("/link3")).unwrap();
+        assert_eq!(content, b"data".to_vec(), "Should follow symlink chain");
+    }
+
+    #[test]
+    fn test_symlink_loop_detection() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create circular symlinks
+        vfs.create_symlink(PathBuf::from("/link1"), PathBuf::from("/link2")).unwrap();
+        vfs.create_symlink(PathBuf::from("/link2"), PathBuf::from("/link1")).unwrap();
+
+        // Should detect loop
+        let result = vfs.read_file(&PathBuf::from("/link1"));
+        assert!(result.is_err(), "Should detect symlink loop");
+    }
+
+    #[test]
+    fn test_symlink_max_depth() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        // Create very long symlink chain (more than max depth)
+        for i in 0..50 {
+            let from = PathBuf::from(format!("/link{}", i));
+            let to = if i == 0 {
+                PathBuf::from("/file.txt")
+            } else {
+                PathBuf::from(format!("/link{}", i - 1))
+            };
+            vfs.create_symlink(from, to).unwrap();
+        }
+
+        // Should fail with max depth exceeded
+        let result = vfs.read_file(&PathBuf::from("/link49"));
+        assert!(result.is_err(), "Should enforce max symlink depth");
+    }
+
+    #[test]
+    fn test_lstat_vs_stat() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/file.txt")).unwrap();
+
+        // lstat should report symlink
+        assert!(vfs.is_symlink(&PathBuf::from("/link.txt")), "lstat should see symlink");
+
+        // stat (following links) should see file
+        let target = vfs.stat_follow(&PathBuf::from("/link.txt")).unwrap();
+        assert!(!vfs.is_symlink(&target), "stat should follow to target");
+    }
+
+    #[test]
+    fn test_dangling_symlink() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create symlink to non-existent target
+        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/nonexistent.txt")).unwrap();
+
+        // readlink should work (doesn't follow)
+        let target = vfs.readlink(&PathBuf::from("/link.txt")).unwrap();
+        assert_eq!(target, PathBuf::from("/nonexistent.txt"));
+
+        // read_file should fail (follows link)
+        let result = vfs.read_file(&PathBuf::from("/link.txt"));
+        assert_eq!(result, Err(VfsError::NotFound), "Dangling symlink should error when followed");
+    }
+
+    #[test]
+    fn test_symlink_in_path_resolution() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create /real/dir/file.txt
+        vfs.create_directory(PathBuf::from("/real")).unwrap();
+        vfs.create_directory(PathBuf::from("/real/dir")).unwrap();
+        vfs.create_file(PathBuf::from("/real/dir/file.txt"), b"data".to_vec()).unwrap();
+
+        // Create symlink /linked -> /real
+        vfs.create_symlink(PathBuf::from("/linked"), PathBuf::from("/real")).unwrap();
+
+        // Should be able to access /linked/dir/file.txt
+        let content = vfs.read_file(&PathBuf::from("/linked/dir/file.txt")).unwrap();
+        assert_eq!(content, b"data".to_vec(), "Should resolve symlink in path");
+    }
+
+    #[test]
+    fn test_relative_symlink() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_directory(PathBuf::from("/mydir")).unwrap();
+        vfs.create_file(PathBuf::from("/mydir/file.txt"), vec![]).unwrap();
+
+        // Create relative symlink
+        vfs.create_symlink(PathBuf::from("/mydir/link.txt"), PathBuf::from("file.txt")).unwrap();
+
+        let target = vfs.readlink(&PathBuf::from("/mydir/link.txt")).unwrap();
+        assert_eq!(target, PathBuf::from("file.txt"), "Should store relative path");
+    }
+
     // Property-based tests using proptest
     mod proptests {
         use super::*;
