@@ -103,6 +103,8 @@ pub struct VirtualFileSystem {
     range_locks: im::HashMap<InodeNumber, im::Vector<RangeLock>>,
     /// Mounted filesystems - maps mount point path to mounted VFS
     mounts: im::HashMap<PathBuf, Box<VirtualFileSystem>>,
+    /// Extended attributes (xattr) - maps inode number to map of attribute name -> value
+    xattrs: im::HashMap<InodeNumber, im::HashMap<String, Vec<u8>>>,
 }
 
 /// Inode representing a file or directory
@@ -375,6 +377,7 @@ impl VirtualFileSystem {
             file_locks: im::HashMap::new(),
             range_locks: im::HashMap::new(),
             mounts: im::HashMap::new(),
+            xattrs: im::HashMap::new(),
         };
 
         // Create standard directory structure
@@ -1080,6 +1083,11 @@ impl VirtualFileSystem {
 
         self.inodes.insert(parent_ino, updated_parent);
         self.inodes.remove(&ino);
+
+        // Clean up associated data
+        self.file_locks.remove(&ino);
+        self.range_locks.remove(&ino);
+        self.xattrs.remove(&ino);
 
         Ok(())
     }
@@ -1949,6 +1957,107 @@ impl VirtualFileSystem {
         // No mount point found, operation would be on root filesystem
         // We can't return &mut self here, so return an error
         Err(VfsError::NotFound)
+    }
+
+    // =========================================================================
+    // Extended Attributes (xattr) API
+    // =========================================================================
+
+    /// Set extended attribute on a file or directory
+    ///
+    /// # Arguments
+    /// * `path` - Path to file/directory
+    /// * `name` - Attribute name (e.g., "user.comment", "system.acl", "security.label")
+    /// * `value` - Attribute value (arbitrary bytes)
+    ///
+    /// # Returns
+    /// Ok(()) on success, VfsError::NotFound if file doesn't exist
+    pub fn setxattr(&mut self, path: &Path, name: &str, value: &[u8]) -> Result<(), VfsError> {
+        // Resolve path to inode
+        let normalized_path = Self::normalize_path(path);
+        let ino = self.resolve_path_internal(&normalized_path, true, 0)?;
+
+        // Get or create xattr map for this inode
+        let mut attr_map = self.xattrs.get(&ino).cloned().unwrap_or_default();
+
+        // Set the attribute
+        attr_map.insert(name.to_string(), value.to_vec());
+
+        // Update the xattrs map
+        self.xattrs.insert(ino, attr_map);
+
+        Ok(())
+    }
+
+    /// Get extended attribute from a file or directory
+    ///
+    /// # Arguments
+    /// * `path` - Path to file/directory
+    /// * `name` - Attribute name
+    ///
+    /// # Returns
+    /// Ok(value) on success, VfsError::NotFound if file or attribute doesn't exist
+    pub fn getxattr(&self, path: &Path, name: &str) -> Result<Vec<u8>, VfsError> {
+        // Resolve path to inode
+        let normalized_path = Self::normalize_path(path);
+        let ino = self.resolve_path_internal(&normalized_path, true, 0)?;
+
+        // Get xattr map for this inode
+        let attr_map = self.xattrs.get(&ino).ok_or(VfsError::NotFound)?;
+
+        // Get the specific attribute
+        attr_map.get(name).cloned().ok_or(VfsError::NotFound)
+    }
+
+    /// List all extended attribute names for a file or directory
+    ///
+    /// # Arguments
+    /// * `path` - Path to file/directory
+    ///
+    /// # Returns
+    /// Ok(names) on success (may be empty), VfsError::NotFound if file doesn't exist
+    pub fn listxattr(&self, path: &Path) -> Result<Vec<String>, VfsError> {
+        // Resolve path to inode
+        let normalized_path = Self::normalize_path(path);
+        let ino = self.resolve_path_internal(&normalized_path, true, 0)?;
+
+        // Get xattr map for this inode (return empty list if no xattrs)
+        if let Some(attr_map) = self.xattrs.get(&ino) {
+            Ok(attr_map.keys().cloned().collect())
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Remove extended attribute from a file or directory
+    ///
+    /// # Arguments
+    /// * `path` - Path to file/directory
+    /// * `name` - Attribute name
+    ///
+    /// # Returns
+    /// Ok(()) on success, VfsError::NotFound if file or attribute doesn't exist
+    pub fn removexattr(&mut self, path: &Path, name: &str) -> Result<(), VfsError> {
+        // Resolve path to inode
+        let normalized_path = Self::normalize_path(path);
+        let ino = self.resolve_path_internal(&normalized_path, true, 0)?;
+
+        // Get xattr map for this inode
+        let mut attr_map = self.xattrs.get(&ino).cloned().ok_or(VfsError::NotFound)?;
+
+        // Remove the attribute (error if it doesn't exist)
+        if attr_map.remove(name).is_none() {
+            return Err(VfsError::NotFound);
+        }
+
+        // Update the xattrs map (or remove if empty)
+        if attr_map.is_empty() {
+            self.xattrs.remove(&ino);
+        } else {
+            self.xattrs.insert(ino, attr_map);
+        }
+
+        Ok(())
     }
 }
 
@@ -4975,6 +5084,10 @@ mod tests {
 
                 let mut vfs = VirtualFileSystem::new();
                 let dir_path = PathBuf::from(format!("/{}", dir_name));
+
+                // Skip if directory already exists (e.g., /dev, /bin, /tmp)
+                prop_assume!(!vfs.exists(&dir_path));
+
                 let file_path = PathBuf::from(format!("/{}/{}", dir_name, file_name));
 
                 vfs.create_directory(dir_path.clone()).unwrap();
@@ -4995,6 +5108,9 @@ mod tests {
             ) {
                 let mut vfs = VirtualFileSystem::new();
                 let parent_path = PathBuf::from(format!("/{}", parent_dir));
+
+                // Skip if directory already exists (e.g., /dev, /bin, /tmp)
+                prop_assume!(!vfs.exists(&parent_path));
 
                 vfs.create_directory(parent_path.clone()).unwrap();
 
@@ -5026,6 +5142,10 @@ mod tests {
             ) {
                 let mut vfs = VirtualFileSystem::new();
                 let dir = PathBuf::from(format!("/{}", dir_path));
+
+                // Skip if directory already exists (e.g., /dev, /bin, /tmp)
+                prop_assume!(!vfs.exists(&dir));
+
                 let file = PathBuf::from(format!("/{}/{}", dir_path, file_name));
 
                 vfs.create_directory(dir).unwrap();
@@ -5048,6 +5168,9 @@ mod tests {
             ) {
                 let mut vfs = VirtualFileSystem::new();
                 let dir_path = PathBuf::from(format!("/{}", dir_name));
+
+                // Skip if directory already exists (e.g., /dev, /bin, /tmp)
+                prop_assume!(!vfs.exists(&dir_path));
 
                 vfs.create_directory(dir_path.clone()).unwrap();
                 prop_assert!(vfs.is_directory(&dir_path));
