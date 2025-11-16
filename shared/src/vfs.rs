@@ -5464,4 +5464,260 @@ mod tests {
             }
         }
     }
+
+    // =========================================================================
+    // WOS-FS-009: Extended Attributes (xattr) Tests (RED phase)
+    // =========================================================================
+
+    /// Unit Tests (10 tests)
+
+    #[test]
+    fn test_setxattr_basic() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+        vfs.create_file(path.clone(), vec![]).unwrap();
+
+        let result = vfs.setxattr(&path, "user.comment", b"Hello xattr");
+        assert!(result.is_ok(), "setxattr should succeed");
+    }
+
+    #[test]
+    fn test_getxattr_basic() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+        vfs.create_file(path.clone(), vec![]).unwrap();
+        vfs.setxattr(&path, "user.comment", b"Hello xattr").unwrap();
+
+        let result = vfs.getxattr(&path, "user.comment");
+        assert!(result.is_ok(), "getxattr should succeed");
+        assert_eq!(result.unwrap(), b"Hello xattr");
+    }
+
+    #[test]
+    fn test_listxattr_basic() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+        vfs.create_file(path.clone(), vec![]).unwrap();
+        vfs.setxattr(&path, "user.comment", b"value1").unwrap();
+        vfs.setxattr(&path, "user.author", b"value2").unwrap();
+
+        let result = vfs.listxattr(&path);
+        assert!(result.is_ok(), "listxattr should succeed");
+        let attrs = result.unwrap();
+        assert_eq!(attrs.len(), 2);
+        assert!(attrs.contains(&"user.comment".to_string()));
+        assert!(attrs.contains(&"user.author".to_string()));
+    }
+
+    #[test]
+    fn test_removexattr_basic() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+        vfs.create_file(path.clone(), vec![]).unwrap();
+        vfs.setxattr(&path, "user.comment", b"value").unwrap();
+
+        let result = vfs.removexattr(&path, "user.comment");
+        assert!(result.is_ok(), "removexattr should succeed");
+
+        let get_result = vfs.getxattr(&path, "user.comment");
+        assert_eq!(get_result, Err(VfsError::NotFound));
+    }
+
+    #[test]
+    fn test_setxattr_namespace_user() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+        vfs.create_file(path.clone(), vec![]).unwrap();
+
+        let result = vfs.setxattr(&path, "user.custom", b"user data");
+        assert!(result.is_ok(), "user namespace should work");
+    }
+
+    #[test]
+    fn test_setxattr_namespace_system() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+        vfs.create_file(path.clone(), vec![]).unwrap();
+
+        let result = vfs.setxattr(&path, "system.posix_acl_access", b"acl data");
+        assert!(result.is_ok(), "system namespace should work");
+    }
+
+    #[test]
+    fn test_setxattr_namespace_security() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+        vfs.create_file(path.clone(), vec![]).unwrap();
+
+        let result = vfs.setxattr(&path, "security.selinux", b"context");
+        assert!(result.is_ok(), "security namespace should work");
+    }
+
+    #[test]
+    fn test_getxattr_nonexistent() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+        vfs.create_file(path.clone(), vec![]).unwrap();
+
+        let result = vfs.getxattr(&path, "user.nonexistent");
+        assert_eq!(result, Err(VfsError::NotFound));
+    }
+
+    #[test]
+    fn test_removexattr_nonexistent() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+        vfs.create_file(path.clone(), vec![]).unwrap();
+
+        let result = vfs.removexattr(&path, "user.nonexistent");
+        assert_eq!(result, Err(VfsError::NotFound));
+    }
+
+    #[test]
+    fn test_xattr_on_nonexistent_file() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/nonexistent.txt");
+
+        let set_result = vfs.setxattr(&path, "user.test", b"value");
+        assert_eq!(set_result, Err(VfsError::NotFound));
+
+        let get_result = vfs.getxattr(&path, "user.test");
+        assert_eq!(get_result, Err(VfsError::NotFound));
+
+        let list_result = vfs.listxattr(&path);
+        assert_eq!(list_result, Err(VfsError::NotFound));
+
+        let remove_result = vfs.removexattr(&path, "user.test");
+        assert_eq!(remove_result, Err(VfsError::NotFound));
+    }
+
+    /// Integration Tests (4 tests)
+
+    #[test]
+    fn test_integration_xattr_multiple_files() {
+        let mut vfs = VirtualFileSystem::new();
+        let path1 = PathBuf::from("/file1.txt");
+        let path2 = PathBuf::from("/file2.txt");
+
+        vfs.create_file(path1.clone(), vec![]).unwrap();
+        vfs.create_file(path2.clone(), vec![]).unwrap();
+
+        vfs.setxattr(&path1, "user.comment", b"file1 comment")
+            .unwrap();
+        vfs.setxattr(&path2, "user.comment", b"file2 comment")
+            .unwrap();
+
+        let xattr1 = vfs.getxattr(&path1, "user.comment").unwrap();
+        let xattr2 = vfs.getxattr(&path2, "user.comment").unwrap();
+
+        assert_eq!(xattr1, b"file1 comment");
+        assert_eq!(xattr2, b"file2 comment");
+    }
+
+    #[test]
+    fn test_integration_xattr_clone_preserves() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+
+        vfs.create_file(path.clone(), vec![]).unwrap();
+        vfs.setxattr(&path, "user.comment", b"original").unwrap();
+
+        let mut cloned = vfs.clone();
+
+        // Original and clone should both have xattr
+        assert_eq!(vfs.getxattr(&path, "user.comment").unwrap(), b"original");
+        assert_eq!(cloned.getxattr(&path, "user.comment").unwrap(), b"original");
+
+        // Modify clone - should not affect original
+        cloned.setxattr(&path, "user.comment", b"modified").unwrap();
+        assert_eq!(vfs.getxattr(&path, "user.comment").unwrap(), b"original");
+        assert_eq!(cloned.getxattr(&path, "user.comment").unwrap(), b"modified");
+    }
+
+    #[test]
+    fn test_integration_xattr_file_delete_removes() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+
+        vfs.create_file(path.clone(), vec![]).unwrap();
+        vfs.setxattr(&path, "user.comment", b"value").unwrap();
+
+        vfs.delete_file(&path).unwrap();
+
+        // Recreate file - xattrs should not persist
+        vfs.create_file(path.clone(), vec![]).unwrap();
+        let result = vfs.getxattr(&path, "user.comment");
+        assert_eq!(result, Err(VfsError::NotFound));
+    }
+
+    #[test]
+    fn test_integration_xattr_namespaces() {
+        let mut vfs = VirtualFileSystem::new();
+        let path = PathBuf::from("/test.txt");
+        vfs.create_file(path.clone(), vec![]).unwrap();
+
+        // Set attributes in different namespaces
+        vfs.setxattr(&path, "user.comment", b"user data").unwrap();
+        vfs.setxattr(&path, "system.acl", b"system data").unwrap();
+        vfs.setxattr(&path, "security.label", b"security data")
+            .unwrap();
+
+        // All should be retrievable independently
+        assert_eq!(vfs.getxattr(&path, "user.comment").unwrap(), b"user data");
+        assert_eq!(vfs.getxattr(&path, "system.acl").unwrap(), b"system data");
+        assert_eq!(
+            vfs.getxattr(&path, "security.label").unwrap(),
+            b"security data"
+        );
+
+        // List should show all 3
+        let attrs = vfs.listxattr(&path).unwrap();
+        assert_eq!(attrs.len(), 3);
+    }
+
+    /// Property Tests (2 tests)
+
+    #[cfg(test)]
+    mod xattr_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+            #[test]
+            fn proptest_xattr_set_get_roundtrip(
+                name in "[a-z]{1,20}",
+                value in prop::collection::vec(any::<u8>(), 0..100),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let path = PathBuf::from("/test.txt");
+                vfs.create_file(path.clone(), vec![]).ok();
+
+                let attr_name = format!("user.{}", name);
+                if vfs.setxattr(&path, &attr_name, &value).is_ok() {
+                    let retrieved = vfs.getxattr(&path, &attr_name).ok();
+                    prop_assert_eq!(retrieved, Some(value));
+                }
+            }
+
+            #[test]
+            fn proptest_xattr_remove_makes_nonexistent(
+                name in "[a-z]{1,20}",
+                value in prop::collection::vec(any::<u8>(), 0..100),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let path = PathBuf::from("/test.txt");
+                vfs.create_file(path.clone(), vec![]).ok();
+
+                let attr_name = format!("user.{}", name);
+                if vfs.setxattr(&path, &attr_name, &value).is_ok() {
+                    if vfs.removexattr(&path, &attr_name).is_ok() {
+                        let result = vfs.getxattr(&path, &attr_name);
+                        prop_assert_eq!(result, Err(VfsError::NotFound));
+                    }
+                }
+            }
+        }
+    }
 }
