@@ -45,6 +45,11 @@ pub enum InodeType {
         /// Directory entries (name -> inode number)
         entries: im::HashMap<String, InodeNumber>,
     },
+    /// Symbolic link
+    Symlink {
+        /// Target path (can be relative or absolute)
+        target: PathBuf,
+    },
 }
 
 /// Directory entry for listing
@@ -65,6 +70,8 @@ pub enum EntryType {
     File,
     /// Directory entry
     Directory,
+    /// Symlink entry
+    Symlink,
 }
 
 impl DirectoryEntry {
@@ -76,6 +83,11 @@ impl DirectoryEntry {
     /// Check if entry is a directory
     pub fn is_directory(&self) -> bool {
         matches!(self.entry_type, EntryType::Directory)
+    }
+
+    /// Check if entry is a symlink
+    pub fn is_symlink(&self) -> bool {
+        matches!(self.entry_type, EntryType::Symlink)
     }
 }
 
@@ -160,6 +172,8 @@ pub enum VfsError {
     IsADirectory,
     /// Directory not empty
     DirectoryNotEmpty,
+    /// Symbolic link loop detected
+    SymlinkLoop,
 }
 
 impl VirtualFileSystem {
@@ -206,8 +220,30 @@ impl VirtualFileSystem {
         &self.cwd
     }
 
-    /// Resolve path to inode number
+    /// Maximum symlink depth to prevent infinite loops
+    const MAX_SYMLINK_DEPTH: usize = 40;
+
+    /// Resolve path to inode number, following symlinks
     fn resolve_path(&self, path: &Path) -> Result<InodeNumber, VfsError> {
+        self.resolve_path_internal(path, true, 0)
+    }
+
+    /// Resolve path to inode number without following the final component if it's a symlink
+    fn resolve_path_no_follow(&self, path: &Path) -> Result<InodeNumber, VfsError> {
+        self.resolve_path_internal(path, false, 0)
+    }
+
+    /// Internal path resolution with symlink following control
+    fn resolve_path_internal(
+        &self,
+        path: &Path,
+        follow_final: bool,
+        depth: usize,
+    ) -> Result<InodeNumber, VfsError> {
+        if depth > Self::MAX_SYMLINK_DEPTH {
+            return Err(VfsError::SymlinkLoop);
+        }
+
         if path == Path::new("/") {
             return Ok(self.root_ino);
         }
@@ -221,13 +257,55 @@ impl VirtualFileSystem {
             .collect();
 
         let mut current_ino = self.root_ino;
+        let mut current_path = PathBuf::from("/");
 
-        for component in components {
+        for (idx, component) in components.iter().enumerate() {
+            let is_last = idx == components.len() - 1;
             let inode = self.inodes.get(&current_ino).ok_or(VfsError::NotFound)?;
 
             match &inode.inode_type {
                 InodeType::Directory { entries } => {
-                    current_ino = *entries.get(component).ok_or(VfsError::NotFound)?;
+                    current_ino = *entries.get(*component).ok_or(VfsError::NotFound)?;
+
+                    // Update current path for relative symlink resolution
+                    if current_path.to_str() == Some("/") {
+                        current_path = PathBuf::from(format!("/{}", component));
+                    } else {
+                        current_path =
+                            PathBuf::from(format!("{}/{}", current_path.display(), component));
+                    }
+
+                    // Follow symlinks in intermediate path components (always)
+                    // or in final component if follow_final is true
+                    if !is_last || follow_final {
+                        let next_inode = self.inodes.get(&current_ino).ok_or(VfsError::NotFound)?;
+                        if let InodeType::Symlink { target } = &next_inode.inode_type {
+                            // Resolve symlink target
+                            let resolved_target = if target.is_absolute() {
+                                target.clone()
+                            } else {
+                                // Relative symlink - resolve relative to parent directory
+                                let parent = current_path.parent().unwrap_or(Path::new("/"));
+                                parent.join(target)
+                            };
+                            // Recursively resolve with increased depth
+                            current_ino =
+                                self.resolve_path_internal(&resolved_target, true, depth + 1)?;
+                        }
+                    }
+                }
+                InodeType::Symlink { target } => {
+                    // This happens if a symlink appears in the middle of the path
+                    let resolved_target = if target.is_absolute() {
+                        target.clone()
+                    } else {
+                        let parent = current_path.parent().unwrap_or(Path::new("/"));
+                        parent.join(target)
+                    };
+                    // Continue with remaining components after symlink
+                    let remaining: PathBuf = components[idx..].iter().collect();
+                    let new_path = resolved_target.join(remaining);
+                    return self.resolve_path_internal(&new_path, follow_final, depth + 1);
                 }
                 InodeType::File { .. } => {
                     return Err(VfsError::NotADirectory);
@@ -271,7 +349,7 @@ impl VirtualFileSystem {
                 InodeType::Directory { entries } => {
                     current_ino = *entries.get(*component).ok_or(VfsError::NotFound)?;
                 }
-                InodeType::File { .. } => {
+                InodeType::File { .. } | InodeType::Symlink { .. } => {
                     return Err(VfsError::NotADirectory);
                 }
             }
@@ -292,7 +370,9 @@ impl VirtualFileSystem {
 
         let entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } => return Err(VfsError::NotADirectory),
+            InodeType::File { .. } | InodeType::Symlink { .. } => {
+                return Err(VfsError::NotADirectory)
+            }
         };
 
         if entries.contains_key(&name) {
@@ -341,7 +421,9 @@ impl VirtualFileSystem {
 
         let entries = match &inode.inode_type {
             InodeType::Directory { entries } => entries,
-            InodeType::File { .. } => return Err(VfsError::NotADirectory),
+            InodeType::File { .. } | InodeType::Symlink { .. } => {
+                return Err(VfsError::NotADirectory)
+            }
         };
 
         if !entries.is_empty() {
@@ -358,7 +440,9 @@ impl VirtualFileSystem {
 
         let parent_entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } => return Err(VfsError::NotADirectory),
+            InodeType::File { .. } | InodeType::Symlink { .. } => {
+                return Err(VfsError::NotADirectory)
+            }
         };
 
         let mut new_entries = parent_entries;
@@ -388,6 +472,110 @@ impl VirtualFileSystem {
         false
     }
 
+    /// Check if path is a symbolic link (without following it)
+    pub fn is_symlink(&self, path: &Path) -> bool {
+        if let Ok(ino) = self.resolve_path_no_follow(path) {
+            if let Some(inode) = self.inodes.get(&ino) {
+                return matches!(inode.inode_type, InodeType::Symlink { .. });
+            }
+        }
+        false
+    }
+
+    /// Create a symbolic link
+    pub fn create_symlink(&mut self, link_path: PathBuf, target: PathBuf) -> Result<(), VfsError> {
+        let (parent_ino, name) = self.resolve_parent(&link_path)?;
+
+        let parent = self
+            .inodes
+            .get(&parent_ino)
+            .ok_or(VfsError::NotFound)?
+            .clone();
+
+        let entries = match &parent.inode_type {
+            InodeType::Directory { entries } => entries.clone(),
+            InodeType::File { .. } => return Err(VfsError::NotADirectory),
+            InodeType::Symlink { .. } => return Err(VfsError::NotADirectory),
+        };
+
+        if entries.contains_key(&name) {
+            return Err(VfsError::AlreadyExists);
+        }
+
+        // Create new symlink inode
+        let new_ino = self.next_ino;
+        self.next_ino += 1;
+
+        let new_symlink = Inode {
+            ino: new_ino,
+            inode_type: InodeType::Symlink { target },
+            permissions: FilePermissions::default(),
+        };
+
+        self.inodes.insert(new_ino, new_symlink);
+
+        // Add to parent directory
+        let mut new_entries = entries;
+        new_entries.insert(name, new_ino);
+
+        let updated_parent = Inode {
+            ino: parent_ino,
+            inode_type: InodeType::Directory {
+                entries: new_entries,
+            },
+            permissions: parent.permissions,
+        };
+
+        self.inodes.insert(parent_ino, updated_parent);
+
+        Ok(())
+    }
+
+    /// Read the target of a symbolic link (without following it)
+    pub fn readlink(&self, path: &Path) -> Result<PathBuf, VfsError> {
+        let ino = self.resolve_path_no_follow(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+
+        match &inode.inode_type {
+            InodeType::Symlink { target } => Ok(target.clone()),
+            InodeType::File { .. } | InodeType::Directory { .. } => Err(VfsError::InvalidPath),
+        }
+    }
+
+    /// Follow a symbolic link to its final target path
+    pub fn stat_follow(&self, path: &Path) -> Result<PathBuf, VfsError> {
+        self.follow_symlink_to_target(path, 0)
+    }
+
+    /// Internal helper to follow symlinks and return the final target path
+    fn follow_symlink_to_target(&self, path: &Path, depth: usize) -> Result<PathBuf, VfsError> {
+        if depth > Self::MAX_SYMLINK_DEPTH {
+            return Err(VfsError::SymlinkLoop);
+        }
+
+        let ino = self.resolve_path_no_follow(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+
+        match &inode.inode_type {
+            InodeType::Symlink { target } => {
+                // Resolve the target (which might be relative or absolute)
+                let resolved_target = if target.is_absolute() {
+                    target.clone()
+                } else {
+                    // Relative symlink - resolve relative to parent directory
+                    let parent = path.parent().unwrap_or(Path::new("/"));
+                    parent.join(target)
+                };
+                // Recursively follow
+                self.follow_symlink_to_target(&resolved_target, depth + 1)
+            }
+            InodeType::File { .. } | InodeType::Directory { .. } => {
+                // Not a symlink, return the path itself
+                Ok(path.to_path_buf())
+            }
+        }
+    }
+
     /// List directory entries
     pub fn list_directory(&self, path: &Path) -> Result<Vec<DirectoryEntry>, VfsError> {
         let ino = self.resolve_path(path)?;
@@ -396,6 +584,7 @@ impl VirtualFileSystem {
         let entries = match &inode.inode_type {
             InodeType::Directory { entries } => entries,
             InodeType::File { .. } => return Err(VfsError::NotADirectory),
+            InodeType::Symlink { .. } => return Err(VfsError::NotADirectory),
         };
 
         let mut result = Vec::new();
@@ -404,6 +593,7 @@ impl VirtualFileSystem {
             let entry_type = match &child_inode.inode_type {
                 InodeType::File { .. } => EntryType::File,
                 InodeType::Directory { .. } => EntryType::Directory,
+                InodeType::Symlink { .. } => EntryType::Symlink,
             };
 
             result.push(DirectoryEntry {
@@ -428,7 +618,9 @@ impl VirtualFileSystem {
 
         let entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } => return Err(VfsError::NotADirectory),
+            InodeType::File { .. } | InodeType::Symlink { .. } => {
+                return Err(VfsError::NotADirectory)
+            }
         };
 
         if entries.contains_key(&name) {
@@ -476,6 +668,11 @@ impl VirtualFileSystem {
         match &inode.inode_type {
             InodeType::File { content } => Ok(content.clone()),
             InodeType::Directory { .. } => Err(VfsError::IsADirectory),
+            InodeType::Symlink { .. } => {
+                // This shouldn't happen since resolve_path follows symlinks
+                // but handle it for safety
+                Err(VfsError::NotFound)
+            }
         }
     }
 
@@ -499,6 +696,7 @@ impl VirtualFileSystem {
                 Ok(())
             }
             InodeType::Directory { .. } => Err(VfsError::IsADirectory),
+            InodeType::Symlink { .. } => Err(VfsError::NotFound),
         }
     }
 
@@ -527,7 +725,9 @@ impl VirtualFileSystem {
 
         let parent_entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } => return Err(VfsError::NotADirectory),
+            InodeType::File { .. } | InodeType::Symlink { .. } => {
+                return Err(VfsError::NotADirectory)
+            }
         };
 
         let mut new_entries = parent_entries;
@@ -601,6 +801,10 @@ impl VirtualFileSystem {
                         };
                         self.collect_files_recursive(&child_path, child_ino, files);
                     }
+                }
+                InodeType::Symlink { .. } => {
+                    // Skip symlinks to avoid infinite loops in legacy list_files()
+                    // Real implementations would track visited inodes
                 }
             }
         }
@@ -1068,23 +1272,33 @@ mod tests {
         let mut vfs = VirtualFileSystem::new();
 
         // Create target file
-        vfs.create_file(PathBuf::from("/target.txt"), b"content".to_vec()).unwrap();
+        vfs.create_file(PathBuf::from("/target.txt"), b"content".to_vec())
+            .unwrap();
 
         // Create symlink
         let result = vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/target.txt"));
         assert!(result.is_ok(), "Should create symlink successfully");
-        assert!(vfs.is_symlink(&PathBuf::from("/link.txt")), "Path should be a symlink");
+        assert!(
+            vfs.is_symlink(&PathBuf::from("/link.txt")),
+            "Path should be a symlink"
+        );
     }
 
     #[test]
     fn test_readlink() {
         let mut vfs = VirtualFileSystem::new();
 
-        vfs.create_file(PathBuf::from("/target.txt"), vec![]).unwrap();
-        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/target.txt")).unwrap();
+        vfs.create_file(PathBuf::from("/target.txt"), vec![])
+            .unwrap();
+        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/target.txt"))
+            .unwrap();
 
         let target = vfs.readlink(&PathBuf::from("/link.txt")).unwrap();
-        assert_eq!(target, PathBuf::from("/target.txt"), "Should return correct target");
+        assert_eq!(
+            target,
+            PathBuf::from("/target.txt"),
+            "Should return correct target"
+        );
     }
 
     #[test]
@@ -1093,10 +1307,12 @@ mod tests {
 
         // Create target file with content
         let content = b"Hello via symlink".to_vec();
-        vfs.create_file(PathBuf::from("/target.txt"), content.clone()).unwrap();
+        vfs.create_file(PathBuf::from("/target.txt"), content.clone())
+            .unwrap();
 
         // Create symlink
-        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/target.txt")).unwrap();
+        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/target.txt"))
+            .unwrap();
 
         // Read through symlink
         let read_content = vfs.read_file(&PathBuf::from("/link.txt")).unwrap();
@@ -1108,7 +1324,8 @@ mod tests {
         let mut vfs = VirtualFileSystem::new();
 
         vfs.create_directory(PathBuf::from("/targetdir")).unwrap();
-        vfs.create_symlink(PathBuf::from("/linkdir"), PathBuf::from("/targetdir")).unwrap();
+        vfs.create_symlink(PathBuf::from("/linkdir"), PathBuf::from("/targetdir"))
+            .unwrap();
 
         // Should be able to list through symlink
         let result = vfs.list_directory(&PathBuf::from("/linkdir"));
@@ -1119,10 +1336,14 @@ mod tests {
     fn test_symlink_chain() {
         let mut vfs = VirtualFileSystem::new();
 
-        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec()).unwrap();
-        vfs.create_symlink(PathBuf::from("/link1"), PathBuf::from("/file.txt")).unwrap();
-        vfs.create_symlink(PathBuf::from("/link2"), PathBuf::from("/link1")).unwrap();
-        vfs.create_symlink(PathBuf::from("/link3"), PathBuf::from("/link2")).unwrap();
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+        vfs.create_symlink(PathBuf::from("/link1"), PathBuf::from("/file.txt"))
+            .unwrap();
+        vfs.create_symlink(PathBuf::from("/link2"), PathBuf::from("/link1"))
+            .unwrap();
+        vfs.create_symlink(PathBuf::from("/link3"), PathBuf::from("/link2"))
+            .unwrap();
 
         // Should follow chain
         let content = vfs.read_file(&PathBuf::from("/link3")).unwrap();
@@ -1134,8 +1355,10 @@ mod tests {
         let mut vfs = VirtualFileSystem::new();
 
         // Create circular symlinks
-        vfs.create_symlink(PathBuf::from("/link1"), PathBuf::from("/link2")).unwrap();
-        vfs.create_symlink(PathBuf::from("/link2"), PathBuf::from("/link1")).unwrap();
+        vfs.create_symlink(PathBuf::from("/link1"), PathBuf::from("/link2"))
+            .unwrap();
+        vfs.create_symlink(PathBuf::from("/link2"), PathBuf::from("/link1"))
+            .unwrap();
 
         // Should detect loop
         let result = vfs.read_file(&PathBuf::from("/link1"));
@@ -1169,10 +1392,14 @@ mod tests {
         let mut vfs = VirtualFileSystem::new();
 
         vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
-        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/file.txt")).unwrap();
+        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/file.txt"))
+            .unwrap();
 
         // lstat should report symlink
-        assert!(vfs.is_symlink(&PathBuf::from("/link.txt")), "lstat should see symlink");
+        assert!(
+            vfs.is_symlink(&PathBuf::from("/link.txt")),
+            "lstat should see symlink"
+        );
 
         // stat (following links) should see file
         let target = vfs.stat_follow(&PathBuf::from("/link.txt")).unwrap();
@@ -1184,7 +1411,11 @@ mod tests {
         let mut vfs = VirtualFileSystem::new();
 
         // Create symlink to non-existent target
-        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/nonexistent.txt")).unwrap();
+        vfs.create_symlink(
+            PathBuf::from("/link.txt"),
+            PathBuf::from("/nonexistent.txt"),
+        )
+        .unwrap();
 
         // readlink should work (doesn't follow)
         let target = vfs.readlink(&PathBuf::from("/link.txt")).unwrap();
@@ -1192,7 +1423,11 @@ mod tests {
 
         // read_file should fail (follows link)
         let result = vfs.read_file(&PathBuf::from("/link.txt"));
-        assert_eq!(result, Err(VfsError::NotFound), "Dangling symlink should error when followed");
+        assert_eq!(
+            result,
+            Err(VfsError::NotFound),
+            "Dangling symlink should error when followed"
+        );
     }
 
     #[test]
@@ -1202,13 +1437,17 @@ mod tests {
         // Create /real/dir/file.txt
         vfs.create_directory(PathBuf::from("/real")).unwrap();
         vfs.create_directory(PathBuf::from("/real/dir")).unwrap();
-        vfs.create_file(PathBuf::from("/real/dir/file.txt"), b"data".to_vec()).unwrap();
+        vfs.create_file(PathBuf::from("/real/dir/file.txt"), b"data".to_vec())
+            .unwrap();
 
         // Create symlink /linked -> /real
-        vfs.create_symlink(PathBuf::from("/linked"), PathBuf::from("/real")).unwrap();
+        vfs.create_symlink(PathBuf::from("/linked"), PathBuf::from("/real"))
+            .unwrap();
 
         // Should be able to access /linked/dir/file.txt
-        let content = vfs.read_file(&PathBuf::from("/linked/dir/file.txt")).unwrap();
+        let content = vfs
+            .read_file(&PathBuf::from("/linked/dir/file.txt"))
+            .unwrap();
         assert_eq!(content, b"data".to_vec(), "Should resolve symlink in path");
     }
 
@@ -1217,13 +1456,19 @@ mod tests {
         let mut vfs = VirtualFileSystem::new();
 
         vfs.create_directory(PathBuf::from("/mydir")).unwrap();
-        vfs.create_file(PathBuf::from("/mydir/file.txt"), vec![]).unwrap();
+        vfs.create_file(PathBuf::from("/mydir/file.txt"), vec![])
+            .unwrap();
 
         // Create relative symlink
-        vfs.create_symlink(PathBuf::from("/mydir/link.txt"), PathBuf::from("file.txt")).unwrap();
+        vfs.create_symlink(PathBuf::from("/mydir/link.txt"), PathBuf::from("file.txt"))
+            .unwrap();
 
         let target = vfs.readlink(&PathBuf::from("/mydir/link.txt")).unwrap();
-        assert_eq!(target, PathBuf::from("file.txt"), "Should store relative path");
+        assert_eq!(
+            target,
+            PathBuf::from("file.txt"),
+            "Should store relative path"
+        );
     }
 
     // Property-based tests using proptest
