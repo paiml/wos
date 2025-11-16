@@ -357,6 +357,77 @@ impl VirtualFileSystem {
         vfs
     }
 
+    /// Normalize a path by resolving . and .. and removing redundant slashes
+    ///
+    /// # Arguments
+    /// * `path` - The path to normalize
+    ///
+    /// # Returns
+    /// A normalized PathBuf with:
+    /// - `.` (current directory) components removed
+    /// - `..` (parent directory) references resolved
+    /// - Multiple consecutive slashes collapsed to single slash
+    /// - Parent references bounded at root (/../ stays at /)
+    ///
+    /// # Examples
+    /// ```
+    /// use std::path::PathBuf;
+    /// use wos_shared::vfs::VirtualFileSystem;
+    ///
+    /// let normalized = VirtualFileSystem::normalize_path(&PathBuf::from("/a/./b"));
+    /// assert_eq!(normalized, PathBuf::from("/a/b"));
+    ///
+    /// let normalized2 = VirtualFileSystem::normalize_path(&PathBuf::from("/a/b/../c"));
+    /// assert_eq!(normalized2, PathBuf::from("/a/c"));
+    /// ```
+    pub fn normalize_path(path: &Path) -> PathBuf {
+        let path_str = match path.to_str() {
+            Some(s) => s,
+            None => return path.to_path_buf(), // Return as-is if not valid UTF-8
+        };
+
+        // Handle root specially
+        if path_str == "/" {
+            return PathBuf::from("/");
+        }
+
+        // Split into components, filtering out empty strings and current directory markers
+        let components: Vec<&str> = path_str
+            .trim_start_matches('/')
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let mut normalized: Vec<&str> = Vec::new();
+
+        for component in components {
+            match component {
+                "." => {
+                    // Skip current directory marker
+                    continue;
+                }
+                ".." => {
+                    // Pop parent unless we're at root
+                    if !normalized.is_empty() {
+                        normalized.pop();
+                    }
+                    // If normalized is empty, we're at root, so .. has no effect
+                }
+                _ => {
+                    // Regular component
+                    normalized.push(component);
+                }
+            }
+        }
+
+        // Build the normalized path
+        if normalized.is_empty() {
+            PathBuf::from("/")
+        } else {
+            PathBuf::from(format!("/{}", normalized.join("/")))
+        }
+    }
+
     /// Get current working directory
     pub fn cwd(&self) -> &Path {
         &self.cwd
@@ -386,11 +457,14 @@ impl VirtualFileSystem {
             return Err(VfsError::SymlinkLoop);
         }
 
-        if path == Path::new("/") {
+        // Normalize path to handle ., .., and multiple slashes
+        let normalized_path = Self::normalize_path(path);
+
+        if normalized_path == Path::new("/") {
             return Ok(self.root_ino);
         }
 
-        let components: Vec<&str> = path
+        let components: Vec<&str> = normalized_path
             .to_str()
             .ok_or(VfsError::InvalidPath)?
             .trim_start_matches('/')
@@ -465,7 +539,9 @@ impl VirtualFileSystem {
 
     /// Get parent directory inode and entry name
     fn resolve_parent(&self, path: &Path) -> Result<(InodeNumber, String), VfsError> {
-        let path_str = path.to_str().ok_or(VfsError::InvalidPath)?;
+        // Normalize path to handle ., .., and multiple slashes
+        let normalized_path = Self::normalize_path(path);
+        let path_str = normalized_path.to_str().ok_or(VfsError::InvalidPath)?;
 
         if path_str == "/" {
             return Err(VfsError::InvalidPath);
@@ -3076,6 +3152,8 @@ mod tests {
     #[test]
     fn test_resolve_double_dot() {
         let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/dir1")).unwrap();
+        vfs.create_directory(PathBuf::from("/dir1/dir2")).unwrap();
         vfs.create_file(PathBuf::from("/dir1/dir2/test.txt"), b"content".to_vec())
             .unwrap();
 
@@ -3090,6 +3168,9 @@ mod tests {
     #[test]
     fn test_resolve_multiple_parent_refs() {
         let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c")).unwrap();
         vfs.create_file(PathBuf::from("/a/b/c/test.txt"), b"content".to_vec())
             .unwrap();
 
@@ -3119,6 +3200,8 @@ mod tests {
     #[test]
     fn test_canonicalize_complex_path() {
         let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
         vfs.create_file(PathBuf::from("/a/b/test.txt"), b"content".to_vec())
             .unwrap();
 
@@ -3189,6 +3272,8 @@ mod tests {
     #[test]
     fn test_create_file_with_normalized_path() {
         let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
 
         // Create file with complex path
         vfs.create_file(PathBuf::from("/a/./b/../b/test.txt"), b"content".to_vec())
@@ -3203,19 +3288,22 @@ mod tests {
     #[test]
     fn test_list_directory_normalized() {
         let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
         vfs.create_file(PathBuf::from("/dir/test.txt"), b"content".to_vec())
             .unwrap();
 
         // List directory via normalized path
         let files = vfs.list_directory(&PathBuf::from("/./dir")).unwrap();
         assert_eq!(files.len(), 1);
-        assert!(files.contains(&"test.txt".to_string()));
+        assert!(files.iter().any(|entry| entry.name == "test.txt"));
     }
 
     // WOS-FS-006 Test 13: Delete file with normalized path
     #[test]
     fn test_delete_file_normalized() {
         let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
         vfs.create_file(PathBuf::from("/a/b/test.txt"), b"content".to_vec())
             .unwrap();
 
@@ -3250,6 +3338,8 @@ mod tests {
     #[test]
     fn test_stat_normalized_path() {
         let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
         vfs.create_file(PathBuf::from("/a/b/test.txt"), b"content".to_vec())
             .unwrap();
 
@@ -3288,6 +3378,7 @@ mod tests {
     #[test]
     fn test_integration_normalization_with_symlinks() {
         let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
         vfs.create_file(PathBuf::from("/a/target.txt"), b"content".to_vec())
             .unwrap();
 
@@ -3322,6 +3413,9 @@ mod tests {
     #[test]
     fn test_integration_normalization_directory_traversal() {
         let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c")).unwrap();
         vfs.create_file(PathBuf::from("/a/b/c/file1.txt"), b"1".to_vec())
             .unwrap();
         vfs.create_file(PathBuf::from("/a/b/file2.txt"), b"2".to_vec())
@@ -3338,6 +3432,9 @@ mod tests {
     #[test]
     fn test_integration_normalization_multi_operation() {
         let mut vfs = VirtualFileSystem::new();
+
+        // Create directory first
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
 
         // Create with normalized path
         vfs.create_file(PathBuf::from("/./dir/../dir/test.txt"), b"initial".to_vec())
@@ -3362,6 +3459,14 @@ mod tests {
     #[test]
     fn test_integration_normalization_stress() {
         let mut vfs = VirtualFileSystem::new();
+
+        // Create deeply nested directory structure
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c/d")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c/d/e")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c/d/e/f")).unwrap();
 
         // Create deeply nested structure
         vfs.create_file(PathBuf::from("/a/b/c/d/e/f/test.txt"), b"deep".to_vec())
@@ -3819,7 +3924,7 @@ mod tests {
             #[test]
             fn proptest_normalized_no_dots(
                 components in prop::collection::vec(
-                    prop::oneof![
+                    prop_oneof![
                         Just(".".to_string()),
                         Just("..".to_string()),
                         prop::string::string_regex("[a-z]{1,10}").unwrap(),
