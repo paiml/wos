@@ -80,6 +80,15 @@ struct RangeLock {
     owner: u64,
 }
 
+/// Mount information for mounted filesystems
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+struct MountInfo {
+    /// The mounted filesystem
+    filesystem: Box<VirtualFileSystem>,
+    /// Whether the mount is readonly
+    readonly: bool,
+}
+
 /// Virtual file system with persistent data structures
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct VirtualFileSystem {
@@ -101,8 +110,8 @@ pub struct VirtualFileSystem {
     file_locks: im::HashMap<InodeNumber, im::Vector<FileLock>>,
     /// Byte-range locks (fcntl) - maps inode number to list of range locks
     range_locks: im::HashMap<InodeNumber, im::Vector<RangeLock>>,
-    /// Mounted filesystems - maps mount point path to mounted VFS
-    mounts: im::HashMap<PathBuf, Box<VirtualFileSystem>>,
+    /// Mounted filesystems - maps mount point path to mount info
+    mounts: im::HashMap<PathBuf, MountInfo>,
     /// Extended attributes (xattr) - maps inode number to map of attribute name -> value
     xattrs: im::HashMap<InodeNumber, im::HashMap<String, Vec<u8>>>,
 }
@@ -335,6 +344,8 @@ pub enum VfsError {
     SymlinkLoop,
     /// Lock conflict (file already locked)
     LockConflict,
+    /// Filesystem is mounted read-only
+    ReadOnlyFilesystem,
 }
 
 /// Helper function to get current timestamp
@@ -631,8 +642,19 @@ impl VirtualFileSystem {
     /// Create a directory
     pub fn create_directory(&mut self, path: PathBuf) -> Result<(), VfsError> {
         // Check if path is within a mount point
-        if let Ok((mounted_fs, relative_path)) = self.resolve_mount_mut(&path) {
-            return mounted_fs.create_directory(relative_path);
+        match self.resolve_mount_mut(&path) {
+            Ok((mounted_fs, relative_path)) => {
+                return mounted_fs.create_directory(relative_path);
+            }
+            Err(VfsError::ReadOnlyFilesystem) => {
+                return Err(VfsError::ReadOnlyFilesystem);
+            }
+            Err(VfsError::NotFound) => {
+                // Not mounted, create in root filesystem (continue below)
+            }
+            Err(e) => {
+                return Err(e);
+            }
         }
 
         // Not mounted, create in root filesystem
@@ -929,8 +951,21 @@ impl VirtualFileSystem {
     /// Create a file
     pub fn create_file(&mut self, path: PathBuf, content: Vec<u8>) -> Result<(), VfsError> {
         // Check if path is within a mount point
-        if let Ok((mounted_fs, relative_path)) = self.resolve_mount_mut(&path) {
-            return mounted_fs.create_file(relative_path, content);
+        match self.resolve_mount_mut(&path) {
+            Ok((mounted_fs, relative_path)) => {
+                return mounted_fs.create_file(relative_path, content);
+            }
+            Err(VfsError::ReadOnlyFilesystem) => {
+                // Propagate readonly error
+                return Err(VfsError::ReadOnlyFilesystem);
+            }
+            Err(VfsError::NotFound) => {
+                // Not mounted, create in root filesystem (continue below)
+            }
+            Err(e) => {
+                // Other errors should also be propagated
+                return Err(e);
+            }
         }
 
         // Not mounted, create in root filesystem
@@ -1019,8 +1054,19 @@ impl VirtualFileSystem {
     /// Write to file (overwrites existing content, uses current user context)
     pub fn write_file(&mut self, path: &Path, content: Vec<u8>) -> Result<(), VfsError> {
         // Check if path is within a mount point
-        if let Ok((mounted_fs, relative_path)) = self.resolve_mount_mut(path) {
-            return mounted_fs.write_file(&relative_path, content);
+        match self.resolve_mount_mut(path) {
+            Ok((mounted_fs, relative_path)) => {
+                return mounted_fs.write_file(&relative_path, content);
+            }
+            Err(VfsError::ReadOnlyFilesystem) => {
+                return Err(VfsError::ReadOnlyFilesystem);
+            }
+            Err(VfsError::NotFound) => {
+                // Not mounted, write to root filesystem (continue below)
+            }
+            Err(e) => {
+                return Err(e);
+            }
         }
 
         // Not mounted, write to root filesystem
@@ -1037,8 +1083,19 @@ impl VirtualFileSystem {
     /// Delete a file
     pub fn delete_file(&mut self, path: &Path) -> Result<(), VfsError> {
         // Check if path is within a mount point
-        if let Ok((mounted_fs, relative_path)) = self.resolve_mount_mut(path) {
-            return mounted_fs.delete_file(&relative_path);
+        match self.resolve_mount_mut(path) {
+            Ok((mounted_fs, relative_path)) => {
+                return mounted_fs.delete_file(&relative_path);
+            }
+            Err(VfsError::ReadOnlyFilesystem) => {
+                return Err(VfsError::ReadOnlyFilesystem);
+            }
+            Err(VfsError::NotFound) => {
+                // Not mounted, delete from root filesystem (continue below)
+            }
+            Err(e) => {
+                return Err(e);
+            }
         }
 
         // Not mounted, delete from root filesystem
@@ -1609,8 +1666,19 @@ impl VirtualFileSystem {
         owner: u64,
     ) -> Result<(), VfsError> {
         // Check if path is within a mount point
-        if let Ok((mounted_fs, relative_path)) = self.resolve_mount_mut(path) {
-            return mounted_fs.flock_with_owner(&relative_path, lock_type, owner);
+        match self.resolve_mount_mut(path) {
+            Ok((mounted_fs, relative_path)) => {
+                return mounted_fs.flock_with_owner(&relative_path, lock_type, owner);
+            }
+            Err(VfsError::ReadOnlyFilesystem) => {
+                return Err(VfsError::ReadOnlyFilesystem);
+            }
+            Err(VfsError::NotFound) => {
+                // Not mounted, lock in root filesystem (continue below)
+            }
+            Err(e) => {
+                return Err(e);
+            }
         }
 
         let ino = self.resolve_path(path)?;
@@ -1653,8 +1721,19 @@ impl VirtualFileSystem {
     /// Release a whole-file lock (flock)
     pub fn funlock(&mut self, path: &Path) -> Result<(), VfsError> {
         // Check if path is within a mount point
-        if let Ok((mounted_fs, relative_path)) = self.resolve_mount_mut(path) {
-            return mounted_fs.funlock(&relative_path);
+        match self.resolve_mount_mut(path) {
+            Ok((mounted_fs, relative_path)) => {
+                return mounted_fs.funlock(&relative_path);
+            }
+            Err(VfsError::ReadOnlyFilesystem) => {
+                return Err(VfsError::ReadOnlyFilesystem);
+            }
+            Err(VfsError::NotFound) => {
+                // Not mounted, unlock in root filesystem (continue below)
+            }
+            Err(e) => {
+                return Err(e);
+            }
         }
 
         let ino = self.resolve_path(path)?;
@@ -1686,8 +1765,19 @@ impl VirtualFileSystem {
         length: u64,
     ) -> Result<(), VfsError> {
         // Check if path is within a mount point
-        if let Ok((mounted_fs, relative_path)) = self.resolve_mount_mut(path) {
-            return mounted_fs.fcntl_lock(&relative_path, lock_type, offset, length);
+        match self.resolve_mount_mut(path) {
+            Ok((mounted_fs, relative_path)) => {
+                return mounted_fs.fcntl_lock(&relative_path, lock_type, offset, length);
+            }
+            Err(VfsError::ReadOnlyFilesystem) => {
+                return Err(VfsError::ReadOnlyFilesystem);
+            }
+            Err(VfsError::NotFound) => {
+                // Not mounted, lock in root filesystem (continue below)
+            }
+            Err(e) => {
+                return Err(e);
+            }
         }
 
         let ino = self.resolve_path(path)?;
@@ -1739,8 +1829,19 @@ impl VirtualFileSystem {
     /// Release a byte-range lock (fcntl)
     pub fn fcntl_unlock(&mut self, path: &Path, offset: u64, length: u64) -> Result<(), VfsError> {
         // Check if path is within a mount point
-        if let Ok((mounted_fs, relative_path)) = self.resolve_mount_mut(path) {
-            return mounted_fs.fcntl_unlock(&relative_path, offset, length);
+        match self.resolve_mount_mut(path) {
+            Ok((mounted_fs, relative_path)) => {
+                return mounted_fs.fcntl_unlock(&relative_path, offset, length);
+            }
+            Err(VfsError::ReadOnlyFilesystem) => {
+                return Err(VfsError::ReadOnlyFilesystem);
+            }
+            Err(VfsError::NotFound) => {
+                // Not mounted, unlock in root filesystem (continue below)
+            }
+            Err(e) => {
+                return Err(e);
+            }
         }
 
         let ino = self.resolve_path(path)?;
@@ -1832,9 +1933,14 @@ impl VirtualFileSystem {
             }
         }
 
-        // Insert the mounted filesystem
-        self.mounts
-            .insert(normalized_mount_point, Box::new(filesystem));
+        // Insert the mounted filesystem as read-write
+        self.mounts.insert(
+            normalized_mount_point,
+            MountInfo {
+                filesystem: Box::new(filesystem),
+                readonly: false,
+            },
+        );
 
         Ok(())
     }
@@ -1890,15 +1996,37 @@ impl VirtualFileSystem {
         best_match
     }
 
-    /// Mount a filesystem as readonly (placeholder for future implementation)
+    /// Mount a filesystem as readonly
     pub fn mount_readonly(
         &mut self,
         mount_point: PathBuf,
         filesystem: VirtualFileSystem,
     ) -> Result<(), VfsError> {
-        // For now, just mount normally
-        // TODO: Add readonly flag and enforce it
-        self.mount(mount_point, filesystem)
+        // Normalize the mount point path
+        let normalized_mount_point = Self::normalize_path(&mount_point);
+
+        // Create mount point directory if it doesn't exist
+        if !self.exists(&normalized_mount_point) {
+            self.create_directory(normalized_mount_point.clone())?;
+        }
+
+        // Check if mount point is a directory (not a file)
+        if let Ok(stat) = self.stat(&normalized_mount_point) {
+            if stat.file_type != FileType::Directory {
+                return Err(VfsError::NotADirectory);
+            }
+        }
+
+        // Insert the mounted filesystem as readonly
+        self.mounts.insert(
+            normalized_mount_point,
+            MountInfo {
+                filesystem: Box::new(filesystem),
+                readonly: true,
+            },
+        );
+
+        Ok(())
     }
 
     /// Helper: Resolve a path to the appropriate filesystem and relative path
@@ -1907,7 +2035,7 @@ impl VirtualFileSystem {
 
         // Check if path is within a mount point
         if let Some(mount_point) = self.get_mount_point(&normalized_path) {
-            if let Some(mounted_fs) = self.mounts.get(&mount_point) {
+            if let Some(mount_info) = self.mounts.get(&mount_point) {
                 // Calculate relative path within the mounted filesystem
                 let mount_str = mount_point.to_str().unwrap_or("/");
                 let path_str = normalized_path.to_str().unwrap_or("/");
@@ -1920,7 +2048,7 @@ impl VirtualFileSystem {
                     PathBuf::from("/")
                 };
 
-                return (Some(mounted_fs.as_ref()), relative_path);
+                return (Some(mount_info.filesystem.as_ref()), relative_path);
             }
         }
 
@@ -1937,7 +2065,12 @@ impl VirtualFileSystem {
 
         // Check if path is within a mount point
         if let Some(mount_point) = self.get_mount_point(&normalized_path) {
-            if let Some(mounted_fs) = self.mounts.get_mut(&mount_point) {
+            if let Some(mount_info) = self.mounts.get_mut(&mount_point) {
+                // Check if mount is readonly
+                if mount_info.readonly {
+                    return Err(VfsError::ReadOnlyFilesystem);
+                }
+
                 // Calculate relative path within the mounted filesystem
                 let mount_str = mount_point.to_str().unwrap_or("/");
                 let path_str = normalized_path.to_str().unwrap_or("/");
@@ -1950,7 +2083,7 @@ impl VirtualFileSystem {
                     PathBuf::from("/")
                 };
 
-                return Ok((mounted_fs.as_mut(), relative_path));
+                return Ok((mount_info.filesystem.as_mut(), relative_path));
             }
         }
 
