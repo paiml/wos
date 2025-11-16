@@ -1923,6 +1923,363 @@ mod tests {
         assert_eq!(vfs.get_link_count(&PathBuf::from("/link.txt")).unwrap(), 1);
     }
 
+    // ========================================================================
+    // WOS-FS-004: File Permissions and Ownership Tests (RED PHASE)
+    // ========================================================================
+
+    #[test]
+    fn test_chmod_changes_mode() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        // Change to read-only for owner, no access for group/other (0400)
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o400).unwrap();
+
+        let mode = vfs.get_mode(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(mode & 0o777, 0o400, "Mode should be 0400");
+    }
+
+    #[test]
+    fn test_chmod_octal_notation() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        // Test various octal permissions
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o755).unwrap();
+        assert_eq!(vfs.get_mode(&PathBuf::from("/file.txt")).unwrap() & 0o777, 0o755);
+
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o644).unwrap();
+        assert_eq!(vfs.get_mode(&PathBuf::from("/file.txt")).unwrap() & 0o777, 0o644);
+    }
+
+    #[test]
+    fn test_chown_changes_owner() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000); // Create as UID 1000
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        // Change owner to UID 1001
+        vfs.chown(&PathBuf::from("/file.txt"), 1001, None).unwrap();
+
+        let uid = vfs.get_owner(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(uid, 1001, "UID should be 1001");
+    }
+
+    #[test]
+    fn test_chgrp_changes_group() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        // Change group to GID 1001
+        vfs.chown(&PathBuf::from("/file.txt"), None, 1001).unwrap();
+
+        let gid = vfs.get_group(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(gid, 1001, "GID should be 1001");
+    }
+
+    #[test]
+    fn test_read_permission_check() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        // Remove read permission for owner
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o200).unwrap(); // Write-only
+
+        let result = vfs.read_file(&PathBuf::from("/file.txt"));
+        assert_eq!(result, Err(VfsError::PermissionDenied), "Read should be denied");
+    }
+
+    #[test]
+    fn test_write_permission_check() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        // Remove write permission for owner
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o444).unwrap(); // Read-only
+
+        let result = vfs.write_file(&PathBuf::from("/file.txt"), b"new".to_vec());
+        assert_eq!(result, Err(VfsError::PermissionDenied), "Write should be denied");
+    }
+
+    #[test]
+    fn test_execute_permission_check() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/script.sh"), b"#!/bin/sh".to_vec())
+            .unwrap();
+
+        // Remove execute permission
+        vfs.chmod(&PathBuf::from("/script.sh"), 0o644).unwrap();
+
+        let result = vfs.can_execute(&PathBuf::from("/script.sh"));
+        assert!(!result, "Execute should be denied");
+
+        // Add execute permission
+        vfs.chmod(&PathBuf::from("/script.sh"), 0o755).unwrap();
+        assert!(vfs.can_execute(&PathBuf::from("/script.sh")), "Execute should be allowed");
+    }
+
+    #[test]
+    fn test_owner_permissions_vs_other() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        // Owner can read (0400), others cannot
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o400).unwrap();
+
+        // Owner (UID 1000) can read
+        let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1000, 1000);
+        assert!(result.is_ok(), "Owner should be able to read");
+
+        // Other (UID 1001) cannot read
+        let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1001, 1001);
+        assert_eq!(result, Err(VfsError::PermissionDenied), "Other should not read");
+    }
+
+    #[test]
+    fn test_group_permissions() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        // Group can read (0040), owner and other cannot
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o040).unwrap();
+
+        // Group member (same GID) can read
+        let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1001, 1000);
+        assert!(result.is_ok(), "Group member should be able to read");
+
+        // Non-group member cannot read
+        let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1001, 1001);
+        assert_eq!(result, Err(VfsError::PermissionDenied), "Non-group cannot read");
+    }
+
+    #[test]
+    fn test_root_bypasses_permissions() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        // No permissions for anyone (0000)
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o000).unwrap();
+
+        // Root (UID 0) can still read
+        let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 0, 0);
+        assert!(result.is_ok(), "Root should bypass permission checks");
+
+        // Non-root cannot read
+        let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1000, 1000);
+        assert_eq!(result, Err(VfsError::PermissionDenied), "Non-root should be denied");
+    }
+
+    #[test]
+    fn test_permission_denied_on_read() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/secret.txt"), b"classified".to_vec())
+            .unwrap();
+
+        vfs.chmod(&PathBuf::from("/secret.txt"), 0o000).unwrap();
+
+        let result = vfs.read_file(&PathBuf::from("/secret.txt"));
+        assert_eq!(result, Err(VfsError::PermissionDenied));
+    }
+
+    #[test]
+    fn test_permission_denied_on_write() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/readonly.txt"), vec![]).unwrap();
+
+        vfs.chmod(&PathBuf::from("/readonly.txt"), 0o444).unwrap();
+
+        let result = vfs.write_file(&PathBuf::from("/readonly.txt"), b"try to write".to_vec());
+        assert_eq!(result, Err(VfsError::PermissionDenied));
+    }
+
+    #[test]
+    fn test_setuid_bit() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/setuid_prog"), vec![]).unwrap();
+
+        // Set setuid bit (04755)
+        vfs.chmod(&PathBuf::from("/setuid_prog"), 0o4755).unwrap();
+
+        let mode = vfs.get_mode(&PathBuf::from("/setuid_prog")).unwrap();
+        assert_eq!(mode & 0o4000, 0o4000, "Setuid bit should be set");
+        assert!(vfs.is_setuid(&PathBuf::from("/setuid_prog")), "is_setuid should return true");
+    }
+
+    #[test]
+    fn test_setgid_bit() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/setgid_prog"), vec![]).unwrap();
+
+        // Set setgid bit (02755)
+        vfs.chmod(&PathBuf::from("/setgid_prog"), 0o2755).unwrap();
+
+        let mode = vfs.get_mode(&PathBuf::from("/setgid_prog")).unwrap();
+        assert_eq!(mode & 0o2000, 0o2000, "Setgid bit should be set");
+        assert!(vfs.is_setgid(&PathBuf::from("/setgid_prog")), "is_setgid should return true");
+    }
+
+    #[test]
+    fn test_sticky_bit() {
+        let mut vfs = VirtualFileSystem::new_with_context(0, 0);
+        vfs.create_directory(PathBuf::from("/tmp")).unwrap();
+
+        // Set sticky bit (01777)
+        vfs.chmod(&PathBuf::from("/tmp"), 0o1777).unwrap();
+
+        let mode = vfs.get_mode(&PathBuf::from("/tmp")).unwrap();
+        assert_eq!(mode & 0o1000, 0o1000, "Sticky bit should be set");
+        assert!(vfs.is_sticky(&PathBuf::from("/tmp")), "is_sticky should return true");
+    }
+
+    // Integration tests
+
+    #[test]
+    fn test_full_permission_workflow() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+
+        // Create file as user 1000
+        vfs.create_file(PathBuf::from("/doc.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Check initial permissions (should be 0644 by default)
+        let mode = vfs.get_mode(&PathBuf::from("/doc.txt")).unwrap();
+        assert_eq!(mode & 0o777, 0o644);
+
+        // Change permissions to 0600
+        vfs.chmod(&PathBuf::from("/doc.txt"), 0o600).unwrap();
+
+        // Owner can read/write
+        assert!(vfs.read_file_as(&PathBuf::from("/doc.txt"), 1000, 1000).is_ok());
+        assert!(vfs
+            .write_file_as(&PathBuf::from("/doc.txt"), b"new".to_vec(), 1000, 1000)
+            .is_ok());
+
+        // Others cannot read
+        assert_eq!(
+            vfs.read_file_as(&PathBuf::from("/doc.txt"), 1001, 1001),
+            Err(VfsError::PermissionDenied)
+        );
+    }
+
+    #[test]
+    fn test_chmod_chown_combined() {
+        let mut vfs = VirtualFileSystem::new_with_context(0, 0); // Root
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        // Change ownership and permissions
+        vfs.chown(&PathBuf::from("/file.txt"), 1000, 1000).unwrap();
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o600).unwrap();
+
+        assert_eq!(vfs.get_owner(&PathBuf::from("/file.txt")).unwrap(), 1000);
+        assert_eq!(vfs.get_group(&PathBuf::from("/file.txt")).unwrap(), 1000);
+        assert_eq!(vfs.get_mode(&PathBuf::from("/file.txt")).unwrap() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn test_permission_inheritance() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+
+        // Set directory GID and setgid bit
+        vfs.chown(&PathBuf::from("/dir"), None, 2000).unwrap();
+        vfs.chmod(&PathBuf::from("/dir"), 0o2775).unwrap();
+
+        // Create file in directory - should inherit group
+        vfs.create_file(PathBuf::from("/dir/file.txt"), vec![])
+            .unwrap();
+
+        let gid = vfs.get_group(&PathBuf::from("/dir/file.txt")).unwrap();
+        assert_eq!(gid, 2000, "File should inherit directory's GID when setgid is set");
+    }
+
+    #[test]
+    fn test_umask_application() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+
+        // Set umask to 0022
+        vfs.set_umask(0o022);
+
+        // Create file - should get 0644 (0666 & ~0022)
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        let mode = vfs.get_mode(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(mode & 0o777, 0o644, "File should respect umask");
+
+        // Create directory - should get 0755 (0777 & ~0022)
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+
+        let mode = vfs.get_mode(&PathBuf::from("/dir")).unwrap();
+        assert_eq!(mode & 0o777, 0o755, "Directory should respect umask");
+    }
+
+    #[test]
+    fn test_permission_check_on_directory() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+        vfs.create_file(PathBuf::from("/dir/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        // Remove execute permission on directory (cannot traverse)
+        vfs.chmod(&PathBuf::from("/dir"), 0o644).unwrap();
+
+        // Cannot access file without execute on directory
+        let result = vfs.read_file_as(&PathBuf::from("/dir/file.txt"), 1000, 1000);
+        assert_eq!(result, Err(VfsError::PermissionDenied), "Need execute on dir to access files");
+    }
+
+    #[test]
+    fn test_setuid_execution() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/sudo"), vec![]).unwrap();
+
+        // Make it owned by root with setuid
+        vfs.chown(&PathBuf::from("/sudo"), 0, 0).unwrap();
+        vfs.chmod(&PathBuf::from("/sudo"), 0o4755).unwrap();
+
+        // When executed by user 1000, effective UID should become 0
+        let euid = vfs.get_effective_uid(&PathBuf::from("/sudo"), 1000);
+        assert_eq!(euid, 0, "Setuid should make effective UID = file owner UID");
+    }
+
+    #[test]
+    fn test_group_permission_hierarchy() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        // Owner: no permission, Group: read, Other: no permission (0040)
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o040).unwrap();
+
+        // Owner cannot read (owner permissions checked first)
+        let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1000, 1000);
+        assert_eq!(result, Err(VfsError::PermissionDenied), "Owner check before group");
+
+        // Group member (different UID, same GID) can read
+        let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1001, 1000);
+        assert!(result.is_ok(), "Group member should be able to read");
+    }
+
+    #[test]
+    fn test_permission_chain() {
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
+
+        // Create nested structure
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        vfs.create_file(PathBuf::from("/a/b/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        // Remove execute from /a
+        vfs.chmod(&PathBuf::from("/a"), 0o644).unwrap();
+
+        // Cannot access /a/b/file.txt without execute on /a
+        let result = vfs.read_file_as(&PathBuf::from("/a/b/file.txt"), 1000, 1000);
+        assert_eq!(result, Err(VfsError::PermissionDenied), "Need execute on all path components");
+    }
+
     // Property-based tests using proptest
     mod proptests {
         use super::*;
