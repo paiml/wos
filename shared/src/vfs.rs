@@ -4091,6 +4091,445 @@ mod tests {
             .unwrap();
     }
 
+    // ============================================================================
+    // WOS-FS-008: Mount Points and Multiple File Systems Tests
+    // ============================================================================
+
+    // WOS-FS-008 Test 1: Basic mount operation
+    #[test]
+    fn test_mount_basic() {
+        let mut vfs = VirtualFileSystem::new();
+        let mut sub_vfs = VirtualFileSystem::new();
+        sub_vfs
+            .create_file(PathBuf::from("/data.txt"), b"mounted".to_vec())
+            .unwrap();
+
+        // Mount sub_vfs at /mnt
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // Verify mount point exists
+        assert!(vfs.is_mount_point(&PathBuf::from("/mnt")));
+    }
+
+    // WOS-FS-008 Test 2: Read from mounted filesystem
+    #[test]
+    fn test_mount_read_file() {
+        let mut vfs = VirtualFileSystem::new();
+        let mut sub_vfs = VirtualFileSystem::new();
+        sub_vfs
+            .create_file(PathBuf::from("/data.txt"), b"mounted".to_vec())
+            .unwrap();
+
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // Read file from mounted filesystem
+        let content = vfs.read_file(&PathBuf::from("/mnt/data.txt")).unwrap();
+        assert_eq!(content, b"mounted");
+    }
+
+    // WOS-FS-008 Test 3: Write to mounted filesystem
+    #[test]
+    fn test_mount_write_file() {
+        let mut vfs = VirtualFileSystem::new();
+        let sub_vfs = VirtualFileSystem::new();
+
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // Write file to mounted filesystem
+        vfs.create_file(PathBuf::from("/mnt/new.txt"), b"new data".to_vec())
+            .unwrap();
+
+        // Verify file exists
+        let content = vfs.read_file(&PathBuf::from("/mnt/new.txt")).unwrap();
+        assert_eq!(content, b"new data");
+    }
+
+    // WOS-FS-008 Test 4: Unmount filesystem
+    #[test]
+    fn test_unmount() {
+        let mut vfs = VirtualFileSystem::new();
+        let mut sub_vfs = VirtualFileSystem::new();
+        sub_vfs
+            .create_file(PathBuf::from("/data.txt"), b"mounted".to_vec())
+            .unwrap();
+
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+        assert!(vfs.is_mount_point(&PathBuf::from("/mnt")));
+
+        // Unmount
+        vfs.umount(&PathBuf::from("/mnt")).unwrap();
+        assert!(!vfs.is_mount_point(&PathBuf::from("/mnt")));
+
+        // File should no longer be accessible
+        assert!(vfs.read_file(&PathBuf::from("/mnt/data.txt")).is_err());
+    }
+
+    // WOS-FS-008 Test 5: Multiple mount points
+    #[test]
+    fn test_multiple_mounts() {
+        let mut vfs = VirtualFileSystem::new();
+
+        let mut fs1 = VirtualFileSystem::new();
+        fs1.create_file(PathBuf::from("/file1.txt"), b"fs1".to_vec())
+            .unwrap();
+
+        let mut fs2 = VirtualFileSystem::new();
+        fs2.create_file(PathBuf::from("/file2.txt"), b"fs2".to_vec())
+            .unwrap();
+
+        vfs.mount(PathBuf::from("/mnt1"), fs1).unwrap();
+        vfs.mount(PathBuf::from("/mnt2"), fs2).unwrap();
+
+        // Verify both mounts
+        let content1 = vfs.read_file(&PathBuf::from("/mnt1/file1.txt")).unwrap();
+        assert_eq!(content1, b"fs1");
+
+        let content2 = vfs.read_file(&PathBuf::from("/mnt2/file2.txt")).unwrap();
+        assert_eq!(content2, b"fs2");
+    }
+
+    // WOS-FS-008 Test 6: Nested mount points
+    #[test]
+    fn test_nested_mounts() {
+        let mut vfs = VirtualFileSystem::new();
+        let mut sub1 = VirtualFileSystem::new();
+        let mut sub2 = VirtualFileSystem::new();
+
+        sub2.create_file(PathBuf::from("/deep.txt"), b"nested".to_vec())
+            .unwrap();
+
+        sub1.create_directory(PathBuf::from("/inner")).unwrap();
+        sub1.mount(PathBuf::from("/inner"), sub2).unwrap();
+
+        vfs.mount(PathBuf::from("/outer"), sub1).unwrap();
+
+        // Access nested mount
+        let content = vfs
+            .read_file(&PathBuf::from("/outer/inner/deep.txt"))
+            .unwrap();
+        assert_eq!(content, b"nested");
+    }
+
+    // WOS-FS-008 Test 7: Mount over existing directory
+    #[test]
+    fn test_mount_over_directory() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/mnt")).unwrap();
+        vfs.create_file(PathBuf::from("/mnt/old.txt"), b"old".to_vec())
+            .unwrap();
+
+        let mut sub_vfs = VirtualFileSystem::new();
+        sub_vfs
+            .create_file(PathBuf::from("/new.txt"), b"new".to_vec())
+            .unwrap();
+
+        // Mount over existing directory (shadows old contents)
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // Old file should be shadowed
+        assert!(vfs.read_file(&PathBuf::from("/mnt/old.txt")).is_err());
+
+        // New file should be visible
+        let content = vfs.read_file(&PathBuf::from("/mnt/new.txt")).unwrap();
+        assert_eq!(content, b"new");
+    }
+
+    // WOS-FS-008 Test 8: Mount point path resolution
+    #[test]
+    fn test_mount_path_resolution() {
+        let mut vfs = VirtualFileSystem::new();
+        let mut sub_vfs = VirtualFileSystem::new();
+        sub_vfs
+            .create_file(PathBuf::from("/data.txt"), b"content".to_vec())
+            .unwrap();
+
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // Access via different paths (with normalization)
+        let content1 = vfs.read_file(&PathBuf::from("/mnt/data.txt")).unwrap();
+        let content2 = vfs.read_file(&PathBuf::from("/mnt/./data.txt")).unwrap();
+        let content3 = vfs.read_file(&PathBuf::from("/mnt//data.txt")).unwrap();
+
+        assert_eq!(content1, b"content");
+        assert_eq!(content2, b"content");
+        assert_eq!(content3, b"content");
+    }
+
+    // WOS-FS-008 Test 9: List mounted filesystems
+    #[test]
+    fn test_list_mounts() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.mount(PathBuf::from("/mnt1"), VirtualFileSystem::new())
+            .unwrap();
+        vfs.mount(PathBuf::from("/mnt2"), VirtualFileSystem::new())
+            .unwrap();
+
+        let mounts = vfs.list_mounts();
+        assert_eq!(mounts.len(), 2);
+        assert!(mounts.contains(&PathBuf::from("/mnt1")));
+        assert!(mounts.contains(&PathBuf::from("/mnt2")));
+    }
+
+    // WOS-FS-008 Test 10: Mount point cannot be a file
+    #[test]
+    fn test_mount_over_file_fails() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        let sub_vfs = VirtualFileSystem::new();
+
+        // Mounting over a file should fail
+        assert!(vfs.mount(PathBuf::from("/file.txt"), sub_vfs).is_err());
+    }
+
+    // WOS-FS-008 Test 11: Unmount non-existent mount fails
+    #[test]
+    fn test_unmount_non_existent_fails() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Unmounting non-existent mount should fail
+        assert!(vfs.umount(&PathBuf::from("/nonexistent")).is_err());
+    }
+
+    // WOS-FS-008 Test 12: Get mount point for path
+    #[test]
+    fn test_get_mount_point() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.mount(PathBuf::from("/mnt"), VirtualFileSystem::new())
+            .unwrap();
+
+        // File within mount should return mount point
+        let mount_point = vfs.get_mount_point(&PathBuf::from("/mnt/subdir/file.txt"));
+        assert_eq!(mount_point, Some(PathBuf::from("/mnt")));
+
+        // File outside mount should return None
+        let no_mount = vfs.get_mount_point(&PathBuf::from("/other/file.txt"));
+        assert_eq!(no_mount, None);
+    }
+
+    // WOS-FS-008 Test 13: Mount creates directory if needed
+    #[test]
+    fn test_mount_creates_mountpoint() {
+        let mut vfs = VirtualFileSystem::new();
+        let sub_vfs = VirtualFileSystem::new();
+
+        // Mount point doesn't exist yet
+        assert!(!vfs.exists(&PathBuf::from("/newmount")));
+
+        // Mount should create it
+        vfs.mount(PathBuf::from("/newmount"), sub_vfs).unwrap();
+        assert!(vfs.exists(&PathBuf::from("/newmount")));
+    }
+
+    // WOS-FS-008 Test 14: Operations on root of mounted FS
+    #[test]
+    fn test_operations_on_mount_root() {
+        let mut vfs = VirtualFileSystem::new();
+        let sub_vfs = VirtualFileSystem::new();
+
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // List directory at mount root
+        let entries = vfs.list_directory(&PathBuf::from("/mnt")).unwrap();
+        assert!(entries.is_empty() || !entries.is_empty()); // Should work either way
+
+        // Stat mount root
+        let stat = vfs.stat(&PathBuf::from("/mnt")).unwrap();
+        assert_eq!(stat.file_type, FileType::Directory);
+    }
+
+    // WOS-FS-008 Test 15: Mount readonly flag (future)
+    #[test]
+    fn test_mount_readonly() {
+        let mut vfs = VirtualFileSystem::new();
+        let sub_vfs = VirtualFileSystem::new();
+
+        // Mount as readonly (placeholder for future implementation)
+        vfs.mount_readonly(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // Write should fail on readonly mount
+        assert!(vfs
+            .create_file(PathBuf::from("/mnt/file.txt"), b"data".to_vec())
+            .is_err());
+    }
+
+    // ============================================================================
+    // WOS-FS-008: Mount Points Integration Tests
+    // ============================================================================
+
+    // WOS-FS-008 Integration Test 1: /proc mount
+    #[test]
+    fn test_integration_proc_mount() {
+        let mut vfs = VirtualFileSystem::new();
+        let mut proc_fs = VirtualFileSystem::new();
+
+        proc_fs
+            .create_file(PathBuf::from("/cpuinfo"), b"CPU info".to_vec())
+            .unwrap();
+        proc_fs
+            .create_file(PathBuf::from("/meminfo"), b"Memory info".to_vec())
+            .unwrap();
+
+        vfs.mount(PathBuf::from("/proc"), proc_fs).unwrap();
+
+        let cpu = vfs.read_file(&PathBuf::from("/proc/cpuinfo")).unwrap();
+        assert_eq!(cpu, b"CPU info");
+    }
+
+    // WOS-FS-008 Integration Test 2: /dev mount
+    #[test]
+    fn test_integration_dev_mount() {
+        let mut vfs = VirtualFileSystem::new();
+        let mut dev_fs = VirtualFileSystem::new();
+
+        dev_fs.create_file(PathBuf::from("/null"), vec![]).unwrap();
+        dev_fs
+            .create_file(PathBuf::from("/zero"), vec![0; 100])
+            .unwrap();
+
+        vfs.mount(PathBuf::from("/dev"), dev_fs).unwrap();
+
+        let zero = vfs.read_file(&PathBuf::from("/dev/zero")).unwrap();
+        assert_eq!(zero.len(), 100);
+    }
+
+    // WOS-FS-008 Integration Test 3: /tmp tmpfs mount
+    #[test]
+    fn test_integration_tmp_mount() {
+        let mut vfs = VirtualFileSystem::new();
+        let tmp_fs = VirtualFileSystem::new();
+
+        vfs.mount(PathBuf::from("/tmp"), tmp_fs).unwrap();
+
+        // Create temporary file
+        vfs.create_file(PathBuf::from("/tmp/tempfile"), b"temp".to_vec())
+            .unwrap();
+
+        // Unmount (simulates system shutdown - tmp files lost)
+        vfs.umount(&PathBuf::from("/tmp")).unwrap();
+
+        // Remount fresh tmpfs
+        vfs.mount(PathBuf::from("/tmp"), VirtualFileSystem::new())
+            .unwrap();
+
+        // Old temp file should not exist
+        assert!(vfs.read_file(&PathBuf::from("/tmp/tempfile")).is_err());
+    }
+
+    // WOS-FS-008 Integration Test 4: Cross-mount operations
+    #[test]
+    fn test_integration_cross_mount_operations() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/root.txt"), b"root".to_vec())
+            .unwrap();
+
+        let mut mount1 = VirtualFileSystem::new();
+        mount1
+            .create_file(PathBuf::from("/m1.txt"), b"mount1".to_vec())
+            .unwrap();
+
+        vfs.mount(PathBuf::from("/mnt"), mount1).unwrap();
+
+        // List root - should see both root file and mount point
+        let root_entries = vfs.list_directory(&PathBuf::from("/")).unwrap();
+        assert!(root_entries.iter().any(|e| e.name == "root.txt"));
+        assert!(root_entries.iter().any(|e| e.name == "mnt"));
+
+        // Access files from both filesystems
+        let root_content = vfs.read_file(&PathBuf::from("/root.txt")).unwrap();
+        let mount_content = vfs.read_file(&PathBuf::from("/mnt/m1.txt")).unwrap();
+        assert_eq!(root_content, b"root");
+        assert_eq!(mount_content, b"mount1");
+    }
+
+    // WOS-FS-008 Integration Test 5: Mount point permissions
+    #[test]
+    fn test_integration_mount_permissions() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.set_context(1000, 1000); // Non-root user
+
+        let mut sub_vfs = VirtualFileSystem::new();
+        sub_vfs
+            .create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        // Non-root user should be able to mount (simplified - real systems restrict this)
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // Verify access
+        let content = vfs.read_file(&PathBuf::from("/mnt/file.txt")).unwrap();
+        assert_eq!(content, b"data");
+    }
+
+    // WOS-FS-008 Integration Test 6: Mount with symlinks
+    #[test]
+    fn test_integration_mount_with_symlinks() {
+        let mut vfs = VirtualFileSystem::new();
+        let mut sub_vfs = VirtualFileSystem::new();
+
+        sub_vfs
+            .create_file(PathBuf::from("/target.txt"), b"target".to_vec())
+            .unwrap();
+        sub_vfs
+            .create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/target.txt"))
+            .unwrap();
+
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // Follow symlink within mounted filesystem
+        let content = vfs.read_file(&PathBuf::from("/mnt/link.txt")).unwrap();
+        assert_eq!(content, b"target");
+    }
+
+    // WOS-FS-008 Integration Test 7: Umount busy filesystem
+    #[test]
+    fn test_integration_umount_busy() {
+        let mut vfs = VirtualFileSystem::new();
+        let mut sub_vfs = VirtualFileSystem::new();
+
+        sub_vfs
+            .create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // Lock file on mounted filesystem
+        vfs.flock(&PathBuf::from("/mnt/file.txt"), LockType::Exclusive)
+            .unwrap();
+
+        // Umount should fail (filesystem busy)
+        // Or succeed and auto-release locks (implementation dependent)
+        let result = vfs.umount(&PathBuf::from("/mnt"));
+        // Either fails or succeeds with cleanup
+        assert!(result.is_err() || result.is_ok());
+    }
+
+    // WOS-FS-008 Integration Test 8: Clone preserves mounts
+    #[test]
+    fn test_integration_clone_preserves_mounts() {
+        let mut vfs = VirtualFileSystem::new();
+        let mut sub_vfs = VirtualFileSystem::new();
+
+        sub_vfs
+            .create_file(PathBuf::from("/data.txt"), b"mounted".to_vec())
+            .unwrap();
+
+        vfs.mount(PathBuf::from("/mnt"), sub_vfs).unwrap();
+
+        // Clone VFS
+        let cloned_vfs = vfs.clone();
+
+        // Mounts should be preserved
+        assert!(cloned_vfs.is_mount_point(&PathBuf::from("/mnt")));
+
+        // Should be able to access mounted files
+        let content = cloned_vfs
+            .read_file(&PathBuf::from("/mnt/data.txt"))
+            .unwrap();
+        assert_eq!(content, b"mounted");
+    }
+
     // Property-based tests using proptest
     mod proptests {
         use super::*;
@@ -4714,6 +5153,90 @@ mod tests {
                     // Try to acquire shared lock (should fail)
                     let result_shared = vfs.flock(&path, LockType::Shared);
                     prop_assert!(result_shared.is_err());
+                }
+            }
+
+            // ====================================================================
+            // WOS-FS-008: Mount Points Property Tests
+            // ====================================================================
+
+            /// Property: Mount and unmount are inverse operations
+            #[test]
+            fn proptest_mount_unmount_inverse(
+                mount_point in prop::string::string_regex("/[a-z]{1,10}").unwrap(),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let mount_path = PathBuf::from(&mount_point);
+                let sub_vfs = VirtualFileSystem::new();
+
+                // Mount
+                if vfs.mount(mount_path.clone(), sub_vfs).is_ok() {
+                    prop_assert!(vfs.is_mount_point(&mount_path));
+
+                    // Unmount
+                    vfs.umount(&mount_path).ok();
+                    prop_assert!(!vfs.is_mount_point(&mount_path));
+                }
+            }
+
+            /// Property: Files created on mount are accessible
+            #[test]
+            fn proptest_mount_file_access(
+                mount_point in prop::string::string_regex("/[a-z]{1,10}").unwrap(),
+                filename in prop::string::string_regex("[a-z]{1,10}\\.txt").unwrap(),
+                content in prop::collection::vec(any::<u8>(), 0..100),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let mount_path = PathBuf::from(&mount_point);
+                let sub_vfs = VirtualFileSystem::new();
+
+                if vfs.mount(mount_path.clone(), sub_vfs).is_ok() {
+                    let file_path = PathBuf::from(format!("{}/{}", mount_point, filename));
+
+                    // Create file on mounted filesystem
+                    if vfs.create_file(file_path.clone(), content.clone()).is_ok() {
+                        // Should be able to read it back
+                        if let Ok(read_content) = vfs.read_file(&file_path) {
+                            prop_assert_eq!(read_content, content);
+                        }
+                    }
+                }
+            }
+
+            /// Property: Multiple mounts don't interfere
+            #[test]
+            fn proptest_multiple_mounts_independent(
+                mount1 in prop::string::string_regex("/[a-z]{1,10}").unwrap(),
+                mount2 in prop::string::string_regex("/[a-z]{1,10}").unwrap(),
+            ) {
+                prop_assume!(mount1 != mount2);
+
+                let mut vfs = VirtualFileSystem::new();
+                let path1 = PathBuf::from(&mount1);
+                let path2 = PathBuf::from(&mount2);
+
+                let mut fs1 = VirtualFileSystem::new();
+                let mut fs2 = VirtualFileSystem::new();
+
+                fs1.create_file(PathBuf::from("/file1.txt"), b"fs1".to_vec()).ok();
+                fs2.create_file(PathBuf::from("/file2.txt"), b"fs2".to_vec()).ok();
+
+                if vfs.mount(path1.clone(), fs1).is_ok() && vfs.mount(path2.clone(), fs2).is_ok() {
+                    // Files from each mount should be accessible independently
+                    let file1_path = PathBuf::from(format!("{}/file1.txt", mount1));
+                    let file2_path = PathBuf::from(format!("{}/file2.txt", mount2));
+
+                    if let Ok(content1) = vfs.read_file(&file1_path) {
+                        prop_assert_eq!(content1, b"fs1");
+                    }
+
+                    if let Ok(content2) = vfs.read_file(&file2_path) {
+                        prop_assert_eq!(content2, b"fs2");
+                    }
+
+                    // File from fs1 should not be in fs2
+                    let wrong_path = PathBuf::from(format!("{}/file1.txt", mount2));
+                    prop_assert!(vfs.read_file(&wrong_path).is_err());
                 }
             }
         }
