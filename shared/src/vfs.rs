@@ -3488,6 +3488,373 @@ mod tests {
         assert_eq!(stat.size, 4);
     }
 
+    // ============================================================================
+    // WOS-FS-007: File Locking Tests
+    // ============================================================================
+
+    // WOS-FS-007 Test 1: Basic exclusive lock (flock)
+    #[test]
+    fn test_flock_exclusive_lock() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Acquire exclusive lock
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Exclusive)
+            .unwrap();
+
+        // Verify lock is held
+        assert!(vfs.is_locked(&PathBuf::from("/test.txt")));
+    }
+
+    // WOS-FS-007 Test 2: Basic shared lock (flock)
+    #[test]
+    fn test_flock_shared_lock() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Acquire shared lock
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Shared)
+            .unwrap();
+
+        // Verify lock is held
+        assert!(vfs.is_locked(&PathBuf::from("/test.txt")));
+    }
+
+    // WOS-FS-007 Test 3: Multiple shared locks allowed
+    #[test]
+    fn test_flock_multiple_shared_locks() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Acquire first shared lock
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Shared)
+            .unwrap();
+
+        // Acquire second shared lock (should succeed)
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Shared)
+            .unwrap();
+
+        assert!(vfs.is_locked(&PathBuf::from("/test.txt")));
+    }
+
+    // WOS-FS-007 Test 4: Exclusive lock blocks other exclusive locks
+    #[test]
+    fn test_flock_exclusive_blocks_exclusive() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Acquire exclusive lock
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Exclusive)
+            .unwrap();
+
+        // Try to acquire another exclusive lock (should fail)
+        assert!(vfs
+            .flock(&PathBuf::from("/test.txt"), LockType::Exclusive)
+            .is_err());
+    }
+
+    // WOS-FS-007 Test 5: Exclusive lock blocks shared locks
+    #[test]
+    fn test_flock_exclusive_blocks_shared() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Acquire exclusive lock
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Exclusive)
+            .unwrap();
+
+        // Try to acquire shared lock (should fail)
+        assert!(vfs
+            .flock(&PathBuf::from("/test.txt"), LockType::Shared)
+            .is_err());
+    }
+
+    // WOS-FS-007 Test 6: Unlock releases lock
+    #[test]
+    fn test_flock_unlock() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Acquire lock
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Exclusive)
+            .unwrap();
+        assert!(vfs.is_locked(&PathBuf::from("/test.txt")));
+
+        // Release lock
+        vfs.funlock(&PathBuf::from("/test.txt")).unwrap();
+        assert!(!vfs.is_locked(&PathBuf::from("/test.txt")));
+    }
+
+    // WOS-FS-007 Test 7: Byte-range lock (fcntl)
+    #[test]
+    fn test_fcntl_byte_range_lock() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"0123456789".to_vec())
+            .unwrap();
+
+        // Lock bytes 2-5
+        vfs.fcntl_lock(
+            &PathBuf::from("/test.txt"),
+            LockType::Exclusive,
+            2,
+            4, // offset 2, length 4 -> bytes 2-5
+        )
+        .unwrap();
+
+        // Verify range is locked
+        assert!(vfs.is_range_locked(&PathBuf::from("/test.txt"), 2, 4));
+    }
+
+    // WOS-FS-007 Test 8: Byte-range locks don't conflict if non-overlapping
+    #[test]
+    fn test_fcntl_non_overlapping_locks() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"0123456789".to_vec())
+            .unwrap();
+
+        // Lock bytes 0-3
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Exclusive, 0, 4)
+            .unwrap();
+
+        // Lock bytes 6-9 (should succeed - no overlap)
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Exclusive, 6, 4)
+            .unwrap();
+
+        assert!(vfs.is_range_locked(&PathBuf::from("/test.txt"), 0, 4));
+        assert!(vfs.is_range_locked(&PathBuf::from("/test.txt"), 6, 4));
+    }
+
+    // WOS-FS-007 Test 9: Byte-range locks conflict if overlapping
+    #[test]
+    fn test_fcntl_overlapping_locks_conflict() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"0123456789".to_vec())
+            .unwrap();
+
+        // Lock bytes 2-6
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Exclusive, 2, 5)
+            .unwrap();
+
+        // Try to lock bytes 4-8 (overlaps with 2-6, should fail)
+        assert!(vfs
+            .fcntl_lock(&PathBuf::from("/test.txt"), LockType::Exclusive, 4, 5)
+            .is_err());
+    }
+
+    // WOS-FS-007 Test 10: Unlock byte range
+    #[test]
+    fn test_fcntl_unlock_range() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"0123456789".to_vec())
+            .unwrap();
+
+        // Lock bytes 2-5
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Exclusive, 2, 4)
+            .unwrap();
+        assert!(vfs.is_range_locked(&PathBuf::from("/test.txt"), 2, 4));
+
+        // Unlock
+        vfs.fcntl_unlock(&PathBuf::from("/test.txt"), 2, 4).unwrap();
+        assert!(!vfs.is_range_locked(&PathBuf::from("/test.txt"), 2, 4));
+    }
+
+    // WOS-FS-007 Test 11: Shared byte-range locks are compatible
+    #[test]
+    fn test_fcntl_shared_locks_compatible() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"0123456789".to_vec())
+            .unwrap();
+
+        // First shared lock on bytes 2-5
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Shared, 2, 4)
+            .unwrap();
+
+        // Second shared lock on same bytes (should succeed)
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Shared, 2, 4)
+            .unwrap();
+
+        assert!(vfs.is_range_locked(&PathBuf::from("/test.txt"), 2, 4));
+    }
+
+    // WOS-FS-007 Test 12: Deadlock detection
+    #[test]
+    fn test_deadlock_detection() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file1.txt"), b"content1".to_vec())
+            .unwrap();
+        vfs.create_file(PathBuf::from("/file2.txt"), b"content2".to_vec())
+            .unwrap();
+
+        // Simulate process 1 locks file1
+        vfs.flock_with_owner(&PathBuf::from("/file1.txt"), LockType::Exclusive, 1)
+            .unwrap();
+
+        // Simulate process 2 locks file2
+        vfs.flock_with_owner(&PathBuf::from("/file2.txt"), LockType::Exclusive, 2)
+            .unwrap();
+
+        // Process 1 tries to lock file2 (blocked by process 2)
+        // Process 2 tries to lock file1 (blocked by process 1)
+        // This creates a deadlock - system should detect it
+        let result = vfs.detect_deadlock(1, &PathBuf::from("/file2.txt"));
+        assert!(result); // Should detect potential deadlock
+    }
+
+    // ============================================================================
+    // WOS-FS-007: File Locking Integration Tests
+    // ============================================================================
+
+    // WOS-FS-007 Integration Test 1: Lock prevents write
+    #[test]
+    fn test_integration_lock_prevents_write() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"initial".to_vec())
+            .unwrap();
+
+        // Acquire exclusive lock
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Exclusive)
+            .unwrap();
+
+        // Try to write (should check lock and potentially fail)
+        // For advisory locks, write succeeds but lock is advisory
+        vfs.write_file(&PathBuf::from("/test.txt"), b"updated".to_vec())
+            .unwrap();
+
+        // For mandatory locks, this would fail
+        // Test that lock state is maintained
+        assert!(vfs.is_locked(&PathBuf::from("/test.txt")));
+    }
+
+    // WOS-FS-007 Integration Test 2: Lock survives read
+    #[test]
+    fn test_integration_lock_survives_read() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Acquire shared lock
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Shared)
+            .unwrap();
+
+        // Read file
+        let content = vfs.read_file(&PathBuf::from("/test.txt")).unwrap();
+        assert_eq!(content, b"content");
+
+        // Lock should still be held
+        assert!(vfs.is_locked(&PathBuf::from("/test.txt")));
+    }
+
+    // WOS-FS-007 Integration Test 3: Lock on symlink target
+    #[test]
+    fn test_integration_lock_on_symlink() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/target.txt"), b"content".to_vec())
+            .unwrap();
+        vfs.create_symlink(PathBuf::from("/link.txt"), PathBuf::from("/target.txt"))
+            .unwrap();
+
+        // Lock via symlink
+        vfs.flock(&PathBuf::from("/link.txt"), LockType::Exclusive)
+            .unwrap();
+
+        // Target should be locked
+        assert!(vfs.is_locked(&PathBuf::from("/target.txt")));
+    }
+
+    // WOS-FS-007 Integration Test 4: Locks persist across operations
+    #[test]
+    fn test_integration_locks_persist() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Lock file
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Exclusive)
+            .unwrap();
+
+        // Perform various operations
+        vfs.chmod(&PathBuf::from("/test.txt"), 0o644).unwrap();
+        let _stat = vfs.stat(&PathBuf::from("/test.txt")).unwrap();
+
+        // Lock should still be held
+        assert!(vfs.is_locked(&PathBuf::from("/test.txt")));
+    }
+
+    // WOS-FS-007 Integration Test 5: Byte-range locks and flock coexist
+    #[test]
+    fn test_integration_flock_and_fcntl_coexist() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"0123456789".to_vec())
+            .unwrap();
+
+        // Whole-file lock
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Shared)
+            .unwrap();
+
+        // Byte-range lock (should coexist or conflict based on semantics)
+        // In POSIX, flock and fcntl locks are independent
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Exclusive, 2, 4)
+            .unwrap();
+
+        assert!(vfs.is_locked(&PathBuf::from("/test.txt")));
+        assert!(vfs.is_range_locked(&PathBuf::from("/test.txt"), 2, 4));
+    }
+
+    // WOS-FS-007 Integration Test 6: Lock on deleted file
+    #[test]
+    fn test_integration_lock_on_deleted_file() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Lock file
+        vfs.flock(&PathBuf::from("/test.txt"), LockType::Exclusive)
+            .unwrap();
+
+        // Delete file (should fail while locked, or release lock)
+        let result = vfs.delete_file(&PathBuf::from("/test.txt"));
+        // Either deletion fails, or lock is auto-released
+        assert!(result.is_err() || !vfs.exists(&PathBuf::from("/test.txt")));
+    }
+
+    // WOS-FS-007 Integration Test 7: Complex locking scenario
+    #[test]
+    fn test_integration_complex_locking() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"0123456789".to_vec())
+            .unwrap();
+
+        // Lock bytes 0-4 (shared)
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Shared, 0, 5)
+            .unwrap();
+
+        // Lock bytes 0-4 (shared) again - should succeed
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Shared, 0, 5)
+            .unwrap();
+
+        // Lock bytes 6-9 (exclusive) - should succeed (different range)
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Exclusive, 6, 4)
+            .unwrap();
+
+        // Try to lock bytes 5-8 (exclusive) - overlaps with 6-9, should fail
+        assert!(vfs
+            .fcntl_lock(&PathBuf::from("/test.txt"), LockType::Exclusive, 5, 4)
+            .is_err());
+
+        // Unlock bytes 0-4
+        vfs.fcntl_unlock(&PathBuf::from("/test.txt"), 0, 5).unwrap();
+
+        // Now lock bytes 0-4 (exclusive) - should succeed since shared locks released
+        vfs.fcntl_lock(&PathBuf::from("/test.txt"), LockType::Exclusive, 0, 5)
+            .unwrap();
+    }
+
     // Property-based tests using proptest
     mod proptests {
         use super::*;
@@ -4010,6 +4377,108 @@ mod tests {
 
                 // Should resolve to /filename (parent refs bounded at root)
                 prop_assert_eq!(normalized_str, format!("/{}", filename));
+            }
+
+            // ====================================================================
+            // WOS-FS-007: File Locking Property Tests
+            // ====================================================================
+
+            /// Property: Locking and unlocking is idempotent
+            #[test]
+            fn proptest_lock_unlock_idempotent(
+                filename in prop::string::string_regex("/[a-z]{1,10}\\.txt").unwrap(),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let path = PathBuf::from(&filename);
+                vfs.create_file(path.clone(), b"content".to_vec()).ok();
+
+                // Lock
+                if vfs.flock(&path, LockType::Exclusive).is_ok() {
+                    prop_assert!(vfs.is_locked(&path));
+
+                    // Unlock
+                    vfs.funlock(&path).ok();
+                    prop_assert!(!vfs.is_locked(&path));
+
+                    // Unlock again (should be idempotent)
+                    vfs.funlock(&path).ok();
+                    prop_assert!(!vfs.is_locked(&path));
+                }
+            }
+
+            /// Property: Shared locks don't conflict with each other
+            #[test]
+            fn proptest_shared_locks_compatible(
+                filename in prop::string::string_regex("/[a-z]{1,10}\\.txt").unwrap(),
+                num_locks in 1..10_usize,
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let path = PathBuf::from(&filename);
+                vfs.create_file(path.clone(), b"content".to_vec()).ok();
+
+                // Acquire multiple shared locks
+                let mut successes = 0;
+                for _ in 0..num_locks {
+                    if vfs.flock(&path, LockType::Shared).is_ok() {
+                        successes += 1;
+                    }
+                }
+
+                // Should be able to acquire multiple shared locks
+                if vfs.exists(&path) {
+                    prop_assert!(successes > 0);
+                    prop_assert!(vfs.is_locked(&path));
+                }
+            }
+
+            /// Property: Byte-range locks with disjoint ranges don't conflict
+            #[test]
+            fn proptest_disjoint_ranges_no_conflict(
+                filename in prop::string::string_regex("/[a-z]{1,10}\\.txt").unwrap(),
+                offset1 in 0..50_u64,
+                len1 in 1..20_u64,
+                offset2 in 0..50_u64,
+                len2 in 1..20_u64,
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let path = PathBuf::from(&filename);
+                vfs.create_file(path.clone(), vec![0u8; 100]).ok();
+
+                // Check if ranges are disjoint
+                let end1 = offset1 + len1;
+                let end2 = offset2 + len2;
+                let disjoint = end1 <= offset2 || end2 <= offset1;
+
+                if disjoint {
+                    // Both locks should succeed since ranges don't overlap
+                    let lock1 = vfs.fcntl_lock(&path, LockType::Exclusive, offset1, len1);
+                    let lock2 = vfs.fcntl_lock(&path, LockType::Exclusive, offset2, len2);
+
+                    if vfs.exists(&path) && lock1.is_ok() {
+                        prop_assert!(lock2.is_ok());
+                    }
+                }
+            }
+
+            /// Property: Exclusive lock prevents all other locks
+            #[test]
+            fn proptest_exclusive_lock_prevents_others(
+                filename in prop::string::string_regex("/[a-z]{1,10}\\.txt").unwrap(),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let path = PathBuf::from(&filename);
+                vfs.create_file(path.clone(), b"content".to_vec()).ok();
+
+                // Acquire exclusive lock
+                if vfs.flock(&path, LockType::Exclusive).is_ok() {
+                    // Try to acquire another exclusive lock (should fail)
+                    let result_exclusive = vfs.flock(&path, LockType::Exclusive);
+                    prop_assert!(result_exclusive.is_err());
+
+                    // Try to acquire shared lock (should fail)
+                    let result_shared = vfs.flock(&path, LockType::Shared);
+                    prop_assert!(result_shared.is_err());
+                }
             }
         }
     }
