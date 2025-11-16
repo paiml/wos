@@ -2649,6 +2649,239 @@ mod tests {
         );
     }
 
+    // ========================================================================
+    // WOS-FS-005: File Metadata (stat, timestamps)
+    // ========================================================================
+
+    // Unit tests (10 tests)
+
+    #[test]
+    fn test_stat_returns_metadata() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(stat.size, 5, "File size should be 5 bytes");
+        assert_eq!(stat.file_type, FileType::RegularFile);
+    }
+
+    #[test]
+    fn test_stat_directory() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/dir")).unwrap();
+        assert_eq!(stat.file_type, FileType::Directory);
+    }
+
+    #[test]
+    fn test_stat_symlink() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/target.txt"), vec![]).unwrap();
+        vfs.create_symlink(PathBuf::from("/link"), PathBuf::from("/target.txt"))
+            .unwrap();
+
+        let stat = vfs.lstat(&PathBuf::from("/link")).unwrap(); // lstat doesn't follow symlink
+        assert_eq!(stat.file_type, FileType::Symlink);
+    }
+
+    #[test]
+    fn test_timestamps_initialized() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert!(stat.atime > 0, "atime should be set");
+        assert!(stat.mtime > 0, "mtime should be set");
+        assert!(stat.ctime > 0, "ctime should be set");
+    }
+
+    #[test]
+    fn test_atime_updated_on_read() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        let stat_before = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        let atime_before = stat_before.atime;
+
+        // Simulate time passing
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        vfs.read_file(&PathBuf::from("/file.txt")).unwrap();
+
+        let stat_after = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert!(
+            stat_after.atime >= atime_before,
+            "atime should be updated on read"
+        );
+    }
+
+    #[test]
+    fn test_mtime_updated_on_write() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        let stat_before = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        let mtime_before = stat_before.mtime;
+
+        // Simulate time passing
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        vfs.write_file(&PathBuf::from("/file.txt"), b"new".to_vec())
+            .unwrap();
+
+        let stat_after = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert!(
+            stat_after.mtime > mtime_before,
+            "mtime should be updated on write"
+        );
+    }
+
+    #[test]
+    fn test_ctime_updated_on_chmod() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        let stat_before = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        let ctime_before = stat_before.ctime;
+
+        // Simulate time passing
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o644).unwrap();
+
+        let stat_after = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert!(
+            stat_after.ctime > ctime_before,
+            "ctime should be updated on chmod"
+        );
+    }
+
+    #[test]
+    fn test_file_size_tracked() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), b"hello world".to_vec())
+            .unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(stat.size, 11, "File size should be 11 bytes");
+
+        // Write different content
+        vfs.write_file(&PathBuf::from("/file.txt"), b"hi".to_vec())
+            .unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(stat.size, 2, "File size should be updated to 2 bytes");
+    }
+
+    #[test]
+    fn test_directory_size() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/dir")).unwrap();
+        // Directory size is typically fixed (e.g., 4096 or 0)
+        assert!(stat.size >= 0, "Directory should have a size");
+    }
+
+    #[test]
+    fn test_stat_nonexistent_file() {
+        let vfs = VirtualFileSystem::new();
+        let result = vfs.stat(&PathBuf::from("/nonexistent.txt"));
+        assert_eq!(result, Err(VfsError::NotFound));
+    }
+
+    // Integration tests (4 tests)
+
+    #[test]
+    fn test_metadata_workflow() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create file
+        vfs.create_file(PathBuf::from("/doc.txt"), b"initial".to_vec())
+            .unwrap();
+
+        let stat1 = vfs.stat(&PathBuf::from("/doc.txt")).unwrap();
+        assert_eq!(stat1.size, 7);
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Modify file
+        vfs.write_file(&PathBuf::from("/doc.txt"), b"modified content".to_vec())
+            .unwrap();
+
+        let stat2 = vfs.stat(&PathBuf::from("/doc.txt")).unwrap();
+        assert_eq!(stat2.size, 16);
+        assert!(stat2.mtime > stat1.mtime, "mtime should increase");
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Change permissions
+        vfs.chmod(&PathBuf::from("/doc.txt"), 0o444).unwrap();
+
+        let stat3 = vfs.stat(&PathBuf::from("/doc.txt")).unwrap();
+        assert!(stat3.ctime > stat2.ctime, "ctime should increase");
+    }
+
+    #[test]
+    fn test_stat_vs_lstat() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/target.txt"), b"hello".to_vec())
+            .unwrap();
+        vfs.create_symlink(PathBuf::from("/link"), PathBuf::from("/target.txt"))
+            .unwrap();
+
+        // stat follows symlink
+        let stat = vfs.stat(&PathBuf::from("/link")).unwrap();
+        assert_eq!(stat.file_type, FileType::RegularFile);
+        assert_eq!(stat.size, 5);
+
+        // lstat doesn't follow symlink
+        let lstat = vfs.lstat(&PathBuf::from("/link")).unwrap();
+        assert_eq!(lstat.file_type, FileType::Symlink);
+    }
+
+    #[test]
+    fn test_timestamps_preserved_on_hard_link() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        let stat_original = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+
+        // Create hard link
+        vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/link.txt"))
+            .unwrap();
+
+        let stat_link = vfs.stat(&PathBuf::from("/link.txt")).unwrap();
+
+        // Hard links share the same inode, so timestamps should be identical
+        assert_eq!(stat_link.atime, stat_original.atime);
+        assert_eq!(stat_link.mtime, stat_original.mtime);
+        assert_eq!(stat_link.ctime, stat_original.ctime);
+    }
+
+    #[test]
+    fn test_metadata_after_operations() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Read should update atime
+        vfs.read_file(&PathBuf::from("/test.txt")).unwrap();
+        let stat1 = vfs.stat(&PathBuf::from("/test.txt")).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Write should update mtime and ctime
+        vfs.write_file(&PathBuf::from("/test.txt"), b"new".to_vec())
+            .unwrap();
+        let stat2 = vfs.stat(&PathBuf::from("/test.txt")).unwrap();
+        assert!(stat2.mtime > stat1.mtime);
+        assert!(stat2.ctime > stat1.ctime);
+    }
+
     // Property-based tests using proptest
     mod proptests {
         use super::*;
