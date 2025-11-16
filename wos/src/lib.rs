@@ -2213,10 +2213,9 @@ impl WosWasm {
             return "mkdir: missing operand\n".to_string();
         }
 
-        // VFS doesn't have explicit directory support yet
-        // For now, just create a marker file
-        let path = std::path::PathBuf::from(&format!("{}/.directory", args[0]));
-        match self.state.vfs.create_file(path, vec![]) {
+        // Use VFS directory support
+        let path = std::path::PathBuf::from(&args[0]);
+        match self.state.vfs.create_directory(path) {
             Ok(()) => String::new(),
             Err(_) => format!("mkdir: cannot create directory '{}'\n", args[0]),
         }
