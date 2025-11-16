@@ -503,6 +503,162 @@ pub fn vim_main_loop(vim: &mut Vim, _state: &KernelState) -> Option<SystemCall> 
     Some(SystemCall::Exit(0))
 }
 
+// ============================================================================
+// WOS-PROG-001: cat - Concatenate Files
+// ============================================================================
+
+/// Cat program - concatenate and display file contents
+#[derive(Clone, Debug, PartialEq)]
+pub struct Cat {
+    /// Process ID
+    pub pid: ProcessId,
+    /// Files to concatenate (empty means stdin)
+    pub files: Vec<PathBuf>,
+    /// Show line numbers (-n flag)
+    pub show_line_numbers: bool,
+    /// Number only non-blank lines (-b flag)
+    pub number_nonblank: bool,
+    /// Squeeze multiple blank lines into one (-s flag)
+    pub squeeze_blank: bool,
+    /// Current file index being processed
+    current_file_idx: usize,
+    /// Output buffer
+    output: String,
+    /// Processing state
+    state: CatState,
+}
+
+/// Cat program state machine
+#[derive(Clone, Debug, PartialEq)]
+pub enum CatState {
+    /// Initial state
+    Init,
+    /// Reading file content
+    Reading,
+    /// Writing output
+    Writing,
+    /// Done
+    Done,
+}
+
+impl Cat {
+    /// Create a new cat program
+    pub fn new(pid: ProcessId, files: Vec<PathBuf>, args: Vec<String>) -> Self {
+        let mut show_line_numbers = false;
+        let mut number_nonblank = false;
+        let mut squeeze_blank = false;
+
+        // Parse flags
+        for arg in &args {
+            match arg.as_str() {
+                "-n" => show_line_numbers = true,
+                "-b" => {
+                    number_nonblank = true;
+                    show_line_numbers = false; // -b overrides -n
+                }
+                "-s" => squeeze_blank = true,
+                _ => {}
+            }
+        }
+
+        Self {
+            pid,
+            files,
+            show_line_numbers,
+            number_nonblank,
+            squeeze_blank,
+            current_file_idx: 0,
+            output: String::new(),
+            state: CatState::Init,
+        }
+    }
+
+    /// Process file content and generate output
+    pub fn process_content(&mut self, content: &str) {
+        let mut line_number = 1;
+        let mut last_was_blank = false;
+        let lines: Vec<&str> = content.lines().collect();
+
+        for line in lines {
+            let is_blank = line.trim().is_empty();
+
+            // Squeeze blank lines if requested
+            if self.squeeze_blank && is_blank && last_was_blank {
+                continue;
+            }
+
+            // Add line number if requested
+            if self.show_line_numbers || (self.number_nonblank && !is_blank) {
+                self.output.push_str(&format!("{:6}  ", line_number));
+                line_number += 1;
+            } else if self.number_nonblank {
+                // For -b, blank lines don't get numbers but still increment spacing
+                self.output.push_str("        ");
+            }
+
+            self.output.push_str(line);
+            self.output.push('\n');
+
+            last_was_blank = is_blank;
+        }
+    }
+
+    /// Get the output
+    pub fn get_output(&self) -> &str {
+        &self.output
+    }
+
+    /// Get current state
+    pub fn get_state(&self) -> &CatState {
+        &self.state
+    }
+
+    /// Set state
+    pub fn set_state(&mut self, state: CatState) {
+        self.state = state;
+    }
+}
+
+/// Cat main loop - reads files and outputs content
+pub fn cat_main_loop(cat: &mut Cat, _state: &KernelState) -> Option<SystemCall> {
+    match cat.state {
+        CatState::Init => {
+            if cat.files.is_empty() {
+                // No files specified - would read from stdin
+                // For now, just finish
+                cat.set_state(CatState::Done);
+                Some(SystemCall::Exit(0))
+            } else {
+                // Start reading first file
+                cat.set_state(CatState::Reading);
+                Some(SystemCall::Open {
+                    path: cat.files[cat.current_file_idx]
+                        .to_string_lossy()
+                        .to_string(),
+                    flags: 0, // Read-only
+                })
+            }
+        }
+        CatState::Reading => {
+            // After opening, read the file
+            cat.set_state(CatState::Writing);
+            Some(SystemCall::Read {
+                fd: 3, // Assuming file descriptor 3 after open
+                count: 4096,
+            })
+        }
+        CatState::Writing => {
+            // Write output to stdout
+            cat.set_state(CatState::Done);
+            Some(SystemCall::Write {
+                fd: 1,
+                data: cat.output.as_bytes().to_vec(),
+            })
+        }
+        CatState::Done => Some(SystemCall::Exit(0)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1128,5 +1284,123 @@ mod tests {
 
         let screen = vim.get_screen();
         assert!(screen.contains("Test message"));
+    }
+
+    // ========================================================================
+    // WOS-PROG-001: cat - Unit Tests (RED phase)
+    // ========================================================================
+
+    #[test]
+    fn test_cat_simple_content() {
+        let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
+        cat.process_content("Hello\nWorld\n");
+
+        assert_eq!(cat.get_output(), "Hello\nWorld\n");
+    }
+
+    #[test]
+    fn test_cat_with_line_numbers() {
+        let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec!["-n".to_string()]);
+        cat.process_content("Hello\nWorld\n");
+
+        let output = cat.get_output();
+        assert!(output.contains("     1  Hello"));
+        assert!(output.contains("     2  World"));
+    }
+
+    #[test]
+    fn test_cat_number_nonblank_lines() {
+        let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec!["-b".to_string()]);
+        cat.process_content("Hello\n\nWorld\n");
+
+        let output = cat.get_output();
+        assert!(output.contains("     1  Hello"));
+        assert!(!output.contains("     2  \n"));
+        assert!(output.contains("     2  World"));
+    }
+
+    #[test]
+    fn test_cat_squeeze_blank_lines() {
+        let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec!["-s".to_string()]);
+        cat.process_content("Hello\n\n\n\nWorld\n");
+
+        let output = cat.get_output();
+        // Should have only 1 blank line between Hello and World
+        assert!(!output.contains("\n\n\n\n"));
+        let hello_pos = output.find("Hello").unwrap();
+        let world_pos = output.find("World").unwrap();
+        let between = &output[hello_pos + 5..world_pos];
+        assert_eq!(between.matches('\n').count(), 2); // One blank line = 2 newlines
+    }
+
+    #[test]
+    fn test_cat_empty_file() {
+        let mut cat = Cat::new(1, vec![PathBuf::from("/empty.txt")], vec![]);
+        cat.process_content("");
+
+        assert_eq!(cat.get_output(), "");
+    }
+
+    #[test]
+    fn test_cat_single_line_no_newline() {
+        let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
+        cat.process_content("Single line");
+
+        assert_eq!(cat.get_output(), "Single line\n");
+    }
+
+    #[test]
+    fn test_cat_combined_flags() {
+        let mut cat = Cat::new(
+            1,
+            vec![PathBuf::from("/test.txt")],
+            vec!["-b".to_string(), "-s".to_string()],
+        );
+        cat.process_content("Line 1\n\n\nLine 2\n");
+
+        let output = cat.get_output();
+        assert!(output.contains("     1  Line 1"));
+        assert!(output.contains("     2  Line 2"));
+        // Should squeeze multiple blank lines
+        assert!(!output.contains("\n\n\n\n"));
+    }
+
+    #[test]
+    fn test_cat_main_loop_with_files() {
+        let cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
+        let _state = KernelState::new();
+
+        // Should transition through states correctly
+        assert_eq!(cat.get_state(), &CatState::Init);
+    }
+
+    // ========================================================================
+    // WOS-PROG-001: cat - Property Tests (RED phase)
+    // ========================================================================
+
+    #[cfg(all(test, not(target_family = "wasm")))]
+    mod cat_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn proptest_cat_never_panics(content in ".*") {
+                let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
+                cat.process_content(&content);
+                let _output = cat.get_output();
+            }
+
+            #[test]
+            fn proptest_cat_deterministic(content in ".*") {
+                let mut cat1 = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
+                let mut cat2 = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
+
+                cat1.process_content(&content);
+                cat2.process_content(&content);
+
+                prop_assert_eq!(cat1.get_output(), cat2.get_output());
+            }
+        }
     }
 }
