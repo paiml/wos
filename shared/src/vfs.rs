@@ -1869,15 +1869,13 @@ impl VirtualFileSystem {
         for mount_point in self.mounts.keys() {
             let mount_str = mount_point.to_str()?;
 
-            // Check if path starts with this mount point
-            if path_str.starts_with(mount_str) {
-                // Ensure it's a proper prefix (not just substring)
-                if path_str == mount_str || path_str.chars().nth(mount_str.len()) == Some('/') {
-                    if mount_str.len() > best_match_len {
-                        best_match = Some(mount_point.clone());
-                        best_match_len = mount_str.len();
-                    }
-                }
+            // Check if path starts with this mount point and is a proper prefix
+            if path_str.starts_with(mount_str)
+                && (path_str == mount_str || path_str.chars().nth(mount_str.len()) == Some('/'))
+                && mount_str.len() > best_match_len
+            {
+                best_match = Some(mount_point.clone());
+                best_match_len = mount_str.len();
             }
         }
 
