@@ -1649,11 +1649,11 @@ mod tests {
             .vfs
             .create_file(PathBuf::from("/secret.txt"), b"secret".to_vec())
             .unwrap();
-        let no_read_perms = wos_shared::vfs::FilePermissions {
-            read: false,
-            write: true,
-            execute: false,
-        };
+        let no_read_perms = wos_shared::vfs::FilePermissions::new(
+            0o200,  // write-only for owner (-w-------)
+            0,      // uid: root
+            0,      // gid: root
+        );
         state
             .vfs
             .set_permissions(&PathBuf::from("/secret.txt"), no_read_perms)

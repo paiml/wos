@@ -19,6 +19,12 @@ pub struct VirtualFileSystem {
     next_ino: InodeNumber,
     /// Current working directory
     cwd: PathBuf,
+    /// Current user ID (for permission checks)
+    current_uid: u32,
+    /// Current group ID (for permission checks)
+    current_gid: u32,
+    /// File creation mask (umask)
+    umask: u32,
 }
 
 /// Inode representing a file or directory
@@ -102,34 +108,99 @@ pub struct FileEntry {
     pub permissions: FilePermissions,
 }
 
-/// Simplified file permissions
+/// Unix-style file permissions
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct FilePermissions {
-    /// Can read
-    pub read: bool,
-    /// Can write
-    pub write: bool,
-    /// Can execute
-    pub execute: bool,
+    /// Unix permission mode bits (rwxrwxrwx + special bits)
+    pub mode: u32,
+    /// Owner user ID
+    pub uid: u32,
+    /// Owner group ID
+    pub gid: u32,
 }
 
 impl FilePermissions {
-    /// Create read-write permissions
+    /// Create read-write permissions (0644 - rw-r--r--)
     pub fn read_write() -> Self {
         Self {
-            read: true,
-            write: true,
-            execute: false,
+            mode: 0o644,
+            uid: 0,
+            gid: 0,
         }
     }
 
-    /// Create read-only permissions
+    /// Create read-only permissions (0444 - r--r--r--)
     pub fn read_only() -> Self {
         Self {
-            read: true,
-            write: false,
-            execute: false,
+            mode: 0o444,
+            uid: 0,
+            gid: 0,
         }
+    }
+
+    /// Create with specific mode, uid, gid
+    pub fn new(mode: u32, uid: u32, gid: u32) -> Self {
+        Self { mode, uid, gid }
+    }
+
+    /// Check if mode has read permission for owner
+    pub fn owner_can_read(&self) -> bool {
+        (self.mode & 0o400) != 0
+    }
+
+    /// Check if mode has write permission for owner
+    pub fn owner_can_write(&self) -> bool {
+        (self.mode & 0o200) != 0
+    }
+
+    /// Check if mode has execute permission for owner
+    pub fn owner_can_execute(&self) -> bool {
+        (self.mode & 0o100) != 0
+    }
+
+    /// Check if mode has read permission for group
+    pub fn group_can_read(&self) -> bool {
+        (self.mode & 0o040) != 0
+    }
+
+    /// Check if mode has write permission for group
+    pub fn group_can_write(&self) -> bool {
+        (self.mode & 0o020) != 0
+    }
+
+    /// Check if mode has execute permission for group
+    pub fn group_can_execute(&self) -> bool {
+        (self.mode & 0o010) != 0
+    }
+
+    /// Check if mode has read permission for others
+    pub fn other_can_read(&self) -> bool {
+        (self.mode & 0o004) != 0
+    }
+
+    /// Check if mode has write permission for others
+    pub fn other_can_write(&self) -> bool {
+        (self.mode & 0o002) != 0
+    }
+
+    /// Check if mode has execute permission for others
+    pub fn other_can_execute(&self) -> bool {
+        (self.mode & 0o001) != 0
+    }
+
+    /// Check if setuid bit is set
+    pub fn has_setuid(&self) -> bool {
+        (self.mode & 0o4000) != 0
+    }
+
+    /// Check if setgid bit is set
+    pub fn has_setgid(&self) -> bool {
+        (self.mode & 0o2000) != 0
+    }
+
+    /// Check if sticky bit is set
+    pub fn has_sticky(&self) -> bool {
+        (self.mode & 0o1000) != 0
     }
 }
 
@@ -184,13 +255,13 @@ impl VirtualFileSystem {
         let root_ino = 1;
         let mut inodes = im::HashMap::new();
 
-        // Create root directory
+        // Create root directory with proper permissions (0755 - rwxr-xr-x)
         let root = Inode {
             ino: root_ino,
             inode_type: InodeType::Directory {
                 entries: im::HashMap::new(),
             },
-            permissions: FilePermissions::default(),
+            permissions: FilePermissions::new(0o755, 0, 0), // Root owned, world-readable/executable
             nlinks: 1,
         };
         inodes.insert(root_ino, root);
@@ -200,6 +271,9 @@ impl VirtualFileSystem {
             root_ino,
             next_ino: 2,
             cwd: PathBuf::from("/"),
+            current_uid: 0,    // Default to root
+            current_gid: 0,    // Default to root group
+            umask: 0o022,      // Default umask (rw-r--r-- for files, rwxr-xr-x for dirs)
         };
 
         // Create standard directory structure
@@ -215,6 +289,14 @@ impl VirtualFileSystem {
         let _ = vfs.create_directory(PathBuf::from("/usr/local"));
         let _ = vfs.create_directory(PathBuf::from("/usr/local/bin"));
 
+        vfs
+    }
+
+    /// Create a new VFS with specific user context
+    pub fn new_with_context(uid: u32, gid: u32) -> Self {
+        let mut vfs = Self::new();
+        vfs.current_uid = uid;
+        vfs.current_gid = gid;
         vfs
     }
 
@@ -268,6 +350,11 @@ impl VirtualFileSystem {
 
             match &inode.inode_type {
                 InodeType::Directory { entries } => {
+                    // Check execute permission on directory (needed to traverse)
+                    if !self.check_permission(inode, self.current_uid, self.current_gid, 1) {
+                        return Err(VfsError::PermissionDenied);
+                    }
+
                     current_ino = *entries.get(*component).ok_or(VfsError::NotFound)?;
 
                     // Update current path for relative symlink resolution
@@ -386,12 +473,16 @@ impl VirtualFileSystem {
         let new_ino = self.next_ino;
         self.next_ino += 1;
 
+        // Create permissions with current user context and umask applied
+        let mode = 0o777 & !self.umask; // Default directory mode 0777 with umask applied
+        let permissions = FilePermissions::new(mode, self.current_uid, self.current_gid);
+
         let new_dir = Inode {
             ino: new_ino,
             inode_type: InodeType::Directory {
                 entries: im::HashMap::new(),
             },
-            permissions: FilePermissions::default(),
+            permissions,
             nlinks: 1,
         };
 
@@ -512,10 +603,13 @@ impl VirtualFileSystem {
         let new_ino = self.next_ino;
         self.next_ino += 1;
 
+        // Symlinks typically have 0777 permissions (permissions are checked on target)
+        let permissions = FilePermissions::new(0o777, self.current_uid, self.current_gid);
+
         let new_symlink = Inode {
             ino: new_ino,
             inode_type: InodeType::Symlink { target },
-            permissions: FilePermissions::default(),
+            permissions,
             nlinks: 1,
         };
 
@@ -639,10 +733,14 @@ impl VirtualFileSystem {
         let new_ino = self.next_ino;
         self.next_ino += 1;
 
+        // Create permissions with current user context and umask applied
+        let mode = 0o666 & !self.umask; // Default file mode 0666 with umask applied
+        let permissions = FilePermissions::new(mode, self.current_uid, self.current_gid);
+
         let new_file = Inode {
             ino: new_ino,
             inode_type: InodeType::File { content },
-            permissions: FilePermissions::default(),
+            permissions,
             nlinks: 1,
         };
 
@@ -666,49 +764,16 @@ impl VirtualFileSystem {
         Ok(())
     }
 
-    /// Read file contents
+    /// Read file contents (uses current user context)
     pub fn read_file(&self, path: &Path) -> Result<Vec<u8>, VfsError> {
-        let ino = self.resolve_path(path)?;
-        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
-
-        if !inode.permissions.read {
-            return Err(VfsError::PermissionDenied);
-        }
-
-        match &inode.inode_type {
-            InodeType::File { content } => Ok(content.clone()),
-            InodeType::Directory { .. } => Err(VfsError::IsADirectory),
-            InodeType::Symlink { .. } => {
-                // This shouldn't happen since resolve_path follows symlinks
-                // but handle it for safety
-                Err(VfsError::NotFound)
-            }
-        }
+        self.read_file_as(path, self.current_uid, self.current_gid)
     }
 
-    /// Write to file (overwrites existing content)
+    /// Write to file (overwrites existing content, uses current user context)
     pub fn write_file(&mut self, path: &Path, content: Vec<u8>) -> Result<(), VfsError> {
-        let ino = self.resolve_path(path)?;
-        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
-
-        if !inode.permissions.write {
-            return Err(VfsError::PermissionDenied);
-        }
-
-        match &inode.inode_type {
-            InodeType::File { .. } => {
-                let updated_inode = Inode {
-                    ino,
-                    inode_type: InodeType::File { content },
-                    permissions: inode.permissions.clone(),
-                    nlinks: inode.nlinks,
-                };
-                self.inodes.insert(ino, updated_inode);
-                Ok(())
-            }
-            InodeType::Directory { .. } => Err(VfsError::IsADirectory),
-            InodeType::Symlink { .. } => Err(VfsError::NotFound),
-        }
+        let uid = self.current_uid;
+        let gid = self.current_gid;
+        self.write_file_as(path, content, uid, gid)
     }
 
     /// Check if file exists
@@ -956,6 +1021,204 @@ impl VirtualFileSystem {
     pub fn file_count(&self) -> usize {
         self.list_files().len()
     }
+
+    // ========== Unix-style Permission Methods ==========
+
+    /// Check if a user has specific permission on a file
+    fn check_permission(&self, inode: &Inode, uid: u32, gid: u32, mode_bit: u32) -> bool {
+        // Root bypasses all permission checks
+        if uid == 0 {
+            return true;
+        }
+
+        let perms = &inode.permissions;
+
+        // Check owner permissions
+        if uid == perms.uid {
+            return (perms.mode & (mode_bit << 6)) != 0;
+        }
+
+        // Check group permissions
+        if gid == perms.gid {
+            return (perms.mode & (mode_bit << 3)) != 0;
+        }
+
+        // Check other permissions
+        (perms.mode & mode_bit) != 0
+    }
+
+    /// Change file mode (permissions)
+    pub fn chmod(&mut self, path: &Path, mode: u32) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?.clone();
+
+        // Only owner or root can change mode
+        if self.current_uid != 0 && self.current_uid != inode.permissions.uid {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        let mut new_perms = inode.permissions.clone();
+        new_perms.mode = mode;
+
+        let updated_inode = Inode {
+            ino,
+            inode_type: inode.inode_type.clone(),
+            permissions: new_perms,
+            nlinks: inode.nlinks,
+        };
+
+        self.inodes.insert(ino, updated_inode);
+        Ok(())
+    }
+
+    /// Change file owner (uid and/or gid)
+    pub fn chown(&mut self, path: &Path, uid: Option<u32>, gid: Option<u32>) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?.clone();
+
+        // Only root can change ownership
+        // (In a real system, owner can change group if they're a member)
+        if self.current_uid != 0 {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        let mut new_perms = inode.permissions.clone();
+        if let Some(new_uid) = uid {
+            new_perms.uid = new_uid;
+        }
+        if let Some(new_gid) = gid {
+            new_perms.gid = new_gid;
+        }
+
+        let updated_inode = Inode {
+            ino,
+            inode_type: inode.inode_type.clone(),
+            permissions: new_perms,
+            nlinks: inode.nlinks,
+        };
+
+        self.inodes.insert(ino, updated_inode);
+        Ok(())
+    }
+
+    /// Get file mode
+    pub fn get_mode(&self, path: &Path) -> Result<u32, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.mode)
+    }
+
+    /// Get file owner UID
+    pub fn get_owner(&self, path: &Path) -> Result<u32, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.uid)
+    }
+
+    /// Get file group GID
+    pub fn get_group(&self, path: &Path) -> Result<u32, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.gid)
+    }
+
+    /// Read file as specific user (permission check)
+    pub fn read_file_as(&self, path: &Path, uid: u32, gid: u32) -> Result<Vec<u8>, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+
+        // Check read permission (mode_bit 4 = read)
+        if !self.check_permission(inode, uid, gid, 4) {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        match &inode.inode_type {
+            InodeType::File { content } => Ok(content.clone()),
+            InodeType::Directory { .. } => Err(VfsError::IsADirectory),
+            InodeType::Symlink { .. } => Err(VfsError::NotFound),
+        }
+    }
+
+    /// Write file as specific user (permission check)
+    pub fn write_file_as(&mut self, path: &Path, content: Vec<u8>, uid: u32, gid: u32) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?.clone();
+
+        // Check write permission (mode_bit 2 = write)
+        if !self.check_permission(&inode, uid, gid, 2) {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        match &inode.inode_type {
+            InodeType::File { .. } => {
+                let updated_inode = Inode {
+                    ino,
+                    inode_type: InodeType::File { content },
+                    permissions: inode.permissions.clone(),
+                    nlinks: inode.nlinks,
+                };
+                self.inodes.insert(ino, updated_inode);
+                Ok(())
+            }
+            InodeType::Directory { .. } => Err(VfsError::IsADirectory),
+            InodeType::Symlink { .. } => Err(VfsError::NotFound),
+        }
+    }
+
+    /// Check if file has execute permission for current user
+    pub fn can_execute(&self, path: &Path) -> Result<bool, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+
+        // Check execute permission (mode_bit 1 = execute)
+        Ok(self.check_permission(inode, self.current_uid, self.current_gid, 1))
+    }
+
+    /// Check if file has setuid bit set
+    pub fn is_setuid(&self, path: &Path) -> Result<bool, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.has_setuid())
+    }
+
+    /// Check if file has setgid bit set
+    pub fn is_setgid(&self, path: &Path) -> Result<bool, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.has_setgid())
+    }
+
+    /// Check if file has sticky bit set
+    pub fn is_sticky(&self, path: &Path) -> Result<bool, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.has_sticky())
+    }
+
+    /// Set umask (file creation mask)
+    pub fn set_umask(&mut self, umask: u32) {
+        self.umask = umask & 0o777; // Only keep permission bits
+    }
+
+    /// Get effective UID after setuid execution
+    pub fn get_effective_uid(&self, path: &Path, uid: u32) -> Result<u32, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+
+        if inode.permissions.has_setuid() {
+            // When setuid is set, effective UID becomes file owner's UID
+            Ok(inode.permissions.uid)
+        } else {
+            // Otherwise, effective UID is the same as real UID
+            Ok(uid)
+        }
+    }
+
+    /// Set current user context (for switching users, e.g., su/sudo)
+    pub fn set_context(&mut self, uid: u32, gid: u32) {
+        self.current_uid = uid;
+        self.current_gid = gid;
+    }
 }
 
 impl Default for VirtualFileSystem {
@@ -1076,18 +1339,18 @@ mod tests {
 
         vfs.create_file(path.clone(), vec![]).unwrap();
 
-        // Default permissions should be read-write
+        // Default permissions should be read-write (0644)
         let perms = vfs.get_permissions(&path).unwrap();
-        assert!(perms.read);
-        assert!(perms.write);
-        assert!(!perms.execute);
+        assert!(perms.owner_can_read());
+        assert!(perms.owner_can_write());
+        assert!(!perms.owner_can_execute());
 
-        // Change to read-only
+        // Change to read-only (0444)
         vfs.set_permissions(&path, FilePermissions::read_only())
             .unwrap();
         let perms = vfs.get_permissions(&path).unwrap();
-        assert!(perms.read);
-        assert!(!perms.write);
+        assert!(perms.owner_can_read());
+        assert!(!perms.owner_can_write());
     }
 
     #[test]
@@ -1097,12 +1360,8 @@ mod tests {
 
         vfs.create_file(path.clone(), b"Secret".to_vec()).unwrap();
 
-        // Set to no read permission
-        let no_read = FilePermissions {
-            read: false,
-            write: true,
-            execute: false,
-        };
+        // Set to no read permission (write-only: 0200)
+        let no_read = FilePermissions::new(0o200, 0, 0);
         vfs.set_permissions(&path, no_read).unwrap();
 
         let result = vfs.read_file(&path);
@@ -1880,8 +2139,8 @@ mod tests {
 
         // Permissions should be shared (same inode)
         let perms = vfs.get_permissions(&PathBuf::from("/link.txt")).unwrap();
-        assert!(perms.read);
-        assert!(!perms.write);
+        assert!(perms.owner_can_read());
+        assert!(!perms.owner_can_write());
     }
 
     #[test]
@@ -1957,8 +2216,11 @@ mod tests {
         let mut vfs = VirtualFileSystem::new_with_context(1000, 1000); // Create as UID 1000
         vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
 
+        // Switch to root to change ownership (only root can chown)
+        vfs.set_context(0, 0);
+
         // Change owner to UID 1001
-        vfs.chown(&PathBuf::from("/file.txt"), 1001, None).unwrap();
+        vfs.chown(&PathBuf::from("/file.txt"), Some(1001), None).unwrap();
 
         let uid = vfs.get_owner(&PathBuf::from("/file.txt")).unwrap();
         assert_eq!(uid, 1001, "UID should be 1001");
@@ -1969,8 +2231,11 @@ mod tests {
         let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
         vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
 
+        // Switch to root to change group (only root can chown/chgrp)
+        vfs.set_context(0, 0);
+
         // Change group to GID 1001
-        vfs.chown(&PathBuf::from("/file.txt"), None, 1001).unwrap();
+        vfs.chown(&PathBuf::from("/file.txt"), None, Some(1001)).unwrap();
 
         let gid = vfs.get_group(&PathBuf::from("/file.txt")).unwrap();
         assert_eq!(gid, 1001, "GID should be 1001");
@@ -2010,12 +2275,12 @@ mod tests {
         // Remove execute permission
         vfs.chmod(&PathBuf::from("/script.sh"), 0o644).unwrap();
 
-        let result = vfs.can_execute(&PathBuf::from("/script.sh"));
+        let result = vfs.can_execute(&PathBuf::from("/script.sh")).unwrap();
         assert!(!result, "Execute should be denied");
 
         // Add execute permission
         vfs.chmod(&PathBuf::from("/script.sh"), 0o755).unwrap();
-        assert!(vfs.can_execute(&PathBuf::from("/script.sh")), "Execute should be allowed");
+        assert!(vfs.can_execute(&PathBuf::from("/script.sh")).unwrap(), "Execute should be allowed");
     }
 
     #[test]
@@ -2105,7 +2370,7 @@ mod tests {
 
         let mode = vfs.get_mode(&PathBuf::from("/setuid_prog")).unwrap();
         assert_eq!(mode & 0o4000, 0o4000, "Setuid bit should be set");
-        assert!(vfs.is_setuid(&PathBuf::from("/setuid_prog")), "is_setuid should return true");
+        assert!(vfs.is_setuid(&PathBuf::from("/setuid_prog")).unwrap(), "is_setuid should return true");
     }
 
     #[test]
@@ -2118,20 +2383,19 @@ mod tests {
 
         let mode = vfs.get_mode(&PathBuf::from("/setgid_prog")).unwrap();
         assert_eq!(mode & 0o2000, 0o2000, "Setgid bit should be set");
-        assert!(vfs.is_setgid(&PathBuf::from("/setgid_prog")), "is_setgid should return true");
+        assert!(vfs.is_setgid(&PathBuf::from("/setgid_prog")).unwrap(), "is_setgid should return true");
     }
 
     #[test]
     fn test_sticky_bit() {
         let mut vfs = VirtualFileSystem::new_with_context(0, 0);
-        vfs.create_directory(PathBuf::from("/tmp")).unwrap();
 
-        // Set sticky bit (01777)
+        // /tmp already exists from new(), just set sticky bit (01777)
         vfs.chmod(&PathBuf::from("/tmp"), 0o1777).unwrap();
 
         let mode = vfs.get_mode(&PathBuf::from("/tmp")).unwrap();
         assert_eq!(mode & 0o1000, 0o1000, "Sticky bit should be set");
-        assert!(vfs.is_sticky(&PathBuf::from("/tmp")), "is_sticky should return true");
+        assert!(vfs.is_sticky(&PathBuf::from("/tmp")).unwrap(), "is_sticky should return true");
     }
 
     // Integration tests
@@ -2170,7 +2434,7 @@ mod tests {
         vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
 
         // Change ownership and permissions
-        vfs.chown(&PathBuf::from("/file.txt"), 1000, 1000).unwrap();
+        vfs.chown(&PathBuf::from("/file.txt"), Some(1000), Some(1000)).unwrap();
         vfs.chmod(&PathBuf::from("/file.txt"), 0o600).unwrap();
 
         assert_eq!(vfs.get_owner(&PathBuf::from("/file.txt")).unwrap(), 1000);
@@ -2184,7 +2448,7 @@ mod tests {
         vfs.create_directory(PathBuf::from("/dir")).unwrap();
 
         // Set directory GID and setgid bit
-        vfs.chown(&PathBuf::from("/dir"), None, 2000).unwrap();
+        vfs.chown(&PathBuf::from("/dir"), None, Some(2000)).unwrap();
         vfs.chmod(&PathBuf::from("/dir"), 0o2775).unwrap();
 
         // Create file in directory - should inherit group
@@ -2236,11 +2500,11 @@ mod tests {
         vfs.create_file(PathBuf::from("/sudo"), vec![]).unwrap();
 
         // Make it owned by root with setuid
-        vfs.chown(&PathBuf::from("/sudo"), 0, 0).unwrap();
+        vfs.chown(&PathBuf::from("/sudo"), Some(0), Some(0)).unwrap();
         vfs.chmod(&PathBuf::from("/sudo"), 0o4755).unwrap();
 
         // When executed by user 1000, effective UID should become 0
-        let euid = vfs.get_effective_uid(&PathBuf::from("/sudo"), 1000);
+        let euid = vfs.get_effective_uid(&PathBuf::from("/sudo"), 1000).unwrap();
         assert_eq!(euid, 0, "Setuid should make effective UID = file owner UID");
     }
 
@@ -2418,13 +2682,13 @@ mod tests {
             #[test]
             fn proptest_permission_idempotent(
                 path in prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
-                read in any::<bool>(),
-                write in any::<bool>(),
-                execute in any::<bool>(),
+                mode in 0u32..0o7777,
+                uid in 0u32..10000,
+                gid in 0u32..10000,
             ) {
                 let mut vfs = VirtualFileSystem::new();
                 let path = PathBuf::from(path);
-                let perms = FilePermissions { read, write, execute };
+                let perms = FilePermissions::new(mode, uid, gid);
 
                 vfs.create_file(path.clone(), vec![]).unwrap();
 
