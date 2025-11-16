@@ -14,7 +14,7 @@ impl ScriptLoader {
     /// Load a script file from the VFS
     ///
     /// # Arguments
-    /// * `vfs` - Virtual filesystem to read from
+    /// * `vfs` - Virtual filesystem to read from (mutable)
     /// * `path` - Path to script file (absolute or relative)
     ///
     /// # Returns
@@ -30,11 +30,11 @@ impl ScriptLoader {
     /// let mut vfs = VirtualFileSystem::new();
     /// vfs.create_file(PathBuf::from("/test.sh"), b"#!/bin/bash\necho hello".to_vec()).unwrap();
     ///
-    /// let script = ScriptLoader::load(&vfs, "/test.sh").unwrap();
+    /// let script = ScriptLoader::load(&mut vfs, "/test.sh").unwrap();
     /// assert_eq!(script.path, "/test.sh");
     /// assert_eq!(script.shebang, "#!/bin/bash");
     /// ```
-    pub fn load(vfs: &VirtualFileSystem, path: &str) -> Result<Script, ScriptError> {
+    pub fn load(vfs: &mut VirtualFileSystem, path: &str) -> Result<Script, ScriptError> {
         // Resolve path (handle relative paths)
         let full_path = Self::resolve_path(path);
         let path_buf = PathBuf::from(&full_path);
@@ -137,7 +137,7 @@ mod tests {
         )
         .unwrap();
 
-        let script = ScriptLoader::load(&vfs, "/test.sh").unwrap();
+        let script = ScriptLoader::load(&mut vfs, "/test.sh").unwrap();
 
         assert_eq!(script.path, "/test.sh");
         assert_eq!(script.shebang, "#!/bin/bash");
@@ -154,7 +154,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = ScriptLoader::load(&vfs, "/python.sh");
+        let result = ScriptLoader::load(&mut vfs, "/python.sh");
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -169,9 +169,9 @@ mod tests {
     // WOS-201 Test 3: test_load_script_file_not_found
     #[test]
     fn test_load_script_file_not_found() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
 
-        let result = ScriptLoader::load(&vfs, "/nonexistent.sh");
+        let result = ScriptLoader::load(&mut vfs, "/nonexistent.sh");
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -192,7 +192,7 @@ mod tests {
         )
         .unwrap();
 
-        let script = ScriptLoader::load(&vfs, "/usr/local/bin/script.sh").unwrap();
+        let script = ScriptLoader::load(&mut vfs, "/usr/local/bin/script.sh").unwrap();
 
         assert_eq!(script.path, "/usr/local/bin/script.sh");
         assert_eq!(script.shebang, "#!/bin/sh");
@@ -209,7 +209,7 @@ mod tests {
         .unwrap();
 
         // Load with relative path
-        let script = ScriptLoader::load(&vfs, "hello.sh").unwrap();
+        let script = ScriptLoader::load(&mut vfs, "hello.sh").unwrap();
 
         // Should resolve to absolute path
         assert_eq!(script.path, "/hello.sh");
@@ -266,7 +266,7 @@ mod tests {
         )
         .unwrap();
 
-        let script = ScriptLoader::load(&vfs, "/roundtrip.sh").unwrap();
+        let script = ScriptLoader::load(&mut vfs, "/roundtrip.sh").unwrap();
 
         assert_eq!(script.content, original_content);
         assert_eq!(script.shebang, "#!/bin/bash");
@@ -279,7 +279,7 @@ mod tests {
         vfs.create_file(PathBuf::from("/script.sh"), b"#!/bin/bash\nls".to_vec())
             .unwrap();
 
-        let script = ScriptLoader::load(&vfs, "./script.sh").unwrap();
+        let script = ScriptLoader::load(&mut vfs, "./script.sh").unwrap();
 
         assert_eq!(script.path, "/script.sh");
     }
@@ -291,7 +291,7 @@ mod tests {
         vfs.create_file(PathBuf::from("/no-shebang.sh"), b"echo hello".to_vec())
             .unwrap();
 
-        let script = ScriptLoader::load(&vfs, "/no-shebang.sh").unwrap();
+        let script = ScriptLoader::load(&mut vfs, "/no-shebang.sh").unwrap();
 
         assert_eq!(script.shebang, "");
         assert!(script.content.contains("echo hello"));
@@ -335,7 +335,7 @@ mod proptests {
             vfs.create_file(PathBuf::from(&file_path), content.as_bytes().to_vec()).ok();
 
             // Should never panic, regardless of input
-            let _ = ScriptLoader::load(&vfs, &path);
+            let _ = ScriptLoader::load(&mut vfs, &path);
         }
     }
 

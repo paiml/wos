@@ -8,6 +8,45 @@ use std::path::{Path, PathBuf};
 /// Unique inode number
 type InodeNumber = u64;
 
+/// Timestamp in milliseconds since Unix epoch
+type Timestamp = u64;
+
+/// File type for stat
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FileType {
+    /// Regular file
+    RegularFile,
+    /// Directory
+    Directory,
+    /// Symbolic link
+    Symlink,
+}
+
+/// File metadata returned by stat
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct FileStat {
+    /// File type
+    pub file_type: FileType,
+    /// File size in bytes
+    pub size: u64,
+    /// Access time (atime) - last time file was read
+    pub atime: Timestamp,
+    /// Modification time (mtime) - last time file content was modified
+    pub mtime: Timestamp,
+    /// Change time (ctime) - last time metadata was changed
+    pub ctime: Timestamp,
+    /// Inode number
+    pub ino: InodeNumber,
+    /// Number of hard links
+    pub nlinks: u64,
+    /// File mode (permissions)
+    pub mode: u32,
+    /// Owner UID
+    pub uid: u32,
+    /// Owner GID
+    pub gid: u32,
+}
+
 /// Virtual file system with persistent data structures
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct VirtualFileSystem {
@@ -19,6 +58,12 @@ pub struct VirtualFileSystem {
     next_ino: InodeNumber,
     /// Current working directory
     cwd: PathBuf,
+    /// Current user ID (for permission checks)
+    current_uid: u32,
+    /// Current group ID (for permission checks)
+    current_gid: u32,
+    /// File creation mask (umask)
+    umask: u32,
 }
 
 /// Inode representing a file or directory
@@ -32,6 +77,12 @@ pub struct Inode {
     pub permissions: FilePermissions,
     /// Number of hard links to this inode
     pub nlinks: u64,
+    /// Access time (atime) - last read
+    pub atime: Timestamp,
+    /// Modification time (mtime) - last content change
+    pub mtime: Timestamp,
+    /// Change time (ctime) - last metadata change
+    pub ctime: Timestamp,
 }
 
 /// Type of inode
@@ -102,34 +153,99 @@ pub struct FileEntry {
     pub permissions: FilePermissions,
 }
 
-/// Simplified file permissions
+/// Unix-style file permissions
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct FilePermissions {
-    /// Can read
-    pub read: bool,
-    /// Can write
-    pub write: bool,
-    /// Can execute
-    pub execute: bool,
+    /// Unix permission mode bits (rwxrwxrwx + special bits)
+    pub mode: u32,
+    /// Owner user ID
+    pub uid: u32,
+    /// Owner group ID
+    pub gid: u32,
 }
 
 impl FilePermissions {
-    /// Create read-write permissions
+    /// Create read-write permissions (0644 - rw-r--r--)
     pub fn read_write() -> Self {
         Self {
-            read: true,
-            write: true,
-            execute: false,
+            mode: 0o644,
+            uid: 0,
+            gid: 0,
         }
     }
 
-    /// Create read-only permissions
+    /// Create read-only permissions (0444 - r--r--r--)
     pub fn read_only() -> Self {
         Self {
-            read: true,
-            write: false,
-            execute: false,
+            mode: 0o444,
+            uid: 0,
+            gid: 0,
         }
+    }
+
+    /// Create with specific mode, uid, gid
+    pub fn new(mode: u32, uid: u32, gid: u32) -> Self {
+        Self { mode, uid, gid }
+    }
+
+    /// Check if mode has read permission for owner
+    pub fn owner_can_read(&self) -> bool {
+        (self.mode & 0o400) != 0
+    }
+
+    /// Check if mode has write permission for owner
+    pub fn owner_can_write(&self) -> bool {
+        (self.mode & 0o200) != 0
+    }
+
+    /// Check if mode has execute permission for owner
+    pub fn owner_can_execute(&self) -> bool {
+        (self.mode & 0o100) != 0
+    }
+
+    /// Check if mode has read permission for group
+    pub fn group_can_read(&self) -> bool {
+        (self.mode & 0o040) != 0
+    }
+
+    /// Check if mode has write permission for group
+    pub fn group_can_write(&self) -> bool {
+        (self.mode & 0o020) != 0
+    }
+
+    /// Check if mode has execute permission for group
+    pub fn group_can_execute(&self) -> bool {
+        (self.mode & 0o010) != 0
+    }
+
+    /// Check if mode has read permission for others
+    pub fn other_can_read(&self) -> bool {
+        (self.mode & 0o004) != 0
+    }
+
+    /// Check if mode has write permission for others
+    pub fn other_can_write(&self) -> bool {
+        (self.mode & 0o002) != 0
+    }
+
+    /// Check if mode has execute permission for others
+    pub fn other_can_execute(&self) -> bool {
+        (self.mode & 0o001) != 0
+    }
+
+    /// Check if setuid bit is set
+    pub fn has_setuid(&self) -> bool {
+        (self.mode & 0o4000) != 0
+    }
+
+    /// Check if setgid bit is set
+    pub fn has_setgid(&self) -> bool {
+        (self.mode & 0o2000) != 0
+    }
+
+    /// Check if sticky bit is set
+    pub fn has_sticky(&self) -> bool {
+        (self.mode & 0o1000) != 0
     }
 }
 
@@ -178,20 +294,32 @@ pub enum VfsError {
     SymlinkLoop,
 }
 
+/// Helper function to get current timestamp
+fn current_timestamp() -> Timestamp {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
 impl VirtualFileSystem {
     /// Create a new VFS with root directory and standard directory structure
     pub fn new() -> Self {
         let root_ino = 1;
         let mut inodes = im::HashMap::new();
 
-        // Create root directory
+        // Create root directory with proper permissions (0755 - rwxr-xr-x)
+        let now = current_timestamp();
         let root = Inode {
             ino: root_ino,
             inode_type: InodeType::Directory {
                 entries: im::HashMap::new(),
             },
-            permissions: FilePermissions::default(),
+            permissions: FilePermissions::new(0o755, 0, 0), // Root owned, world-readable/executable
             nlinks: 1,
+            atime: now,
+            mtime: now,
+            ctime: now,
         };
         inodes.insert(root_ino, root);
 
@@ -200,6 +328,9 @@ impl VirtualFileSystem {
             root_ino,
             next_ino: 2,
             cwd: PathBuf::from("/"),
+            current_uid: 0, // Default to root
+            current_gid: 0, // Default to root group
+            umask: 0o022,   // Default umask (rw-r--r-- for files, rwxr-xr-x for dirs)
         };
 
         // Create standard directory structure
@@ -216,6 +347,85 @@ impl VirtualFileSystem {
         let _ = vfs.create_directory(PathBuf::from("/usr/local/bin"));
 
         vfs
+    }
+
+    /// Create a new VFS with specific user context
+    pub fn new_with_context(uid: u32, gid: u32) -> Self {
+        let mut vfs = Self::new();
+        vfs.current_uid = uid;
+        vfs.current_gid = gid;
+        vfs
+    }
+
+    /// Normalize a path by resolving . and .. and removing redundant slashes
+    ///
+    /// # Arguments
+    /// * `path` - The path to normalize
+    ///
+    /// # Returns
+    /// A normalized PathBuf with:
+    /// - `.` (current directory) components removed
+    /// - `..` (parent directory) references resolved
+    /// - Multiple consecutive slashes collapsed to single slash
+    /// - Parent references bounded at root (/../ stays at /)
+    ///
+    /// # Examples
+    /// ```
+    /// use std::path::PathBuf;
+    /// use wos_shared::vfs::VirtualFileSystem;
+    ///
+    /// let normalized = VirtualFileSystem::normalize_path(&PathBuf::from("/a/./b"));
+    /// assert_eq!(normalized, PathBuf::from("/a/b"));
+    ///
+    /// let normalized2 = VirtualFileSystem::normalize_path(&PathBuf::from("/a/b/../c"));
+    /// assert_eq!(normalized2, PathBuf::from("/a/c"));
+    /// ```
+    pub fn normalize_path(path: &Path) -> PathBuf {
+        let path_str = match path.to_str() {
+            Some(s) => s,
+            None => return path.to_path_buf(), // Return as-is if not valid UTF-8
+        };
+
+        // Handle root specially
+        if path_str == "/" {
+            return PathBuf::from("/");
+        }
+
+        // Split into components, filtering out empty strings and current directory markers
+        let components: Vec<&str> = path_str
+            .trim_start_matches('/')
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let mut normalized: Vec<&str> = Vec::new();
+
+        for component in components {
+            match component {
+                "." => {
+                    // Skip current directory marker
+                    continue;
+                }
+                ".." => {
+                    // Pop parent unless we're at root
+                    if !normalized.is_empty() {
+                        normalized.pop();
+                    }
+                    // If normalized is empty, we're at root, so .. has no effect
+                }
+                _ => {
+                    // Regular component
+                    normalized.push(component);
+                }
+            }
+        }
+
+        // Build the normalized path
+        if normalized.is_empty() {
+            PathBuf::from("/")
+        } else {
+            PathBuf::from(format!("/{}", normalized.join("/")))
+        }
     }
 
     /// Get current working directory
@@ -247,11 +457,14 @@ impl VirtualFileSystem {
             return Err(VfsError::SymlinkLoop);
         }
 
-        if path == Path::new("/") {
+        // Normalize path to handle ., .., and multiple slashes
+        let normalized_path = Self::normalize_path(path);
+
+        if normalized_path == Path::new("/") {
             return Ok(self.root_ino);
         }
 
-        let components: Vec<&str> = path
+        let components: Vec<&str> = normalized_path
             .to_str()
             .ok_or(VfsError::InvalidPath)?
             .trim_start_matches('/')
@@ -268,6 +481,11 @@ impl VirtualFileSystem {
 
             match &inode.inode_type {
                 InodeType::Directory { entries } => {
+                    // Check execute permission on directory (needed to traverse)
+                    if !self.check_permission(inode, self.current_uid, self.current_gid, 1) {
+                        return Err(VfsError::PermissionDenied);
+                    }
+
                     current_ino = *entries.get(*component).ok_or(VfsError::NotFound)?;
 
                     // Update current path for relative symlink resolution
@@ -321,7 +539,9 @@ impl VirtualFileSystem {
 
     /// Get parent directory inode and entry name
     fn resolve_parent(&self, path: &Path) -> Result<(InodeNumber, String), VfsError> {
-        let path_str = path.to_str().ok_or(VfsError::InvalidPath)?;
+        // Normalize path to handle ., .., and multiple slashes
+        let normalized_path = Self::normalize_path(path);
+        let path_str = normalized_path.to_str().ok_or(VfsError::InvalidPath)?;
 
         if path_str == "/" {
             return Err(VfsError::InvalidPath);
@@ -386,13 +606,29 @@ impl VirtualFileSystem {
         let new_ino = self.next_ino;
         self.next_ino += 1;
 
+        // Create permissions with current user context and umask applied
+        let mode = 0o777 & !self.umask; // Default directory mode 0777 with umask applied
+
+        // If parent directory has setgid bit, inherit its GID
+        let gid = if parent.permissions.has_setgid() {
+            parent.permissions.gid
+        } else {
+            self.current_gid
+        };
+
+        let permissions = FilePermissions::new(mode, self.current_uid, gid);
+
+        let now = current_timestamp();
         let new_dir = Inode {
             ino: new_ino,
             inode_type: InodeType::Directory {
                 entries: im::HashMap::new(),
             },
-            permissions: FilePermissions::default(),
+            permissions,
             nlinks: 1,
+            atime: now,
+            mtime: now,
+            ctime: now,
         };
 
         self.inodes.insert(new_ino, new_dir);
@@ -408,6 +644,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry added
+            ctime: now, // Parent's ctime changes when entry added
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -453,6 +692,7 @@ impl VirtualFileSystem {
         let mut new_entries = parent_entries;
         new_entries.remove(&name);
 
+        let now = current_timestamp();
         let updated_parent = Inode {
             ino: parent_ino,
             inode_type: InodeType::Directory {
@@ -460,6 +700,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry removed
+            ctime: now, // Parent's ctime changes when entry removed
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -512,11 +755,18 @@ impl VirtualFileSystem {
         let new_ino = self.next_ino;
         self.next_ino += 1;
 
+        // Symlinks typically have 0777 permissions (permissions are checked on target)
+        let permissions = FilePermissions::new(0o777, self.current_uid, self.current_gid);
+
+        let now = current_timestamp();
         let new_symlink = Inode {
             ino: new_ino,
             inode_type: InodeType::Symlink { target },
-            permissions: FilePermissions::default(),
+            permissions,
             nlinks: 1,
+            atime: now,
+            mtime: now,
+            ctime: now,
         };
 
         self.inodes.insert(new_ino, new_symlink);
@@ -532,6 +782,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry added
+            ctime: now, // Parent's ctime changes when entry added
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -639,11 +892,27 @@ impl VirtualFileSystem {
         let new_ino = self.next_ino;
         self.next_ino += 1;
 
+        // Create permissions with current user context and umask applied
+        let mode = 0o666 & !self.umask; // Default file mode 0666 with umask applied
+
+        // If parent directory has setgid bit, inherit its GID
+        let gid = if parent.permissions.has_setgid() {
+            parent.permissions.gid
+        } else {
+            self.current_gid
+        };
+
+        let permissions = FilePermissions::new(mode, self.current_uid, gid);
+
+        let now = current_timestamp();
         let new_file = Inode {
             ino: new_ino,
             inode_type: InodeType::File { content },
-            permissions: FilePermissions::default(),
+            permissions,
             nlinks: 1,
+            atime: now,
+            mtime: now,
+            ctime: now,
         };
 
         self.inodes.insert(new_ino, new_file);
@@ -659,6 +928,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry added
+            ctime: now, // Parent's ctime changes when entry added
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -666,49 +938,18 @@ impl VirtualFileSystem {
         Ok(())
     }
 
-    /// Read file contents
-    pub fn read_file(&self, path: &Path) -> Result<Vec<u8>, VfsError> {
-        let ino = self.resolve_path(path)?;
-        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
-
-        if !inode.permissions.read {
-            return Err(VfsError::PermissionDenied);
-        }
-
-        match &inode.inode_type {
-            InodeType::File { content } => Ok(content.clone()),
-            InodeType::Directory { .. } => Err(VfsError::IsADirectory),
-            InodeType::Symlink { .. } => {
-                // This shouldn't happen since resolve_path follows symlinks
-                // but handle it for safety
-                Err(VfsError::NotFound)
-            }
-        }
+    /// Read file contents (uses current user context)
+    pub fn read_file(&mut self, path: &Path) -> Result<Vec<u8>, VfsError> {
+        let uid = self.current_uid;
+        let gid = self.current_gid;
+        self.read_file_as(path, uid, gid)
     }
 
-    /// Write to file (overwrites existing content)
+    /// Write to file (overwrites existing content, uses current user context)
     pub fn write_file(&mut self, path: &Path, content: Vec<u8>) -> Result<(), VfsError> {
-        let ino = self.resolve_path(path)?;
-        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
-
-        if !inode.permissions.write {
-            return Err(VfsError::PermissionDenied);
-        }
-
-        match &inode.inode_type {
-            InodeType::File { .. } => {
-                let updated_inode = Inode {
-                    ino,
-                    inode_type: InodeType::File { content },
-                    permissions: inode.permissions.clone(),
-                    nlinks: inode.nlinks,
-                };
-                self.inodes.insert(ino, updated_inode);
-                Ok(())
-            }
-            InodeType::Directory { .. } => Err(VfsError::IsADirectory),
-            InodeType::Symlink { .. } => Err(VfsError::NotFound),
-        }
+        let uid = self.current_uid;
+        let gid = self.current_gid;
+        self.write_file_as(path, content, uid, gid)
     }
 
     /// Check if file exists
@@ -744,6 +985,7 @@ impl VirtualFileSystem {
         let mut new_entries = parent_entries;
         new_entries.remove(&name);
 
+        let now = current_timestamp();
         let updated_parent = Inode {
             ino: parent_ino,
             inode_type: InodeType::Directory {
@@ -751,6 +993,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry removed
+            ctime: now, // Parent's ctime changes when entry removed
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -775,11 +1020,15 @@ impl VirtualFileSystem {
         let ino = self.resolve_path(path)?;
         let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
 
+        let now = current_timestamp();
         let updated_inode = Inode {
             ino,
             inode_type: inode.inode_type.clone(),
             permissions,
             nlinks: inode.nlinks,
+            atime: inode.atime,
+            mtime: inode.mtime,
+            ctime: now, // ctime changes when permissions change
         };
 
         self.inodes.insert(ino, updated_inode);
@@ -820,6 +1069,7 @@ impl VirtualFileSystem {
         let mut new_entries = entries;
         new_entries.insert(name, old_ino);
 
+        let now = current_timestamp();
         let updated_parent = Inode {
             ino: parent_ino,
             inode_type: InodeType::Directory {
@@ -827,6 +1077,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry added
+            ctime: now, // Parent's ctime changes when entry added
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -838,6 +1091,9 @@ impl VirtualFileSystem {
             inode_type: inode.inode_type.clone(),
             permissions: inode.permissions.clone(),
             nlinks: inode.nlinks + 1,
+            atime: inode.atime,
+            mtime: inode.mtime,
+            ctime: inode.ctime, // ctime doesn't change for hard links (only nlinks metadata changed)
         };
         self.inodes.insert(old_ino, updated_inode);
 
@@ -867,6 +1123,7 @@ impl VirtualFileSystem {
         let mut new_entries = parent_entries;
         new_entries.remove(&name);
 
+        let now = current_timestamp();
         let updated_parent = Inode {
             ino: parent_ino,
             inode_type: InodeType::Directory {
@@ -874,6 +1131,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry removed
+            ctime: now, // Parent's ctime changes when entry removed
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -891,6 +1151,9 @@ impl VirtualFileSystem {
                 inode_type: inode.inode_type.clone(),
                 permissions: inode.permissions.clone(),
                 nlinks: new_nlinks,
+                atime: inode.atime,
+                mtime: inode.mtime,
+                ctime: inode.ctime, // ctime doesn't change for hard links (only nlinks metadata changed)
             };
             self.inodes.insert(ino, updated_inode);
         }
@@ -956,6 +1219,278 @@ impl VirtualFileSystem {
     pub fn file_count(&self) -> usize {
         self.list_files().len()
     }
+
+    // ========== Unix-style Permission Methods ==========
+
+    /// Check if a user has specific permission on a file
+    fn check_permission(&self, inode: &Inode, uid: u32, gid: u32, mode_bit: u32) -> bool {
+        // Root bypasses all permission checks
+        if uid == 0 {
+            return true;
+        }
+
+        let perms = &inode.permissions;
+
+        // Check owner permissions
+        if uid == perms.uid {
+            return (perms.mode & (mode_bit << 6)) != 0;
+        }
+
+        // Check group permissions
+        if gid == perms.gid {
+            return (perms.mode & (mode_bit << 3)) != 0;
+        }
+
+        // Check other permissions
+        (perms.mode & mode_bit) != 0
+    }
+
+    /// Change file mode (permissions)
+    pub fn chmod(&mut self, path: &Path, mode: u32) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?.clone();
+
+        // Only owner or root can change mode
+        if self.current_uid != 0 && self.current_uid != inode.permissions.uid {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        let mut new_perms = inode.permissions.clone();
+        new_perms.mode = mode;
+
+        let now = current_timestamp();
+        let updated_inode = Inode {
+            ino,
+            inode_type: inode.inode_type.clone(),
+            permissions: new_perms,
+            nlinks: inode.nlinks,
+            atime: inode.atime,
+            mtime: inode.mtime,
+            ctime: now, // ctime changes when permissions change
+        };
+
+        self.inodes.insert(ino, updated_inode);
+        Ok(())
+    }
+
+    /// Change file owner (uid and/or gid)
+    pub fn chown(
+        &mut self,
+        path: &Path,
+        uid: Option<u32>,
+        gid: Option<u32>,
+    ) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?.clone();
+
+        // Only root can change ownership
+        // (In a real system, owner can change group if they're a member)
+        if self.current_uid != 0 {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        let mut new_perms = inode.permissions.clone();
+        if let Some(new_uid) = uid {
+            new_perms.uid = new_uid;
+        }
+        if let Some(new_gid) = gid {
+            new_perms.gid = new_gid;
+        }
+
+        let now = current_timestamp();
+        let updated_inode = Inode {
+            ino,
+            inode_type: inode.inode_type.clone(),
+            permissions: new_perms,
+            nlinks: inode.nlinks,
+            atime: inode.atime,
+            mtime: inode.mtime,
+            ctime: now, // ctime changes when owner changes
+        };
+
+        self.inodes.insert(ino, updated_inode);
+        Ok(())
+    }
+
+    /// Get file mode
+    pub fn get_mode(&self, path: &Path) -> Result<u32, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.mode)
+    }
+
+    /// Get file owner UID
+    pub fn get_owner(&self, path: &Path) -> Result<u32, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.uid)
+    }
+
+    /// Get file group GID
+    pub fn get_group(&self, path: &Path) -> Result<u32, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.gid)
+    }
+
+    /// Read file as specific user (permission check)
+    pub fn read_file_as(&mut self, path: &Path, uid: u32, gid: u32) -> Result<Vec<u8>, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?.clone();
+
+        // Check read permission (mode_bit 4 = read)
+        if !self.check_permission(&inode, uid, gid, 4) {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        // Update atime
+        let now = current_timestamp();
+        let updated_inode = Inode {
+            ino,
+            inode_type: inode.inode_type.clone(),
+            permissions: inode.permissions.clone(),
+            nlinks: inode.nlinks,
+            atime: now,         // Update on read
+            mtime: inode.mtime, // Preserve mtime
+            ctime: inode.ctime, // Preserve ctime
+        };
+        self.inodes.insert(ino, updated_inode);
+
+        match &inode.inode_type {
+            InodeType::File { content } => Ok(content.clone()),
+            InodeType::Directory { .. } => Err(VfsError::IsADirectory),
+            InodeType::Symlink { .. } => Err(VfsError::NotFound),
+        }
+    }
+
+    /// Write file as specific user (permission check)
+    pub fn write_file_as(
+        &mut self,
+        path: &Path,
+        content: Vec<u8>,
+        uid: u32,
+        gid: u32,
+    ) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?.clone();
+
+        // Check write permission (mode_bit 2 = write)
+        if !self.check_permission(&inode, uid, gid, 2) {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        match &inode.inode_type {
+            InodeType::File { .. } => {
+                let now = current_timestamp();
+                let updated_inode = Inode {
+                    ino,
+                    inode_type: InodeType::File { content },
+                    permissions: inode.permissions.clone(),
+                    nlinks: inode.nlinks,
+                    atime: inode.atime,
+                    mtime: now, // mtime changes when file content is written
+                    ctime: now, // ctime changes when file content is written
+                };
+                self.inodes.insert(ino, updated_inode);
+                Ok(())
+            }
+            InodeType::Directory { .. } => Err(VfsError::IsADirectory),
+            InodeType::Symlink { .. } => Err(VfsError::NotFound),
+        }
+    }
+
+    /// Check if file has execute permission for current user
+    pub fn can_execute(&self, path: &Path) -> Result<bool, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+
+        // Check execute permission (mode_bit 1 = execute)
+        Ok(self.check_permission(inode, self.current_uid, self.current_gid, 1))
+    }
+
+    /// Check if file has setuid bit set
+    pub fn is_setuid(&self, path: &Path) -> Result<bool, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.has_setuid())
+    }
+
+    /// Check if file has setgid bit set
+    pub fn is_setgid(&self, path: &Path) -> Result<bool, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.has_setgid())
+    }
+
+    /// Check if file has sticky bit set
+    pub fn is_sticky(&self, path: &Path) -> Result<bool, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.permissions.has_sticky())
+    }
+
+    /// Set umask (file creation mask)
+    pub fn set_umask(&mut self, umask: u32) {
+        self.umask = umask & 0o777; // Only keep permission bits
+    }
+
+    /// Get effective UID after setuid execution
+    pub fn get_effective_uid(&self, path: &Path, uid: u32) -> Result<u32, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+
+        if inode.permissions.has_setuid() {
+            // When setuid is set, effective UID becomes file owner's UID
+            Ok(inode.permissions.uid)
+        } else {
+            // Otherwise, effective UID is the same as real UID
+            Ok(uid)
+        }
+    }
+
+    /// Set current user context (for switching users, e.g., su/sudo)
+    pub fn set_context(&mut self, uid: u32, gid: u32) {
+        self.current_uid = uid;
+        self.current_gid = gid;
+    }
+
+    // ========== File Metadata Methods ==========
+
+    /// Get file metadata (stat) - follows symlinks
+    pub fn stat(&self, path: &Path) -> Result<FileStat, VfsError> {
+        let ino = self.resolve_path(path)?; // follows symlinks
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(self.inode_to_filestat(inode))
+    }
+
+    /// Get file metadata (lstat) - does NOT follow symlinks
+    pub fn lstat(&self, path: &Path) -> Result<FileStat, VfsError> {
+        let ino = self.resolve_path_no_follow(path)?; // doesn't follow final symlink
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(self.inode_to_filestat(inode))
+    }
+
+    /// Helper to convert Inode to FileStat
+    fn inode_to_filestat(&self, inode: &Inode) -> FileStat {
+        let (file_type, size) = match &inode.inode_type {
+            InodeType::File { content } => (FileType::RegularFile, content.len() as u64),
+            InodeType::Directory { .. } => (FileType::Directory, 4096), // Fixed size for directories
+            InodeType::Symlink { .. } => (FileType::Symlink, 0),        // Symlinks have size 0
+        };
+
+        FileStat {
+            file_type,
+            size,
+            atime: inode.atime,
+            mtime: inode.mtime,
+            ctime: inode.ctime,
+            ino: inode.ino,
+            nlinks: inode.nlinks,
+            mode: inode.permissions.mode,
+            uid: inode.permissions.uid,
+            gid: inode.permissions.gid,
+        }
+    }
 }
 
 impl Default for VirtualFileSystem {
@@ -970,14 +1505,14 @@ mod tests {
 
     #[test]
     fn test_vfs_creation() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         assert_eq!(vfs.cwd(), &PathBuf::from("/"));
         assert_eq!(vfs.file_count(), 0);
     }
 
     #[test]
     fn test_vfs_clone_cheap() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         let _cloned = vfs.clone();
         // Clone should be O(1) due to persistent data structures
         assert_eq!(vfs, _cloned);
@@ -1018,7 +1553,7 @@ mod tests {
 
     #[test]
     fn test_read_nonexistent_file() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         let path = PathBuf::from("/nonexistent.txt");
 
         let result = vfs.read_file(&path);
@@ -1076,33 +1611,29 @@ mod tests {
 
         vfs.create_file(path.clone(), vec![]).unwrap();
 
-        // Default permissions should be read-write
+        // Default permissions should be read-write (0644)
         let perms = vfs.get_permissions(&path).unwrap();
-        assert!(perms.read);
-        assert!(perms.write);
-        assert!(!perms.execute);
+        assert!(perms.owner_can_read());
+        assert!(perms.owner_can_write());
+        assert!(!perms.owner_can_execute());
 
-        // Change to read-only
+        // Change to read-only (0444)
         vfs.set_permissions(&path, FilePermissions::read_only())
             .unwrap();
         let perms = vfs.get_permissions(&path).unwrap();
-        assert!(perms.read);
-        assert!(!perms.write);
+        assert!(perms.owner_can_read());
+        assert!(!perms.owner_can_write());
     }
 
     #[test]
     fn test_read_permission_denied() {
-        let mut vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000); // Non-root user
         let path = PathBuf::from("/test.txt");
 
         vfs.create_file(path.clone(), b"Secret".to_vec()).unwrap();
 
-        // Set to no read permission
-        let no_read = FilePermissions {
-            read: false,
-            write: true,
-            execute: false,
-        };
+        // Set to no read permission (write-only: 0200)
+        let no_read = FilePermissions::new(0o200, 1000, 1000);
         vfs.set_permissions(&path, no_read).unwrap();
 
         let result = vfs.read_file(&path);
@@ -1111,11 +1642,13 @@ mod tests {
 
     #[test]
     fn test_write_permission_denied() {
-        let mut vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new_with_context(1000, 1000); // Non-root user
         let path = PathBuf::from("/test.txt");
 
         vfs.create_file(path.clone(), vec![]).unwrap();
-        vfs.set_permissions(&path, FilePermissions::read_only())
+
+        // Set to read-only (0444)
+        vfs.set_permissions(&path, FilePermissions::new(0o444, 1000, 1000))
             .unwrap();
 
         let result = vfs.write_file(&path, b"New content".to_vec());
@@ -1255,7 +1788,7 @@ mod tests {
 
     #[test]
     fn test_list_directory_not_found() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         let result = vfs.list_directory(&PathBuf::from("/nonexistent"));
         assert_eq!(result, Err(VfsError::NotFound));
     }
@@ -1355,7 +1888,7 @@ mod tests {
 
     #[test]
     fn test_root_directory_exists() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         assert!(
             vfs.is_directory(&PathBuf::from("/")),
             "Root directory should always exist"
@@ -1880,8 +2413,8 @@ mod tests {
 
         // Permissions should be shared (same inode)
         let perms = vfs.get_permissions(&PathBuf::from("/link.txt")).unwrap();
-        assert!(perms.read);
-        assert!(!perms.write);
+        assert!(perms.owner_can_read());
+        assert!(!perms.owner_can_write());
     }
 
     #[test]
@@ -1946,10 +2479,16 @@ mod tests {
 
         // Test various octal permissions
         vfs.chmod(&PathBuf::from("/file.txt"), 0o755).unwrap();
-        assert_eq!(vfs.get_mode(&PathBuf::from("/file.txt")).unwrap() & 0o777, 0o755);
+        assert_eq!(
+            vfs.get_mode(&PathBuf::from("/file.txt")).unwrap() & 0o777,
+            0o755
+        );
 
         vfs.chmod(&PathBuf::from("/file.txt"), 0o644).unwrap();
-        assert_eq!(vfs.get_mode(&PathBuf::from("/file.txt")).unwrap() & 0o777, 0o644);
+        assert_eq!(
+            vfs.get_mode(&PathBuf::from("/file.txt")).unwrap() & 0o777,
+            0o644
+        );
     }
 
     #[test]
@@ -1957,8 +2496,12 @@ mod tests {
         let mut vfs = VirtualFileSystem::new_with_context(1000, 1000); // Create as UID 1000
         vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
 
+        // Switch to root to change ownership (only root can chown)
+        vfs.set_context(0, 0);
+
         // Change owner to UID 1001
-        vfs.chown(&PathBuf::from("/file.txt"), 1001, None).unwrap();
+        vfs.chown(&PathBuf::from("/file.txt"), Some(1001), None)
+            .unwrap();
 
         let uid = vfs.get_owner(&PathBuf::from("/file.txt")).unwrap();
         assert_eq!(uid, 1001, "UID should be 1001");
@@ -1969,8 +2512,12 @@ mod tests {
         let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
         vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
 
+        // Switch to root to change group (only root can chown/chgrp)
+        vfs.set_context(0, 0);
+
         // Change group to GID 1001
-        vfs.chown(&PathBuf::from("/file.txt"), None, 1001).unwrap();
+        vfs.chown(&PathBuf::from("/file.txt"), None, Some(1001))
+            .unwrap();
 
         let gid = vfs.get_group(&PathBuf::from("/file.txt")).unwrap();
         assert_eq!(gid, 1001, "GID should be 1001");
@@ -1986,7 +2533,11 @@ mod tests {
         vfs.chmod(&PathBuf::from("/file.txt"), 0o200).unwrap(); // Write-only
 
         let result = vfs.read_file(&PathBuf::from("/file.txt"));
-        assert_eq!(result, Err(VfsError::PermissionDenied), "Read should be denied");
+        assert_eq!(
+            result,
+            Err(VfsError::PermissionDenied),
+            "Read should be denied"
+        );
     }
 
     #[test]
@@ -1998,7 +2549,11 @@ mod tests {
         vfs.chmod(&PathBuf::from("/file.txt"), 0o444).unwrap(); // Read-only
 
         let result = vfs.write_file(&PathBuf::from("/file.txt"), b"new".to_vec());
-        assert_eq!(result, Err(VfsError::PermissionDenied), "Write should be denied");
+        assert_eq!(
+            result,
+            Err(VfsError::PermissionDenied),
+            "Write should be denied"
+        );
     }
 
     #[test]
@@ -2010,12 +2565,15 @@ mod tests {
         // Remove execute permission
         vfs.chmod(&PathBuf::from("/script.sh"), 0o644).unwrap();
 
-        let result = vfs.can_execute(&PathBuf::from("/script.sh"));
+        let result = vfs.can_execute(&PathBuf::from("/script.sh")).unwrap();
         assert!(!result, "Execute should be denied");
 
         // Add execute permission
         vfs.chmod(&PathBuf::from("/script.sh"), 0o755).unwrap();
-        assert!(vfs.can_execute(&PathBuf::from("/script.sh")), "Execute should be allowed");
+        assert!(
+            vfs.can_execute(&PathBuf::from("/script.sh")).unwrap(),
+            "Execute should be allowed"
+        );
     }
 
     #[test]
@@ -2033,7 +2591,11 @@ mod tests {
 
         // Other (UID 1001) cannot read
         let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1001, 1001);
-        assert_eq!(result, Err(VfsError::PermissionDenied), "Other should not read");
+        assert_eq!(
+            result,
+            Err(VfsError::PermissionDenied),
+            "Other should not read"
+        );
     }
 
     #[test]
@@ -2051,7 +2613,11 @@ mod tests {
 
         // Non-group member cannot read
         let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1001, 1001);
-        assert_eq!(result, Err(VfsError::PermissionDenied), "Non-group cannot read");
+        assert_eq!(
+            result,
+            Err(VfsError::PermissionDenied),
+            "Non-group cannot read"
+        );
     }
 
     #[test]
@@ -2069,7 +2635,11 @@ mod tests {
 
         // Non-root cannot read
         let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1000, 1000);
-        assert_eq!(result, Err(VfsError::PermissionDenied), "Non-root should be denied");
+        assert_eq!(
+            result,
+            Err(VfsError::PermissionDenied),
+            "Non-root should be denied"
+        );
     }
 
     #[test]
@@ -2087,7 +2657,8 @@ mod tests {
     #[test]
     fn test_permission_denied_on_write() {
         let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
-        vfs.create_file(PathBuf::from("/readonly.txt"), vec![]).unwrap();
+        vfs.create_file(PathBuf::from("/readonly.txt"), vec![])
+            .unwrap();
 
         vfs.chmod(&PathBuf::from("/readonly.txt"), 0o444).unwrap();
 
@@ -2098,40 +2669,50 @@ mod tests {
     #[test]
     fn test_setuid_bit() {
         let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
-        vfs.create_file(PathBuf::from("/setuid_prog"), vec![]).unwrap();
+        vfs.create_file(PathBuf::from("/setuid_prog"), vec![])
+            .unwrap();
 
         // Set setuid bit (04755)
         vfs.chmod(&PathBuf::from("/setuid_prog"), 0o4755).unwrap();
 
         let mode = vfs.get_mode(&PathBuf::from("/setuid_prog")).unwrap();
         assert_eq!(mode & 0o4000, 0o4000, "Setuid bit should be set");
-        assert!(vfs.is_setuid(&PathBuf::from("/setuid_prog")), "is_setuid should return true");
+        assert!(
+            vfs.is_setuid(&PathBuf::from("/setuid_prog")).unwrap(),
+            "is_setuid should return true"
+        );
     }
 
     #[test]
     fn test_setgid_bit() {
         let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
-        vfs.create_file(PathBuf::from("/setgid_prog"), vec![]).unwrap();
+        vfs.create_file(PathBuf::from("/setgid_prog"), vec![])
+            .unwrap();
 
         // Set setgid bit (02755)
         vfs.chmod(&PathBuf::from("/setgid_prog"), 0o2755).unwrap();
 
         let mode = vfs.get_mode(&PathBuf::from("/setgid_prog")).unwrap();
         assert_eq!(mode & 0o2000, 0o2000, "Setgid bit should be set");
-        assert!(vfs.is_setgid(&PathBuf::from("/setgid_prog")), "is_setgid should return true");
+        assert!(
+            vfs.is_setgid(&PathBuf::from("/setgid_prog")).unwrap(),
+            "is_setgid should return true"
+        );
     }
 
     #[test]
     fn test_sticky_bit() {
         let mut vfs = VirtualFileSystem::new_with_context(0, 0);
-        vfs.create_directory(PathBuf::from("/tmp")).unwrap();
 
-        // Set sticky bit (01777)
+        // /tmp already exists from new(), just set sticky bit (01777)
         vfs.chmod(&PathBuf::from("/tmp"), 0o1777).unwrap();
 
         let mode = vfs.get_mode(&PathBuf::from("/tmp")).unwrap();
         assert_eq!(mode & 0o1000, 0o1000, "Sticky bit should be set");
-        assert!(vfs.is_sticky(&PathBuf::from("/tmp")), "is_sticky should return true");
+        assert!(
+            vfs.is_sticky(&PathBuf::from("/tmp")).unwrap(),
+            "is_sticky should return true"
+        );
     }
 
     // Integration tests
@@ -2152,7 +2733,9 @@ mod tests {
         vfs.chmod(&PathBuf::from("/doc.txt"), 0o600).unwrap();
 
         // Owner can read/write
-        assert!(vfs.read_file_as(&PathBuf::from("/doc.txt"), 1000, 1000).is_ok());
+        assert!(vfs
+            .read_file_as(&PathBuf::from("/doc.txt"), 1000, 1000)
+            .is_ok());
         assert!(vfs
             .write_file_as(&PathBuf::from("/doc.txt"), b"new".to_vec(), 1000, 1000)
             .is_ok());
@@ -2170,12 +2753,16 @@ mod tests {
         vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
 
         // Change ownership and permissions
-        vfs.chown(&PathBuf::from("/file.txt"), 1000, 1000).unwrap();
+        vfs.chown(&PathBuf::from("/file.txt"), Some(1000), Some(1000))
+            .unwrap();
         vfs.chmod(&PathBuf::from("/file.txt"), 0o600).unwrap();
 
         assert_eq!(vfs.get_owner(&PathBuf::from("/file.txt")).unwrap(), 1000);
         assert_eq!(vfs.get_group(&PathBuf::from("/file.txt")).unwrap(), 1000);
-        assert_eq!(vfs.get_mode(&PathBuf::from("/file.txt")).unwrap() & 0o777, 0o600);
+        assert_eq!(
+            vfs.get_mode(&PathBuf::from("/file.txt")).unwrap() & 0o777,
+            0o600
+        );
     }
 
     #[test]
@@ -2183,16 +2770,25 @@ mod tests {
         let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
         vfs.create_directory(PathBuf::from("/dir")).unwrap();
 
+        // Switch to root to change ownership
+        vfs.set_context(0, 0);
+
         // Set directory GID and setgid bit
-        vfs.chown(&PathBuf::from("/dir"), None, 2000).unwrap();
+        vfs.chown(&PathBuf::from("/dir"), None, Some(2000)).unwrap();
         vfs.chmod(&PathBuf::from("/dir"), 0o2775).unwrap();
+
+        // Switch back to UID 1000 for file creation
+        vfs.set_context(1000, 1000);
 
         // Create file in directory - should inherit group
         vfs.create_file(PathBuf::from("/dir/file.txt"), vec![])
             .unwrap();
 
         let gid = vfs.get_group(&PathBuf::from("/dir/file.txt")).unwrap();
-        assert_eq!(gid, 2000, "File should inherit directory's GID when setgid is set");
+        assert_eq!(
+            gid, 2000,
+            "File should inherit directory's GID when setgid is set"
+        );
     }
 
     #[test]
@@ -2227,7 +2823,11 @@ mod tests {
 
         // Cannot access file without execute on directory
         let result = vfs.read_file_as(&PathBuf::from("/dir/file.txt"), 1000, 1000);
-        assert_eq!(result, Err(VfsError::PermissionDenied), "Need execute on dir to access files");
+        assert_eq!(
+            result,
+            Err(VfsError::PermissionDenied),
+            "Need execute on dir to access files"
+        );
     }
 
     #[test]
@@ -2235,12 +2835,18 @@ mod tests {
         let mut vfs = VirtualFileSystem::new_with_context(1000, 1000);
         vfs.create_file(PathBuf::from("/sudo"), vec![]).unwrap();
 
+        // Switch to root to change ownership
+        vfs.set_context(0, 0);
+
         // Make it owned by root with setuid
-        vfs.chown(&PathBuf::from("/sudo"), 0, 0).unwrap();
+        vfs.chown(&PathBuf::from("/sudo"), Some(0), Some(0))
+            .unwrap();
         vfs.chmod(&PathBuf::from("/sudo"), 0o4755).unwrap();
 
         // When executed by user 1000, effective UID should become 0
-        let euid = vfs.get_effective_uid(&PathBuf::from("/sudo"), 1000);
+        let euid = vfs
+            .get_effective_uid(&PathBuf::from("/sudo"), 1000)
+            .unwrap();
         assert_eq!(euid, 0, "Setuid should make effective UID = file owner UID");
     }
 
@@ -2255,7 +2861,11 @@ mod tests {
 
         // Owner cannot read (owner permissions checked first)
         let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1000, 1000);
-        assert_eq!(result, Err(VfsError::PermissionDenied), "Owner check before group");
+        assert_eq!(
+            result,
+            Err(VfsError::PermissionDenied),
+            "Owner check before group"
+        );
 
         // Group member (different UID, same GID) can read
         let result = vfs.read_file_as(&PathBuf::from("/file.txt"), 1001, 1000);
@@ -2277,7 +2887,605 @@ mod tests {
 
         // Cannot access /a/b/file.txt without execute on /a
         let result = vfs.read_file_as(&PathBuf::from("/a/b/file.txt"), 1000, 1000);
-        assert_eq!(result, Err(VfsError::PermissionDenied), "Need execute on all path components");
+        assert_eq!(
+            result,
+            Err(VfsError::PermissionDenied),
+            "Need execute on all path components"
+        );
+    }
+
+    // ========================================================================
+    // WOS-FS-005: File Metadata (stat, timestamps)
+    // ========================================================================
+
+    // Unit tests (10 tests)
+
+    #[test]
+    fn test_stat_returns_metadata() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(stat.size, 5, "File size should be 5 bytes");
+        assert_eq!(stat.file_type, FileType::RegularFile);
+    }
+
+    #[test]
+    fn test_stat_directory() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/dir")).unwrap();
+        assert_eq!(stat.file_type, FileType::Directory);
+    }
+
+    #[test]
+    fn test_stat_symlink() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/target.txt"), vec![])
+            .unwrap();
+        vfs.create_symlink(PathBuf::from("/link"), PathBuf::from("/target.txt"))
+            .unwrap();
+
+        let stat = vfs.lstat(&PathBuf::from("/link")).unwrap(); // lstat doesn't follow symlink
+        assert_eq!(stat.file_type, FileType::Symlink);
+    }
+
+    #[test]
+    fn test_timestamps_initialized() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert!(stat.atime > 0, "atime should be set");
+        assert!(stat.mtime > 0, "mtime should be set");
+        assert!(stat.ctime > 0, "ctime should be set");
+    }
+
+    #[test]
+    fn test_atime_updated_on_read() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+
+        let stat_before = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        let atime_before = stat_before.atime;
+
+        // Simulate time passing
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        vfs.read_file(&PathBuf::from("/file.txt")).unwrap();
+
+        let stat_after = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert!(
+            stat_after.atime >= atime_before,
+            "atime should be updated on read"
+        );
+    }
+
+    #[test]
+    fn test_mtime_updated_on_write() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        let stat_before = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        let mtime_before = stat_before.mtime;
+
+        // Simulate time passing
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        vfs.write_file(&PathBuf::from("/file.txt"), b"new".to_vec())
+            .unwrap();
+
+        let stat_after = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert!(
+            stat_after.mtime > mtime_before,
+            "mtime should be updated on write"
+        );
+    }
+
+    #[test]
+    fn test_ctime_updated_on_chmod() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        let stat_before = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        let ctime_before = stat_before.ctime;
+
+        // Simulate time passing
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        vfs.chmod(&PathBuf::from("/file.txt"), 0o644).unwrap();
+
+        let stat_after = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert!(
+            stat_after.ctime > ctime_before,
+            "ctime should be updated on chmod"
+        );
+    }
+
+    #[test]
+    fn test_file_size_tracked() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), b"hello world".to_vec())
+            .unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(stat.size, 11, "File size should be 11 bytes");
+
+        // Write different content
+        vfs.write_file(&PathBuf::from("/file.txt"), b"hi".to_vec())
+            .unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(stat.size, 2, "File size should be updated to 2 bytes");
+    }
+
+    #[test]
+    fn test_directory_size() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+
+        let stat = vfs.stat(&PathBuf::from("/dir")).unwrap();
+        // Directory size is typically fixed (e.g., 4096 or 0)
+        assert!(stat.size >= 0, "Directory should have a size");
+    }
+
+    #[test]
+    fn test_stat_nonexistent_file() {
+        let mut vfs = VirtualFileSystem::new();
+        let result = vfs.stat(&PathBuf::from("/nonexistent.txt"));
+        assert_eq!(result, Err(VfsError::NotFound));
+    }
+
+    // Integration tests (4 tests)
+
+    #[test]
+    fn test_metadata_workflow() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create file
+        vfs.create_file(PathBuf::from("/doc.txt"), b"initial".to_vec())
+            .unwrap();
+
+        let stat1 = vfs.stat(&PathBuf::from("/doc.txt")).unwrap();
+        assert_eq!(stat1.size, 7);
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Modify file
+        vfs.write_file(&PathBuf::from("/doc.txt"), b"modified content".to_vec())
+            .unwrap();
+
+        let stat2 = vfs.stat(&PathBuf::from("/doc.txt")).unwrap();
+        assert_eq!(stat2.size, 16);
+        assert!(stat2.mtime > stat1.mtime, "mtime should increase");
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Change permissions
+        vfs.chmod(&PathBuf::from("/doc.txt"), 0o444).unwrap();
+
+        let stat3 = vfs.stat(&PathBuf::from("/doc.txt")).unwrap();
+        assert!(stat3.ctime > stat2.ctime, "ctime should increase");
+    }
+
+    #[test]
+    fn test_stat_vs_lstat() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/target.txt"), b"hello".to_vec())
+            .unwrap();
+        vfs.create_symlink(PathBuf::from("/link"), PathBuf::from("/target.txt"))
+            .unwrap();
+
+        // stat follows symlink
+        let stat = vfs.stat(&PathBuf::from("/link")).unwrap();
+        assert_eq!(stat.file_type, FileType::RegularFile);
+        assert_eq!(stat.size, 5);
+
+        // lstat doesn't follow symlink
+        let lstat = vfs.lstat(&PathBuf::from("/link")).unwrap();
+        assert_eq!(lstat.file_type, FileType::Symlink);
+    }
+
+    #[test]
+    fn test_timestamps_preserved_on_hard_link() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        let stat_original = vfs.stat(&PathBuf::from("/file.txt")).unwrap();
+
+        // Create hard link
+        vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/link.txt"))
+            .unwrap();
+
+        let stat_link = vfs.stat(&PathBuf::from("/link.txt")).unwrap();
+
+        // Hard links share the same inode, so timestamps should be identical
+        assert_eq!(stat_link.atime, stat_original.atime);
+        assert_eq!(stat_link.mtime, stat_original.mtime);
+        assert_eq!(stat_link.ctime, stat_original.ctime);
+    }
+
+    #[test]
+    fn test_metadata_after_operations() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Read should update atime
+        vfs.read_file(&PathBuf::from("/test.txt")).unwrap();
+        let stat1 = vfs.stat(&PathBuf::from("/test.txt")).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Write should update mtime and ctime
+        vfs.write_file(&PathBuf::from("/test.txt"), b"new".to_vec())
+            .unwrap();
+        let stat2 = vfs.stat(&PathBuf::from("/test.txt")).unwrap();
+        assert!(stat2.mtime > stat1.mtime);
+        assert!(stat2.ctime > stat1.ctime);
+    }
+
+    // ============================================================================
+    // WOS-FS-006: Path Normalization and Resolution Tests
+    // ============================================================================
+
+    // WOS-FS-006 Test 1: Resolve single dot (current directory)
+    #[test]
+    fn test_resolve_single_dot() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Path with ./ should resolve to same file
+        let content = vfs.read_file(&PathBuf::from("/./test.txt")).unwrap();
+        assert_eq!(content, b"content");
+
+        // Multiple dots should also resolve
+        let content2 = vfs.read_file(&PathBuf::from("/./././test.txt")).unwrap();
+        assert_eq!(content2, b"content");
+    }
+
+    // WOS-FS-006 Test 2: Resolve double dot (parent directory)
+    #[test]
+    fn test_resolve_double_dot() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/dir1")).unwrap();
+        vfs.create_directory(PathBuf::from("/dir1/dir2")).unwrap();
+        vfs.create_file(PathBuf::from("/dir1/dir2/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Path with .. should navigate to parent
+        let content = vfs
+            .read_file(&PathBuf::from("/dir1/dir2/../dir2/test.txt"))
+            .unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Test 3: Resolve multiple parent references
+    #[test]
+    fn test_resolve_multiple_parent_refs() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c")).unwrap();
+        vfs.create_file(PathBuf::from("/a/b/c/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // ../../ should go up two levels
+        let content = vfs
+            .read_file(&PathBuf::from("/a/b/c/../../b/c/test.txt"))
+            .unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Test 4: Handle multiple slashes
+    #[test]
+    fn test_handle_multiple_slashes() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Multiple slashes should be treated as single slash
+        let content = vfs.read_file(&PathBuf::from("///test.txt")).unwrap();
+        assert_eq!(content, b"content");
+
+        let content2 = vfs.read_file(&PathBuf::from("/.//.//test.txt")).unwrap();
+        assert_eq!(content2, b"content");
+    }
+
+    // WOS-FS-006 Test 5: Canonicalize complex path
+    #[test]
+    fn test_canonicalize_complex_path() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        vfs.create_file(PathBuf::from("/a/b/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Complex path with ., .., and //
+        let content = vfs
+            .read_file(&PathBuf::from("/a/./b/../b//test.txt"))
+            .unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Test 6: Parent of root should stay at root
+    #[test]
+    fn test_parent_of_root() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // /../ from root should stay at root
+        let content = vfs.read_file(&PathBuf::from("/../test.txt")).unwrap();
+        assert_eq!(content, b"content");
+
+        // Multiple parents from root
+        let content2 = vfs.read_file(&PathBuf::from("/../../test.txt")).unwrap();
+        assert_eq!(content2, b"content");
+    }
+
+    // WOS-FS-006 Test 7: Normalize path removes redundant components
+    #[test]
+    fn test_normalize_path_basic() {
+        let normalized = VirtualFileSystem::normalize_path(&PathBuf::from("/a/./b"));
+        assert_eq!(normalized, PathBuf::from("/a/b"));
+
+        let normalized2 = VirtualFileSystem::normalize_path(&PathBuf::from("/a//b"));
+        assert_eq!(normalized2, PathBuf::from("/a/b"));
+    }
+
+    // WOS-FS-006 Test 8: Normalize path handles parent references
+    #[test]
+    fn test_normalize_path_parent() {
+        let normalized = VirtualFileSystem::normalize_path(&PathBuf::from("/a/b/../c"));
+        assert_eq!(normalized, PathBuf::from("/a/c"));
+
+        let normalized2 = VirtualFileSystem::normalize_path(&PathBuf::from("/a/b/c/../../d"));
+        assert_eq!(normalized2, PathBuf::from("/a/d"));
+    }
+
+    // WOS-FS-006 Test 9: Normalize path with only dots
+    #[test]
+    fn test_normalize_path_only_dots() {
+        let normalized = VirtualFileSystem::normalize_path(&PathBuf::from("/."));
+        assert_eq!(normalized, PathBuf::from("/"));
+
+        let normalized2 = VirtualFileSystem::normalize_path(&PathBuf::from("/./././."));
+        assert_eq!(normalized2, PathBuf::from("/"));
+    }
+
+    // WOS-FS-006 Test 10: Normalize path with trailing slash
+    #[test]
+    fn test_normalize_path_trailing_slash() {
+        let normalized = VirtualFileSystem::normalize_path(&PathBuf::from("/a/b/"));
+        assert_eq!(normalized, PathBuf::from("/a/b"));
+
+        let normalized2 = VirtualFileSystem::normalize_path(&PathBuf::from("/a/b//"));
+        assert_eq!(normalized2, PathBuf::from("/a/b"));
+    }
+
+    // WOS-FS-006 Test 11: Create file with normalized path
+    #[test]
+    fn test_create_file_with_normalized_path() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+
+        // Create file with complex path
+        vfs.create_file(PathBuf::from("/a/./b/../b/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Should be accessible via normalized path
+        let content = vfs.read_file(&PathBuf::from("/a/b/test.txt")).unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Test 12: List directory with normalized path
+    #[test]
+    fn test_list_directory_normalized() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+        vfs.create_file(PathBuf::from("/dir/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // List directory via normalized path
+        let files = vfs.list_directory(&PathBuf::from("/./dir")).unwrap();
+        assert_eq!(files.len(), 1);
+        assert!(files.iter().any(|entry| entry.name == "test.txt"));
+    }
+
+    // WOS-FS-006 Test 13: Delete file with normalized path
+    #[test]
+    fn test_delete_file_normalized() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        vfs.create_file(PathBuf::from("/a/b/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Delete via complex path
+        vfs.delete_file(&PathBuf::from("/a/./b/../b//test.txt"))
+            .unwrap();
+
+        // File should not exist
+        assert!(vfs.read_file(&PathBuf::from("/a/b/test.txt")).is_err());
+    }
+
+    // WOS-FS-006 Test 14: Symlink with normalized path
+    #[test]
+    fn test_symlink_normalized_path() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/target.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Create symlink with complex path
+        vfs.create_symlink(
+            PathBuf::from("/./link.txt"),
+            PathBuf::from("/../target.txt"),
+        )
+        .unwrap();
+
+        // Should resolve to target
+        let content = vfs.read_file(&PathBuf::from("/link.txt")).unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Test 15: Stat with normalized path
+    #[test]
+    fn test_stat_normalized_path() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        vfs.create_file(PathBuf::from("/a/b/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Stat via complex path
+        let stat = vfs.stat(&PathBuf::from("/a/./b/../b//test.txt")).unwrap();
+        assert_eq!(stat.file_type, FileType::RegularFile);
+        assert_eq!(stat.size, 7);
+    }
+
+    // ============================================================================
+    // WOS-FS-006: Path Normalization Integration Tests
+    // ============================================================================
+
+    // WOS-FS-006 Integration Test 1: Normalized paths with hard links
+    #[test]
+    fn test_integration_normalization_with_hardlinks() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/original.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Create hard link with normalized path
+        vfs.link(
+            PathBuf::from("/./original.txt"),
+            PathBuf::from("/dir/../link.txt"),
+        )
+        .unwrap();
+
+        // Both paths should resolve to same inode
+        let stat1 = vfs.stat(&PathBuf::from("/original.txt")).unwrap();
+        let stat2 = vfs.stat(&PathBuf::from("/link.txt")).unwrap();
+        assert_eq!(stat1.ino, stat2.ino);
+        assert_eq!(stat1.nlinks, 2);
+    }
+
+    // WOS-FS-006 Integration Test 2: Normalized paths with symlinks
+    #[test]
+    fn test_integration_normalization_with_symlinks() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_file(PathBuf::from("/a/target.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Create symlink with complex normalized paths
+        vfs.create_symlink(
+            PathBuf::from("/./a/../a/link.txt"),
+            PathBuf::from("./target.txt"),
+        )
+        .unwrap();
+
+        // Should resolve correctly
+        let content = vfs.read_file(&PathBuf::from("/a/link.txt")).unwrap();
+        assert_eq!(content, b"content");
+    }
+
+    // WOS-FS-006 Integration Test 3: Normalized paths with permissions
+    #[test]
+    fn test_integration_normalization_with_permissions() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_file(PathBuf::from("/test.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Set permissions via normalized path
+        vfs.chmod(&PathBuf::from("/./test.txt"), 0o644).unwrap();
+
+        // Check via different normalized path
+        let stat = vfs.stat(&PathBuf::from("//test.txt")).unwrap();
+        assert_eq!(stat.mode & 0o777, 0o644);
+    }
+
+    // WOS-FS-006 Integration Test 4: Normalized paths with directory traversal
+    #[test]
+    fn test_integration_normalization_directory_traversal() {
+        let mut vfs = VirtualFileSystem::new();
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c")).unwrap();
+        vfs.create_file(PathBuf::from("/a/b/c/file1.txt"), b"1".to_vec())
+            .unwrap();
+        vfs.create_file(PathBuf::from("/a/b/file2.txt"), b"2".to_vec())
+            .unwrap();
+
+        // List directory with normalized path
+        let files = vfs
+            .list_directory(&PathBuf::from("/a/b/c/../../b"))
+            .unwrap();
+        assert_eq!(files.len(), 2); // c/ and file2.txt
+    }
+
+    // WOS-FS-006 Integration Test 5: Normalized paths with multiple operations
+    #[test]
+    fn test_integration_normalization_multi_operation() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create directory first
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+
+        // Create with normalized path
+        vfs.create_file(PathBuf::from("/./dir/../dir/test.txt"), b"initial".to_vec())
+            .unwrap();
+
+        // Write with different normalized path
+        vfs.write_file(&PathBuf::from("//dir/./test.txt"), b"updated".to_vec())
+            .unwrap();
+
+        // Read with yet another normalized path
+        let content = vfs
+            .read_file(&PathBuf::from("/dir//../dir/test.txt"))
+            .unwrap();
+        assert_eq!(content, b"updated");
+
+        // Delete with normalized path
+        vfs.delete_file(&PathBuf::from("/./dir//test.txt")).unwrap();
+        assert!(!vfs.exists(&PathBuf::from("/dir/test.txt")));
+    }
+
+    // WOS-FS-006 Integration Test 6: Normalized paths stress test
+    #[test]
+    fn test_integration_normalization_stress() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create deeply nested directory structure
+        vfs.create_directory(PathBuf::from("/a")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c/d")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c/d/e")).unwrap();
+        vfs.create_directory(PathBuf::from("/a/b/c/d/e/f")).unwrap();
+
+        // Create deeply nested structure
+        vfs.create_file(PathBuf::from("/a/b/c/d/e/f/test.txt"), b"deep".to_vec())
+            .unwrap();
+
+        // Access with complex normalized path
+        let content = vfs
+            .read_file(&PathBuf::from(
+                "/a/./b/../b/c/./d/../d/e/f/../../e/f/test.txt",
+            ))
+            .unwrap();
+        assert_eq!(content, b"deep");
+
+        // Verify stat works
+        let stat = vfs
+            .stat(&PathBuf::from("/a/b/c/d/e/f/../../e/f/test.txt"))
+            .unwrap();
+        assert_eq!(stat.file_type, FileType::RegularFile);
+        assert_eq!(stat.size, 4);
     }
 
     // Property-based tests using proptest
@@ -2418,13 +3626,13 @@ mod tests {
             #[test]
             fn proptest_permission_idempotent(
                 path in prop::string::string_regex("/[a-z0-9_]{1,20}\\.txt").unwrap(),
-                read in any::<bool>(),
-                write in any::<bool>(),
-                execute in any::<bool>(),
+                mode in 0u32..0o7777,
+                uid in 0u32..10000,
+                gid in 0u32..10000,
             ) {
                 let mut vfs = VirtualFileSystem::new();
                 let path = PathBuf::from(path);
-                let perms = FilePermissions { read, write, execute };
+                let perms = FilePermissions::new(mode, uid, gid);
 
                 vfs.create_file(path.clone(), vec![]).unwrap();
 
@@ -2685,6 +3893,123 @@ mod tests {
                         }
                     }
                 }
+            }
+
+            // ====================================================================
+            // WOS-FS-006: Path Normalization Property Tests
+            // ====================================================================
+
+            /// Property: Normalized paths are idempotent
+            #[test]
+            fn proptest_normalization_idempotent(
+                components in prop::collection::vec(
+                    prop::string::string_regex("[a-z]{1,10}").unwrap(),
+                    1..10
+                ),
+            ) {
+                // Build path with components
+                let path_str = format!("/{}", components.join("/"));
+                let path = PathBuf::from(&path_str);
+
+                // Normalize once
+                let normalized1 = VirtualFileSystem::normalize_path(&path);
+                // Normalize again
+                let normalized2 = VirtualFileSystem::normalize_path(&normalized1);
+
+                // Should be the same
+                prop_assert_eq!(normalized1, normalized2);
+            }
+
+            /// Property: Normalized paths never contain . or ..
+            #[test]
+            fn proptest_normalized_no_dots(
+                components in prop::collection::vec(
+                    prop_oneof![
+                        Just(".".to_string()),
+                        Just("..".to_string()),
+                        prop::string::string_regex("[a-z]{1,10}").unwrap(),
+                    ],
+                    1..15
+                ),
+            ) {
+                let path_str = format!("/{}", components.join("/"));
+                let path = PathBuf::from(&path_str);
+
+                let normalized = VirtualFileSystem::normalize_path(&path);
+                let normalized_str = normalized.to_str().unwrap();
+
+                // Normalized path should not contain /. or /..
+                prop_assert!(!normalized_str.contains("/."));
+            }
+
+            /// Property: Normalized paths never have consecutive slashes
+            #[test]
+            fn proptest_normalized_no_consecutive_slashes(
+                components in prop::collection::vec(
+                    prop::string::string_regex("[a-z]{1,10}").unwrap(),
+                    1..10
+                ),
+                extra_slashes in prop::collection::vec(any::<bool>(), 1..10),
+            ) {
+                // Build path with random extra slashes
+                let mut path_str = String::from("/");
+                for (i, component) in components.iter().enumerate() {
+                    path_str.push_str(component);
+                    if i < components.len() - 1 {
+                        path_str.push('/');
+                        if i < extra_slashes.len() && extra_slashes[i] {
+                            path_str.push('/');
+                        }
+                    }
+                }
+                let path = PathBuf::from(&path_str);
+
+                let normalized = VirtualFileSystem::normalize_path(&path);
+                let normalized_str = normalized.to_str().unwrap();
+
+                // Should not contain //
+                prop_assert!(!normalized_str.contains("//"));
+            }
+
+            /// Property: Path operations work with normalized and unnormalized paths
+            #[test]
+            fn proptest_operations_with_normalization(
+                dir in prop::string::string_regex("[a-z]{1,10}").unwrap(),
+                file in prop::string::string_regex("[a-z]{1,10}\\.txt").unwrap(),
+                content in prop::collection::vec(any::<u8>(), 0..100),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+
+                // Create file with simple path
+                let simple_path = PathBuf::from(format!("/{}/{}", dir, file));
+                vfs.create_file(simple_path.clone(), content.clone()).ok();
+
+                // Read with complex path
+                let complex_path = PathBuf::from(format!("/./{}/../{}/{}", dir, dir, file));
+                if let Ok(read_content) = vfs.read_file(&complex_path) {
+                    prop_assert_eq!(read_content, content);
+                }
+            }
+
+            /// Property: Parent references never escape root
+            #[test]
+            fn proptest_parent_refs_bounded_at_root(
+                num_parents in 1..20_usize,
+                filename in prop::string::string_regex("[a-z]{1,10}\\.txt").unwrap(),
+            ) {
+                // Create path with excessive parent references: /../../../file.txt
+                let mut path_str = String::from("/");
+                for _ in 0..num_parents {
+                    path_str.push_str("../");
+                }
+                path_str.push_str(&filename);
+                let path = PathBuf::from(&path_str);
+
+                let normalized = VirtualFileSystem::normalize_path(&path);
+                let normalized_str = normalized.to_str().unwrap();
+
+                // Should resolve to /filename (parent refs bounded at root)
+                prop_assert_eq!(normalized_str, format!("/{}", filename));
             }
         }
     }

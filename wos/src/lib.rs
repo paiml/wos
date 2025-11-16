@@ -2270,7 +2270,7 @@ impl WosWasm {
         }
     }
 
-    fn cmd_grep(&self, args: Vec<String>, stdin: &str) -> String {
+    fn cmd_grep(&mut self, args: Vec<String>, stdin: &str) -> String {
         // If only pattern is provided (no file), read from stdin
         if args.len() == 1 {
             let pattern = &args[0];
@@ -2308,7 +2308,7 @@ impl WosWasm {
         }
     }
 
-    fn cmd_wc(&self, args: Vec<String>, stdin: &str) -> String {
+    fn cmd_wc(&mut self, args: Vec<String>, stdin: &str) -> String {
         // If no file is provided, read from stdin
         if args.is_empty() {
             let lines = stdin.lines().count();
@@ -2331,7 +2331,7 @@ impl WosWasm {
         }
     }
 
-    fn cmd_vim(&self, args: Vec<String>) -> String {
+    fn cmd_vim(&mut self, args: Vec<String>) -> String {
         // Create vim program instance
         let file_path = if !args.is_empty() {
             Some(std::path::PathBuf::from(&args[0]))
@@ -2388,7 +2388,7 @@ impl WosWasm {
 
         // Use ScriptLoader to load the script (no shebang validation for bash)
         let script = match script_loader::ScriptLoader::load_no_validation(
-            &self.state.vfs,
+            &mut self.state.vfs,
             &normalized_path,
         ) {
             Ok(script) => script,
@@ -2455,7 +2455,7 @@ impl WosWasm {
 
         // Use ScriptLoader to load the script (no shebang validation for source)
         let script = match script_loader::ScriptLoader::load_no_validation(
-            &self.state.vfs,
+            &mut self.state.vfs,
             &normalized_path,
         ) {
             Ok(script) => script,
