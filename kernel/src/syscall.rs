@@ -604,6 +604,82 @@ fn sys_dup2(
     }
 }
 
+/// Map VfsError to KernelError
+fn map_vfs_error(vfs_error: wos_shared::vfs::VfsError, path: &str) -> KernelError {
+    match vfs_error {
+        wos_shared::vfs::VfsError::NotFound => KernelError::FileNotFound(path.to_string()),
+        wos_shared::vfs::VfsError::AlreadyExists => {
+            KernelError::FileAlreadyExists(path.to_string())
+        }
+        wos_shared::vfs::VfsError::PermissionDenied => KernelError::PermissionDenied,
+        wos_shared::vfs::VfsError::NotADirectory => {
+            KernelError::InvalidParameters("Not a directory".to_string())
+        }
+        wos_shared::vfs::VfsError::IsADirectory => {
+            KernelError::InvalidParameters("Is a directory".to_string())
+        }
+        wos_shared::vfs::VfsError::DirectoryNotEmpty => {
+            KernelError::InvalidParameters("Directory not empty".to_string())
+        }
+        _ => KernelError::InvalidParameters(format!("VFS error: {:?}", vfs_error)),
+    }
+}
+
+/// Handle Mkdir syscall
+fn sys_mkdir(
+    mut state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+    _mode: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path_buf = PathBuf::from(&path);
+
+    state
+        .vfs
+        .create_directory(path_buf)
+        .map_err(|e| map_vfs_error(e, &path))?;
+
+    Ok((state, SyscallOutput::Success))
+}
+
+/// Handle Rmdir syscall
+fn sys_rmdir(
+    mut state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path_buf = PathBuf::from(&path);
+
+    // Check if it's root
+    if path == "/" {
+        return Err(KernelError::PermissionDenied);
+    }
+
+    // Remove directory
+    state
+        .vfs
+        .remove_directory(&path_buf)
+        .map_err(|e| map_vfs_error(e, &path))?;
+
+    Ok((state, SyscallOutput::Success))
+}
+
+/// Handle Listdir syscall
+fn sys_listdir(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path_buf = PathBuf::from(&path);
+
+    let entries = state
+        .vfs
+        .list_directory(&path_buf)
+        .map_err(|e| map_vfs_error(e, &path))?;
+
+    Ok((state, SyscallOutput::DirectoryEntries(entries)))
+}
+
 ///
 /// Pure functional dispatcher: takes kernel state and syscall, returns new state and output.
 /// Never panics - all errors are returned as Results.
@@ -2975,9 +3051,10 @@ mod tests {
             );
 
             assert!(result.is_err());
+            // VFS returns error with the full path
             assert_eq!(
                 result.unwrap_err(),
-                KernelError::FileNotFound("/nonexistent".to_string())
+                KernelError::FileNotFound("/nonexistent/child".to_string())
             );
         }
 
@@ -3328,10 +3405,19 @@ mod tests {
             let proc = Process::new(pid, None);
             state.add_process(proc);
 
-            // Create some directories in root
-            state.vfs.create_directory(PathBuf::from("/home")).unwrap();
-            state.vfs.create_directory(PathBuf::from("/tmp")).unwrap();
-            state.vfs.create_directory(PathBuf::from("/var")).unwrap();
+            // Create some unique directories in root (avoid conflicts with pre-existing dirs)
+            state
+                .vfs
+                .create_directory(PathBuf::from("/test_root_1"))
+                .unwrap();
+            state
+                .vfs
+                .create_directory(PathBuf::from("/test_root_2"))
+                .unwrap();
+            state
+                .vfs
+                .create_directory(PathBuf::from("/test_root_3"))
+                .unwrap();
 
             let (state, output) = dispatch_syscall(
                 state,
@@ -3346,9 +3432,9 @@ mod tests {
                 SyscallOutput::DirectoryEntries(entries) => {
                     assert!(entries.len() >= 3);
                     let names: Vec<String> = entries.iter().map(|e| e.name.clone()).collect();
-                    assert!(names.contains(&"home".to_string()));
-                    assert!(names.contains(&"tmp".to_string()));
-                    assert!(names.contains(&"var".to_string()));
+                    assert!(names.contains(&"test_root_1".to_string()));
+                    assert!(names.contains(&"test_root_2".to_string()));
+                    assert!(names.contains(&"test_root_3".to_string()));
                 }
                 _ => panic!("Expected DirectoryEntries"),
             }
@@ -3661,8 +3747,11 @@ mod tests {
                         pid,
                     )?;
 
+                    // Deduplicate entries
+                    let unique_entries: std::collections::HashSet<_> = entries.iter().cloned().collect();
+
                     // Create child directories
-                    for entry in &entries {
+                    for entry in &unique_entries {
                         state.vfs.create_directory(PathBuf::from(format!("/parent/{}", entry))).unwrap();
                     }
 
@@ -3678,7 +3767,7 @@ mod tests {
                     match output {
                         SyscallOutput::DirectoryEntries(dir_entries) => {
                             let names: Vec<String> = dir_entries.iter().map(|e| e.name.clone()).collect();
-                            for entry in &entries {
+                            for entry in &unique_entries {
                                 prop_assert!(names.contains(entry));
                             }
                         }
