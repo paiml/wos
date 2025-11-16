@@ -47,6 +47,39 @@ pub struct FileStat {
     pub gid: u32,
 }
 
+/// Lock type for file locking
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LockType {
+    /// Shared (read) lock - multiple readers allowed
+    Shared,
+    /// Exclusive (write) lock - only one holder allowed
+    Exclusive,
+}
+
+/// Whole-file lock (flock)
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+struct FileLock {
+    /// Lock type
+    lock_type: LockType,
+    /// Lock owner (process ID or 0 for current process)
+    owner: u64,
+    /// Number of times this lock has been acquired (for recursive locking)
+    count: usize,
+}
+
+/// Byte-range lock (fcntl)
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+struct RangeLock {
+    /// Lock type
+    lock_type: LockType,
+    /// Start offset in bytes
+    offset: u64,
+    /// Length in bytes
+    length: u64,
+    /// Lock owner (process ID or 0 for current process)
+    owner: u64,
+}
+
 /// Virtual file system with persistent data structures
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct VirtualFileSystem {
@@ -64,6 +97,10 @@ pub struct VirtualFileSystem {
     current_gid: u32,
     /// File creation mask (umask)
     umask: u32,
+    /// Whole-file locks (flock) - maps inode number to list of locks
+    file_locks: im::HashMap<InodeNumber, im::Vector<FileLock>>,
+    /// Byte-range locks (fcntl) - maps inode number to list of range locks
+    range_locks: im::HashMap<InodeNumber, im::Vector<RangeLock>>,
 }
 
 /// Inode representing a file or directory
@@ -292,6 +329,8 @@ pub enum VfsError {
     DirectoryNotEmpty,
     /// Symbolic link loop detected
     SymlinkLoop,
+    /// Lock conflict (file already locked)
+    LockConflict,
 }
 
 /// Helper function to get current timestamp
@@ -331,6 +370,8 @@ impl VirtualFileSystem {
             current_uid: 0, // Default to root
             current_gid: 0, // Default to root group
             umask: 0o022,   // Default umask (rw-r--r-- for files, rwxr-xr-x for dirs)
+            file_locks: im::HashMap::new(),
+            range_locks: im::HashMap::new(),
         };
 
         // Create standard directory structure
@@ -1490,6 +1531,201 @@ impl VirtualFileSystem {
             uid: inode.permissions.uid,
             gid: inode.permissions.gid,
         }
+    }
+
+    // ========================================================================
+    // File Locking API (flock and fcntl)
+    // ========================================================================
+
+    /// Acquire a whole-file lock (flock) with default owner
+    pub fn flock(&mut self, path: &Path, lock_type: LockType) -> Result<(), VfsError> {
+        self.flock_with_owner(path, lock_type, 0)
+    }
+
+    /// Acquire a whole-file lock (flock) with specific owner
+    pub fn flock_with_owner(
+        &mut self,
+        path: &Path,
+        lock_type: LockType,
+        owner: u64,
+    ) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+
+        // Check if file exists
+        if !self.inodes.contains_key(&ino) {
+            return Err(VfsError::NotFound);
+        }
+
+        // Get existing locks for this inode
+        let existing_locks = self.file_locks.get(&ino).cloned().unwrap_or_default();
+
+        // Check lock compatibility
+        for existing_lock in existing_locks.iter() {
+            match (lock_type, existing_lock.lock_type) {
+                (LockType::Shared, LockType::Shared) => {
+                    // Shared locks are compatible
+                    continue;
+                }
+                (LockType::Exclusive, _) | (_, LockType::Exclusive) => {
+                    // Exclusive locks conflict with any other lock
+                    return Err(VfsError::LockConflict);
+                }
+            }
+        }
+
+        // Add the new lock
+        let new_lock = FileLock {
+            lock_type,
+            owner,
+            count: 1,
+        };
+        let mut locks = existing_locks;
+        locks.push_back(new_lock);
+        self.file_locks.insert(ino, locks);
+
+        Ok(())
+    }
+
+    /// Release a whole-file lock (flock)
+    pub fn funlock(&mut self, path: &Path) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+
+        // Remove all locks for this file
+        self.file_locks.remove(&ino);
+
+        Ok(())
+    }
+
+    /// Check if a file has any locks
+    pub fn is_locked(&self, path: &Path) -> bool {
+        if let Ok(ino) = self.resolve_path(path) {
+            self.file_locks
+                .get(&ino)
+                .map(|locks| !locks.is_empty())
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// Acquire a byte-range lock (fcntl)
+    pub fn fcntl_lock(
+        &mut self,
+        path: &Path,
+        lock_type: LockType,
+        offset: u64,
+        length: u64,
+    ) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+
+        // Check if file exists
+        if !self.inodes.contains_key(&ino) {
+            return Err(VfsError::NotFound);
+        }
+
+        // Get existing range locks
+        let existing_locks = self.range_locks.get(&ino).cloned().unwrap_or_default();
+
+        // Check for overlapping locks
+        let end = offset + length;
+        for existing_lock in existing_locks.iter() {
+            let existing_end = existing_lock.offset + existing_lock.length;
+
+            // Check if ranges overlap
+            let overlaps = !(end <= existing_lock.offset || existing_end <= offset);
+
+            if overlaps {
+                match (lock_type, existing_lock.lock_type) {
+                    (LockType::Shared, LockType::Shared) => {
+                        // Shared locks don't conflict
+                        continue;
+                    }
+                    (LockType::Exclusive, _) | (_, LockType::Exclusive) => {
+                        // Exclusive locks conflict
+                        return Err(VfsError::LockConflict);
+                    }
+                }
+            }
+        }
+
+        // Add the new range lock
+        let new_lock = RangeLock {
+            lock_type,
+            offset,
+            length,
+            owner: 0,
+        };
+        let mut locks = existing_locks;
+        locks.push_back(new_lock);
+        self.range_locks.insert(ino, locks);
+
+        Ok(())
+    }
+
+    /// Release a byte-range lock (fcntl)
+    pub fn fcntl_unlock(&mut self, path: &Path, offset: u64, length: u64) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+
+        // Get existing range locks
+        let existing_locks = self.range_locks.get(&ino).cloned().unwrap_or_default();
+
+        // Remove locks that match this range
+        let end = offset + length;
+        let filtered_locks: im::Vector<RangeLock> = existing_locks
+            .iter()
+            .filter(|lock| {
+                let lock_end = lock.offset + lock.length;
+                // Keep locks that don't match this exact range
+                !(lock.offset == offset && lock_end == end)
+            })
+            .cloned()
+            .collect();
+
+        if filtered_locks.is_empty() {
+            self.range_locks.remove(&ino);
+        } else {
+            self.range_locks.insert(ino, filtered_locks);
+        }
+
+        Ok(())
+    }
+
+    /// Check if a byte range is locked
+    pub fn is_range_locked(&self, path: &Path, offset: u64, length: u64) -> bool {
+        if let Ok(ino) = self.resolve_path(path) {
+            if let Some(locks) = self.range_locks.get(&ino) {
+                let end = offset + length;
+                for lock in locks.iter() {
+                    let lock_end = lock.offset + lock.length;
+                    // Check if ranges overlap
+                    if !(end <= lock.offset || lock_end <= offset) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Detect potential deadlock (simplified detection)
+    pub fn detect_deadlock(&self, _owner: u64, _path: &Path) -> bool {
+        // Simplified deadlock detection - in a real system this would be more sophisticated
+        // For now, we'll return true if there are multiple exclusive locks
+        // indicating potential circular wait condition
+
+        let total_exclusive_locks: usize = self
+            .file_locks
+            .values()
+            .map(|locks| {
+                locks
+                    .iter()
+                    .filter(|lock| lock.lock_type == LockType::Exclusive)
+                    .count()
+            })
+            .sum();
+
+        // If there are 2+ exclusive locks on different files, potential deadlock
+        total_exclusive_locks >= 2
     }
 }
 
