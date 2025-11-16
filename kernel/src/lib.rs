@@ -11,6 +11,7 @@
 
 pub mod memory;
 pub mod scheduler;
+pub mod signals;
 pub mod state;
 pub mod syscall;
 pub mod trace;
@@ -20,6 +21,7 @@ pub use memory::{
     PhysicalPage, VirtualAddress, VirtualMemory, VirtualPage, PAGE_SIZE,
 };
 pub use scheduler::Scheduler;
+pub use signals::{Signal, SignalAction, SignalSet};
 pub use state::{FileDescriptor, KernelState, Message, Process, ProcessId, ProcessState};
 pub use syscall::{dispatch_syscall, KernelError, SyscallOutput, SyscallResult, SystemCall};
 pub use trace::{KernelHistory, SystemCallTrace};

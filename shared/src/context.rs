@@ -67,6 +67,41 @@ impl PartialEq for ExecutionContext {
     }
 }
 
+/// Simulated clock for tracking time in microseconds
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SimulatedClock {
+    /// Current time in microseconds since epoch
+    current_time_us: u64,
+}
+
+impl SimulatedClock {
+    /// Create a new simulated clock starting at time 0
+    pub fn new() -> Self {
+        Self { current_time_us: 0 }
+    }
+
+    /// Get current time in microseconds
+    pub fn current_time(&self) -> u64 {
+        self.current_time_us
+    }
+
+    /// Advance clock by delta microseconds
+    pub fn advance(&mut self, delta_us: u64) {
+        self.current_time_us += delta_us;
+    }
+
+    /// Set clock to specific time
+    pub fn set_time(&mut self, time_us: u64) {
+        self.current_time_us = time_us;
+    }
+}
+
+impl Default for SimulatedClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

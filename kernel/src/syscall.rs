@@ -45,6 +45,10 @@ pub enum KernelError {
     #[error("Invalid file descriptor: {0}")]
     InvalidFileDescriptor(u32),
 
+    /// Invalid signal number
+    #[error("Invalid signal number: {0}")]
+    InvalidSignal(u32),
+
     /// Not implemented yet
     #[error("System call not implemented")]
     NotImplemented,
@@ -70,6 +74,14 @@ pub enum SystemCall {
 
     /// Sleep for microseconds
     Sleep(u64),
+
+    /// Send signal to process
+    Kill {
+        /// Target process ID
+        pid: ProcessId,
+        /// Signal to send
+        signal: u32,
+    },
 
     /// Open file
     Open {
@@ -276,12 +288,28 @@ fn sys_exit(
     calling_pid: ProcessId,
     code: i32,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // Get parent PID before terminating the process
+    let parent_pid = state
+        .get_process(calling_pid)
+        .ok_or(KernelError::ProcessNotFound(calling_pid))?
+        .parent_pid;
+
+    // Terminate the process
     if let Some(process) = state.get_process_mut(calling_pid) {
         process.state = crate::state::ProcessState::Terminated(code);
-        Ok((state, SyscallOutput::Success))
     } else {
-        Err(KernelError::ProcessNotFound(calling_pid))
+        return Err(KernelError::ProcessNotFound(calling_pid));
     }
+
+    // Send SIGCHLD to parent if it exists
+    if let Some(parent_pid) = parent_pid {
+        if let Some(mut parent) = state.processes.get(&parent_pid).cloned() {
+            parent.pending_signals.add(crate::signals::Signal::SIGCHLD);
+            state.processes.insert(parent_pid, parent);
+        }
+    }
+
+    Ok((state, SyscallOutput::Success))
 }
 
 /// Handle WaitPid syscall
@@ -308,6 +336,72 @@ fn sys_waitpid(
         }
         _ => Err(KernelError::InvalidProcessState),
     }
+}
+
+/// Handle Sleep syscall
+fn sys_sleep(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    duration_us: u64,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let mut process = state
+        .get_process(calling_pid)
+        .ok_or(KernelError::ProcessNotFound(calling_pid))?
+        .clone();
+
+    // Check if process is terminated
+    if matches!(process.state, crate::state::ProcessState::Terminated(_)) {
+        return Err(KernelError::InvalidProcessState);
+    }
+
+    // Special case: sleep(0) is a no-op
+    if duration_us == 0 {
+        return Ok((state, SyscallOutput::Success));
+    }
+
+    // Calculate wakeup time
+    let current_time = state.simulated_clock.current_time();
+    let wakeup_time = current_time + duration_us;
+
+    // Update process state to blocked and set wakeup time
+    process.state = crate::state::ProcessState::Blocked;
+    process.wakeup_time = Some(wakeup_time);
+
+    // Update process in state
+    state.processes.insert(calling_pid, process);
+
+    Ok((state, SyscallOutput::Success))
+}
+
+/// Handle Kill syscall (send signal to process)
+fn sys_kill(
+    mut state: KernelState,
+    _calling_pid: ProcessId,
+    target_pid: ProcessId,
+    signal_num: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // Validate signal number
+    let signal = crate::signals::Signal::from_number(signal_num)
+        .ok_or(KernelError::InvalidSignal(signal_num))?;
+
+    // Get target process
+    let mut process = state
+        .get_process(target_pid)
+        .ok_or(KernelError::ProcessNotFound(target_pid))?
+        .clone();
+
+    // SIGKILL terminates immediately (cannot be caught or ignored)
+    if signal == crate::signals::Signal::SIGKILL {
+        process.state = crate::state::ProcessState::Terminated(9);
+        state.processes.insert(target_pid, process);
+        return Ok((state, SyscallOutput::Success));
+    }
+
+    // Add signal to pending set (will be delivered later)
+    process.pending_signals.add(signal);
+    state.processes.insert(target_pid, process);
+
+    Ok((state, SyscallOutput::Success))
 }
 
 /// Handle Open syscall
@@ -599,7 +693,7 @@ pub fn dispatch_syscall(
         SystemCall::Fork => sys_fork(state, calling_pid),
         SystemCall::Exit(code) => sys_exit(state, calling_pid, code),
         SystemCall::WaitPid(wait_pid) => sys_waitpid(state, calling_pid, wait_pid),
-        SystemCall::Sleep(_duration) => Err(KernelError::NotImplemented),
+        SystemCall::Sleep(duration) => sys_sleep(state, calling_pid, duration),
         SystemCall::Open { path, flags } => sys_open(state, calling_pid, path, flags),
         SystemCall::Close { fd } => sys_close(state, calling_pid, fd),
         SystemCall::Read { fd, count } => sys_read(state, calling_pid, fd, count),
@@ -610,13 +704,14 @@ pub fn dispatch_syscall(
         SystemCall::Recv { timeout: _ } => sys_recv(state, calling_pid),
         SystemCall::Pipe => sys_pipe(state, calling_pid),
         SystemCall::Dup2 { oldfd, newfd } => sys_dup2(state, calling_pid, oldfd, newfd),
+        SystemCall::Kill { pid, signal } => sys_kill(state, calling_pid, pid, signal),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::Process;
+    use crate::state::{Process, ProcessState};
 
     #[test]
     fn test_syscall_dispatch_routing() {
@@ -654,9 +749,10 @@ mod tests {
         let proc = Process::new(pid, None);
         state.add_process(proc);
 
-        // Test unimplemented syscalls (Sleep)
-        // Note: Open, Close, Read, Write are now implemented
-        let syscalls = vec![SystemCall::Sleep(1000)];
+        // All previously unimplemented syscalls are now implemented
+        // (Sleep, Open, Close, Read, Write, Mmap, Munmap, Send, Recv, Pipe, Dup2)
+        // This test is kept for future use when new syscalls are added
+        let syscalls: Vec<SystemCall> = vec![];
 
         for syscall in syscalls {
             let result = dispatch_syscall(state.clone(), syscall, pid);
@@ -2828,6 +2924,853 @@ mod tests {
 
                 let (_state, output) = result.unwrap();
                 prop_assert_eq!(output, SyscallOutput::Value(exit_code));
+            }
+        }
+    }
+
+    // =========================================================================
+    // WOS-KERN-002: Sleep Syscall Tests (RED phase)
+    // =========================================================================
+
+    /// Unit Tests (8 tests)
+
+    #[test]
+    fn test_sleep_basic() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Sleep for 100ms
+        let result = dispatch_syscall(state.clone(), SystemCall::Sleep(100), pid);
+        assert!(result.is_ok(), "Sleep syscall should succeed");
+
+        let (new_state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+
+        // Process should now be blocked (sleeping)
+        let process = new_state.get_process(pid).unwrap();
+        assert_eq!(process.state, ProcessState::Blocked);
+    }
+
+    #[test]
+    fn test_sleep_zero_duration() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Sleep for 0ms should succeed but not block
+        let result = dispatch_syscall(state.clone(), SystemCall::Sleep(0), pid);
+        assert!(result.is_ok());
+
+        let (new_state, _) = result.unwrap();
+        let process = new_state.get_process(pid).unwrap();
+        // Zero sleep should keep process ready
+        assert_eq!(process.state, ProcessState::Ready);
+    }
+
+    #[test]
+    fn test_sleep_sets_wakeup_time() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        let sleep_duration = 500; // 500 microseconds
+        let result = dispatch_syscall(state.clone(), SystemCall::Sleep(sleep_duration), pid);
+        assert!(result.is_ok());
+
+        let (new_state, _) = result.unwrap();
+        let process = new_state.get_process(pid).unwrap();
+
+        // Process should have wakeup_time set
+        assert!(process.wakeup_time.is_some());
+        let wakeup_time = process.wakeup_time.unwrap();
+
+        // Wakeup time should be current time + sleep duration
+        let expected_wakeup = new_state.simulated_clock.current_time() + sleep_duration;
+        assert_eq!(wakeup_time, expected_wakeup);
+    }
+
+    #[test]
+    fn test_sleep_on_terminated_process_fails() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let mut proc = Process::new(pid, None);
+        proc.state = ProcessState::Terminated(0);
+        state.add_process(proc);
+
+        let result = dispatch_syscall(state, SystemCall::Sleep(100), pid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sleep_multiple_processes_independent() {
+        let mut state = KernelState::new();
+
+        // Create two processes
+        let pid1 = state.allocate_pid();
+        let proc1 = Process::new(pid1, None);
+        state.add_process(proc1);
+
+        let pid2 = state.allocate_pid();
+        let proc2 = Process::new(pid2, None);
+        state.add_process(proc2);
+
+        // Both sleep for different durations
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid1).unwrap();
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(200), pid2).unwrap();
+
+        // Both should be blocked
+        assert_eq!(
+            state.get_process(pid1).unwrap().state,
+            ProcessState::Blocked
+        );
+        assert_eq!(
+            state.get_process(pid2).unwrap().state,
+            ProcessState::Blocked
+        );
+
+        // Wakeup times should be different
+        let wakeup1 = state.get_process(pid1).unwrap().wakeup_time.unwrap();
+        let wakeup2 = state.get_process(pid2).unwrap().wakeup_time.unwrap();
+        assert!(wakeup2 > wakeup1, "Process 2 should wake up later");
+    }
+
+    #[test]
+    fn test_sleep_large_duration() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Sleep for very long duration (1 hour = 3,600,000,000 microseconds)
+        let result = dispatch_syscall(state, SystemCall::Sleep(3_600_000_000), pid);
+        assert!(result.is_ok(), "Should handle large sleep durations");
+    }
+
+    #[test]
+    fn test_sleep_preserves_process_data() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let mut proc = Process::new(pid, Some(99));
+        proc.memory_pages.push(1);
+        proc.memory_pages.push(2);
+        state.add_process(proc);
+
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid).unwrap();
+
+        let process = state.get_process(pid).unwrap();
+        // Parent PID preserved
+        assert_eq!(process.parent_pid, Some(99));
+        // Memory preserved
+        assert_eq!(process.memory_pages, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_sleep_process_can_be_scheduled() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Put process to sleep
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid).unwrap();
+
+        // Scheduler should be able to handle sleeping process
+        // (sleeping processes should not be scheduled until wakeup)
+        assert_eq!(state.get_process(pid).unwrap().state, ProcessState::Blocked);
+    }
+
+    /// Integration Tests (3 tests)
+
+    #[test]
+    fn test_integration_scheduler_wakes_sleeping_process() {
+        use crate::scheduler::schedule;
+
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Put process to sleep for 100 microseconds
+        let (mut state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid).unwrap();
+
+        // Process should be blocked
+        assert_eq!(state.get_process(pid).unwrap().state, ProcessState::Blocked);
+        // Verify wakeup time is set
+        assert!(state.get_process(pid).unwrap().wakeup_time.is_some());
+
+        // Advance clock past wakeup time
+        state.simulated_clock.advance(150);
+
+        // Scheduler should wake up the process
+        let (state, _) = schedule(state).unwrap();
+
+        // Process should now be ready or running
+        let process_state = state.get_process(pid).unwrap().state.clone();
+        assert!(
+            matches!(process_state, ProcessState::Ready | ProcessState::Running),
+            "Process should be awake after wakeup time"
+        );
+    }
+
+    #[test]
+    fn test_integration_multiple_processes_wake_in_order() {
+        use crate::scheduler::schedule;
+
+        let mut state = KernelState::new();
+
+        // Create 3 processes with different sleep durations
+        let pid1 = state.allocate_pid();
+        let proc1 = Process::new(pid1, None);
+        state.add_process(proc1);
+
+        let pid2 = state.allocate_pid();
+        let proc2 = Process::new(pid2, None);
+        state.add_process(proc2);
+
+        let pid3 = state.allocate_pid();
+        let proc3 = Process::new(pid3, None);
+        state.add_process(proc3);
+
+        // Sleep: pid1=100us, pid2=200us, pid3=300us
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid1).unwrap();
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(200), pid2).unwrap();
+        let (mut state, _) = dispatch_syscall(state, SystemCall::Sleep(300), pid3).unwrap();
+
+        // All sleeping
+        assert_eq!(
+            state.get_process(pid1).unwrap().state,
+            ProcessState::Blocked
+        );
+        assert_eq!(
+            state.get_process(pid2).unwrap().state,
+            ProcessState::Blocked
+        );
+        assert_eq!(
+            state.get_process(pid3).unwrap().state,
+            ProcessState::Blocked
+        );
+
+        // Advance to 150us - only pid1 should wake
+        state.simulated_clock.advance(150);
+        let (state, _) = schedule(state).unwrap();
+
+        assert!(matches!(
+            state.get_process(pid1).unwrap().state,
+            ProcessState::Ready | ProcessState::Running
+        ));
+        assert_eq!(
+            state.get_process(pid2).unwrap().state,
+            ProcessState::Blocked
+        );
+        assert_eq!(
+            state.get_process(pid3).unwrap().state,
+            ProcessState::Blocked
+        );
+
+        // Advance to 250us - pid2 should also wake
+        let mut state = state;
+        state.simulated_clock.advance(100); // Total 250us
+        let (state, _) = schedule(state).unwrap();
+
+        assert!(matches!(
+            state.get_process(pid2).unwrap().state,
+            ProcessState::Ready | ProcessState::Running
+        ));
+        assert_eq!(
+            state.get_process(pid3).unwrap().state,
+            ProcessState::Blocked
+        );
+
+        // Advance to 350us - pid3 should wake
+        let mut state = state;
+        state.simulated_clock.advance(100); // Total 350us
+        let (state, _) = schedule(state).unwrap();
+
+        assert!(matches!(
+            state.get_process(pid3).unwrap().state,
+            ProcessState::Ready | ProcessState::Running
+        ));
+    }
+
+    #[test]
+    fn test_integration_sleep_with_fork_and_exec() {
+        let mut state = KernelState::new();
+
+        // Parent process
+        let parent_pid = state.allocate_pid();
+        let parent = Process::new(parent_pid, None);
+        state.add_process(parent);
+
+        // Parent forks
+        let (state, output) = dispatch_syscall(state, SystemCall::Fork, parent_pid).unwrap();
+        let child_pid = match output {
+            SyscallOutput::Pid(pid) => pid,
+            _ => panic!("Expected Pid"),
+        };
+
+        // Child sleeps
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(100), child_pid).unwrap();
+        assert_eq!(
+            state.get_process(child_pid).unwrap().state,
+            ProcessState::Blocked
+        );
+
+        // Parent remains ready
+        assert_eq!(
+            state.get_process(parent_pid).unwrap().state,
+            ProcessState::Ready
+        );
+    }
+
+    /// Property Tests (2 tests)
+
+    #[cfg(test)]
+    mod sleep_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+            #[test]
+            fn proptest_sleep_duration_accuracy(
+                duration in 1u64..10_000,
+            ) {
+                let mut state = KernelState::new();
+                let pid = state.allocate_pid();
+                let proc = Process::new(pid, None);
+                state.add_process(proc);
+
+                let start_time = state.simulated_clock.current_time();
+                let (state, _) = dispatch_syscall(state, SystemCall::Sleep(duration), pid).unwrap();
+
+                let process = state.get_process(pid).unwrap();
+                if let Some(wakeup_time) = process.wakeup_time {
+                    let expected_wakeup = start_time + duration;
+                    prop_assert_eq!(wakeup_time, expected_wakeup);
+                }
+            }
+
+            #[test]
+            fn proptest_sleep_state_transitions(
+                duration in 0u64..1_000,
+            ) {
+                let mut state = KernelState::new();
+                let pid = state.allocate_pid();
+                let proc = Process::new(pid, None);
+                state.add_process(proc);
+
+                let (state, _) = dispatch_syscall(state, SystemCall::Sleep(duration), pid).unwrap();
+                let process = state.get_process(pid).unwrap();
+
+                if duration == 0 {
+                    // Zero sleep should not block
+                    prop_assert_eq!(&process.state, &ProcessState::Ready);
+                    prop_assert!(process.wakeup_time.is_none());
+                } else {
+                    // Non-zero sleep should block
+                    prop_assert_eq!(&process.state, &ProcessState::Blocked);
+                    prop_assert!(process.wakeup_time.is_some());
+                }
+            }
+        }
+    }
+
+    // ========================================================================
+    // Signal Handling Tests (WOS-KERN-001)
+    // ========================================================================
+
+    mod signal_tests {
+        use super::*;
+        use crate::signals::{Signal, SignalAction};
+
+        #[test]
+        fn test_kill_send_sigterm() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Send SIGTERM to process
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGTERM.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            assert_eq!(output, SyscallOutput::Success);
+
+            // Signal should be pending
+            let process = state.get_process(pid).unwrap();
+            assert!(process.pending_signals.contains(Signal::SIGTERM));
+        }
+
+        #[test]
+        fn test_kill_send_sigkill() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Send SIGKILL to process
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGKILL.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            assert_eq!(output, SyscallOutput::Success);
+
+            // SIGKILL should terminate immediately (not just pending)
+            let process = state.get_process(pid).unwrap();
+            assert!(matches!(process.state, ProcessState::Terminated(9)));
+        }
+
+        #[test]
+        fn test_kill_send_sigint() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Send SIGINT to process
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGINT.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            assert_eq!(output, SyscallOutput::Success);
+
+            // Signal should be pending
+            let process = state.get_process(pid).unwrap();
+            assert!(process.pending_signals.contains(Signal::SIGINT));
+        }
+
+        #[test]
+        fn test_kill_nonexistent_process() {
+            let mut state = KernelState::new();
+
+            // Create a calling process
+            let calling_pid = state.allocate_pid();
+            let caller = Process::new(calling_pid, None);
+            state.add_process(caller);
+
+            // Try to kill nonexistent process
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid: 999,
+                    signal: Signal::SIGTERM.number(),
+                },
+                calling_pid,
+            );
+
+            assert!(result.is_err());
+            assert_eq!(result.unwrap_err(), KernelError::ProcessNotFound(999));
+        }
+
+        #[test]
+        fn test_kill_invalid_signal() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Try to send invalid signal
+            let result = dispatch_syscall(state, SystemCall::Kill { pid, signal: 999 }, pid);
+
+            assert!(result.is_err());
+            assert_eq!(result.unwrap_err(), KernelError::InvalidSignal(999));
+        }
+
+        #[test]
+        fn test_signal_pending_delivery() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Send SIGUSR1
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGUSR1.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Signal should be in pending set
+            let process = state.get_process(pid).unwrap();
+            assert!(process.pending_signals.contains(Signal::SIGUSR1));
+            assert!(!process.pending_signals.contains(Signal::SIGUSR2));
+        }
+
+        #[test]
+        fn test_signal_blocked_not_delivered() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let mut proc = Process::new(pid, None);
+
+            // Block SIGTERM
+            proc.blocked_signals.add(Signal::SIGTERM);
+            state.add_process(proc);
+
+            // Send SIGTERM (should be blocked)
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGTERM.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Signal should be pending but not delivered
+            let process = state.get_process(pid).unwrap();
+            assert!(process.pending_signals.contains(Signal::SIGTERM));
+            assert!(process.blocked_signals.contains(Signal::SIGTERM));
+            // Process should still be Ready (not terminated)
+            assert_eq!(process.state, ProcessState::Ready);
+        }
+
+        #[test]
+        fn test_signal_handler_custom() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let mut proc = Process::new(pid, None);
+
+            // Register custom handler for SIGUSR1
+            proc.signal_handlers
+                .insert(Signal::SIGUSR1.number(), SignalAction::Handler(42));
+            state.add_process(proc);
+
+            // Send SIGUSR1
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGUSR1.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Handler should be executed (this test will need signal delivery implementation)
+            let process = state.get_process(pid).unwrap();
+            // For now, just check signal was added to pending
+            assert!(process.pending_signals.contains(Signal::SIGUSR1));
+        }
+
+        #[test]
+        fn test_signal_default_terminate() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Send SIGTERM (default action: Terminate)
+            let (mut state, _) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGTERM.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Deliver pending signals
+            state = crate::scheduler::deliver_signals(state).unwrap();
+
+            // Process should be terminated
+            let process = state.get_process(pid).unwrap();
+            assert!(matches!(process.state, ProcessState::Terminated(_)));
+        }
+
+        #[test]
+        fn test_signal_default_ignore() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Send SIGCHLD (default action: Ignore)
+            let (mut state, _) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGCHLD.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Deliver pending signals
+            state = crate::scheduler::deliver_signals(state).unwrap();
+
+            // Process should still be Ready (not terminated)
+            let process = state.get_process(pid).unwrap();
+            assert_eq!(process.state, ProcessState::Ready);
+            // Signal should be removed from pending
+            assert!(!process.pending_signals.contains(Signal::SIGCHLD));
+        }
+
+        // Integration Tests
+
+        #[test]
+        fn test_sigchld_on_child_exit() {
+            let mut state = KernelState::new();
+
+            // Create parent process (PID 1)
+            let parent_pid = state.allocate_pid();
+            let parent = Process::new(parent_pid, None);
+            state.add_process(parent);
+
+            // Create child process (PID 2)
+            let child_pid = state.allocate_pid();
+            let child = Process::new(child_pid, Some(parent_pid));
+            state.add_process(child);
+
+            // Child exits
+            let (state, _) = dispatch_syscall(state, SystemCall::Exit(0), child_pid).unwrap();
+
+            // Parent should have SIGCHLD pending
+            let parent = state.get_process(parent_pid).unwrap();
+            assert!(parent.pending_signals.contains(Signal::SIGCHLD));
+        }
+
+        #[test]
+        fn test_signal_delivery_terminates_process() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Send SIGINT
+            let (mut state, _) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGINT.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Process should be ready with pending signal
+            let process = state.get_process(pid).unwrap();
+            assert_eq!(process.state, ProcessState::Ready);
+            assert!(process.pending_signals.contains(Signal::SIGINT));
+
+            // Deliver signals
+            state = crate::scheduler::deliver_signals(state).unwrap();
+
+            // Process should be terminated
+            let process = state.get_process(pid).unwrap();
+            assert!(matches!(process.state, ProcessState::Terminated(_)));
+        }
+
+        #[test]
+        fn test_signal_masking_blocks_delivery() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let mut proc = Process::new(pid, None);
+
+            // Block SIGINT
+            proc.blocked_signals.add(Signal::SIGINT);
+            state.add_process(proc);
+
+            // Send SIGINT
+            let (mut state, _) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGINT.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Deliver signals (should not deliver blocked signal)
+            state = crate::scheduler::deliver_signals(state).unwrap();
+
+            // Process should still be Ready (not terminated)
+            let process = state.get_process(pid).unwrap();
+            assert_eq!(process.state, ProcessState::Ready);
+            // Signal should still be pending
+            assert!(process.pending_signals.contains(Signal::SIGINT));
+        }
+
+        #[test]
+        fn test_multiple_pending_signals() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Send multiple signals
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGUSR1.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGUSR2.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Both signals should be pending
+            let process = state.get_process(pid).unwrap();
+            assert!(process.pending_signals.contains(Signal::SIGUSR1));
+            assert!(process.pending_signals.contains(Signal::SIGUSR2));
+        }
+
+        #[test]
+        fn test_sigkill_bypasses_handler() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let mut proc = Process::new(pid, None);
+
+            // Register custom handler for SIGKILL (should be ignored)
+            proc.signal_handlers
+                .insert(Signal::SIGKILL.number(), SignalAction::Handler(99));
+            state.add_process(proc);
+
+            // Send SIGKILL
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: Signal::SIGKILL.number(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            // SIGKILL should terminate immediately regardless of handler
+            let process = state.get_process(pid).unwrap();
+            assert!(matches!(process.state, ProcessState::Terminated(9)));
+        }
+
+        // Property-based tests
+        #[cfg(test)]
+        mod proptests {
+            use super::*;
+            use proptest::prelude::*;
+
+            proptest! {
+                #[test]
+                fn proptest_kill_signal_delivery(
+                    signal_num in prop::sample::select(vec![2u32, 9, 10, 11, 12, 13, 15, 17]),
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let signal = Signal::from_number(signal_num).unwrap();
+
+                    // Send signal
+                    let (state, output) = dispatch_syscall(
+                        state,
+                        SystemCall::Kill { pid, signal: signal_num },
+                        pid,
+                    )?;
+
+                    prop_assert_eq!(output, SyscallOutput::Success);
+
+                    let process = state.get_process(pid).unwrap();
+
+                    if signal == Signal::SIGKILL {
+                        // SIGKILL terminates immediately
+                        prop_assert!(matches!(process.state, ProcessState::Terminated(9)));
+                    } else {
+                        // Other signals should be pending
+                        prop_assert!(process.pending_signals.contains(signal));
+                    }
+                }
+
+                #[test]
+                fn proptest_signal_masking_correctness(
+                    signal_num in prop::sample::select(vec![2u32, 10, 11, 12, 13, 15, 17]),
+                    block_signal in prop::bool::ANY,
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let mut proc = Process::new(pid, None);
+
+                    let signal = Signal::from_number(signal_num).unwrap();
+
+                    // Optionally block the signal
+                    if block_signal {
+                        proc.blocked_signals.add(signal);
+                    }
+                    state.add_process(proc);
+
+                    // Send signal
+                    let (mut state, _) = dispatch_syscall(
+                        state,
+                        SystemCall::Kill { pid, signal: signal_num },
+                        pid,
+                    )?;
+
+                    // Signal should be pending
+                    let process = state.get_process(pid).unwrap();
+                    prop_assert!(process.pending_signals.contains(signal));
+
+                    // Deliver signals
+                    state = crate::scheduler::deliver_signals(state)?;
+
+                    let process = state.get_process(pid).unwrap();
+
+                    if block_signal {
+                        // Blocked signal should not terminate process
+                        prop_assert_eq!(&process.state, &ProcessState::Ready);
+                        // Signal should still be pending
+                        prop_assert!(process.pending_signals.contains(signal));
+                    } else {
+                        // Unblocked signal should be delivered
+                        // (either terminated or ignored depending on default action)
+                        let default_action = signal.default_action();
+                        if default_action == SignalAction::Terminate {
+                            prop_assert!(matches!(&process.state, ProcessState::Terminated(_)));
+                        } else {
+                            // Ignore action - signal removed, process still Ready
+                            prop_assert_eq!(&process.state, &ProcessState::Ready);
+                            prop_assert!(!process.pending_signals.contains(signal));
+                        }
+                    }
+                }
             }
         }
     }

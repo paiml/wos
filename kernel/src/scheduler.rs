@@ -96,6 +96,104 @@ impl Default for Scheduler {
     }
 }
 
+/// Standalone schedule function that wakes up sleeping processes
+///
+/// Checks all blocked processes and wakes those whose wakeup time has passed.
+/// Returns the updated kernel state and optionally the next process to run.
+pub fn schedule(
+    mut state: KernelState,
+) -> Result<(KernelState, Option<ProcessId>), crate::syscall::KernelError> {
+    let current_time = state.simulated_clock.current_time();
+
+    // Wake up any sleeping processes whose wakeup time has passed
+    let mut processes_to_wake = Vec::new();
+
+    for (pid, process) in state.processes.iter() {
+        if matches!(process.state, crate::state::ProcessState::Blocked) {
+            if let Some(wakeup_time) = process.wakeup_time {
+                if current_time >= wakeup_time {
+                    processes_to_wake.push(*pid);
+                }
+            }
+        }
+    }
+
+    // Wake up the processes
+    for pid in processes_to_wake {
+        if let Some(mut process) = state.processes.get(&pid).cloned() {
+            process.state = crate::state::ProcessState::Ready;
+            process.wakeup_time = None;
+            state.processes.insert(pid, process);
+        }
+    }
+
+    // Return state and no specific process (scheduler can choose)
+    Ok((state, None))
+}
+
+/// Deliver pending signals to processes
+///
+/// Processes pending signals for all processes and takes appropriate actions
+/// based on signal handlers and default actions. Blocked signals are not delivered.
+pub fn deliver_signals(mut state: KernelState) -> Result<KernelState, crate::syscall::KernelError> {
+    let mut processes_to_update = Vec::new();
+
+    // Collect pending signals for all processes
+    for (pid, process) in state.processes.iter() {
+        if !process.pending_signals.is_empty()
+            && !matches!(process.state, crate::state::ProcessState::Terminated(_))
+        {
+            processes_to_update.push(*pid);
+        }
+    }
+
+    // Process signals for each process
+    for pid in processes_to_update {
+        if let Some(mut process) = state.processes.get(&pid).cloned() {
+            // Get next pending signal (lowest number first)
+            while let Some(signal) = process.pending_signals.next_signal() {
+                // Check if signal is blocked
+                if process.blocked_signals.contains(signal) {
+                    // Blocked signal - skip delivery but keep pending
+                    break;
+                }
+
+                // Remove signal from pending
+                process.pending_signals.remove(signal);
+
+                // Check for custom handler
+                let action = process
+                    .signal_handlers
+                    .get(&signal.number())
+                    .copied()
+                    .unwrap_or_else(|| signal.default_action());
+
+                // Execute action
+                match action {
+                    crate::signals::SignalAction::Terminate => {
+                        process.state =
+                            crate::state::ProcessState::Terminated(signal.number() as i32);
+                        break; // Process terminated, no more signal processing
+                    }
+                    crate::signals::SignalAction::Ignore => {
+                        // Signal ignored, just remove from pending (already done above)
+                    }
+                    crate::signals::SignalAction::Handler(_handler_id) => {
+                        // Custom handler execution would go here
+                        // For now, we just remove the signal from pending
+                        // In a real implementation, this would invoke user-space handler
+                    }
+                }
+            }
+
+            // Update process in state
+            state.processes.insert(pid, process);
+        }
+    }
+
+    Ok(state)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
