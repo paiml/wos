@@ -36,7 +36,10 @@ impl ScriptLoader {
     /// # Returns
     /// * `Ok(Script)` - Loaded script (shebang optional)
     /// * `Err(ScriptError)` - If file not found or read error
-    pub fn load_no_validation(vfs: &mut VirtualFileSystem, path: &str) -> Result<Script, ScriptError> {
+    pub fn load_no_validation(
+        vfs: &mut VirtualFileSystem,
+        path: &str,
+    ) -> Result<Script, ScriptError> {
         Self::load_with_validation(vfs, path, false)
     }
 
@@ -200,7 +203,8 @@ mod tests {
         )
         .unwrap();
 
-        let script = ScriptLoader::load(&mut vfs, "test.sh").expect("should load from relative path");
+        let script =
+            ScriptLoader::load(&mut vfs, "test.sh").expect("should load from relative path");
 
         assert_eq!(script.path, "test.sh");
         assert_eq!(script.shebang, "#!/bin/bash");

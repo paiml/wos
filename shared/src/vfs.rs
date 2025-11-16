@@ -1274,9 +1274,9 @@ impl VirtualFileSystem {
             inode_type: inode.inode_type.clone(),
             permissions: inode.permissions.clone(),
             nlinks: inode.nlinks,
-            atime: now,           // Update on read
-            mtime: inode.mtime,   // Preserve mtime
-            ctime: inode.ctime,   // Preserve ctime
+            atime: now,         // Update on read
+            mtime: inode.mtime, // Preserve mtime
+            ctime: inode.ctime, // Preserve ctime
         };
         self.inodes.insert(ino, updated_inode);
 
@@ -1399,7 +1399,7 @@ impl VirtualFileSystem {
         let (file_type, size) = match &inode.inode_type {
             InodeType::File { content } => (FileType::RegularFile, content.len() as u64),
             InodeType::Directory { .. } => (FileType::Directory, 4096), // Fixed size for directories
-            InodeType::Symlink { .. } => (FileType::Symlink, 0), // Symlinks have size 0
+            InodeType::Symlink { .. } => (FileType::Symlink, 0),        // Symlinks have size 0
         };
 
         FileStat {
@@ -2847,7 +2847,8 @@ mod tests {
     #[test]
     fn test_stat_symlink() {
         let mut vfs = VirtualFileSystem::new();
-        vfs.create_file(PathBuf::from("/target.txt"), vec![]).unwrap();
+        vfs.create_file(PathBuf::from("/target.txt"), vec![])
+            .unwrap();
         vfs.create_symlink(PathBuf::from("/link"), PathBuf::from("/target.txt"))
             .unwrap();
 
