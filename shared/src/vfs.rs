@@ -8,6 +8,45 @@ use std::path::{Path, PathBuf};
 /// Unique inode number
 type InodeNumber = u64;
 
+/// Timestamp in milliseconds since Unix epoch
+type Timestamp = u64;
+
+/// File type for stat
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FileType {
+    /// Regular file
+    RegularFile,
+    /// Directory
+    Directory,
+    /// Symbolic link
+    Symlink,
+}
+
+/// File metadata returned by stat
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct FileStat {
+    /// File type
+    pub file_type: FileType,
+    /// File size in bytes
+    pub size: u64,
+    /// Access time (atime) - last time file was read
+    pub atime: Timestamp,
+    /// Modification time (mtime) - last time file content was modified
+    pub mtime: Timestamp,
+    /// Change time (ctime) - last time metadata was changed
+    pub ctime: Timestamp,
+    /// Inode number
+    pub ino: InodeNumber,
+    /// Number of hard links
+    pub nlinks: u64,
+    /// File mode (permissions)
+    pub mode: u32,
+    /// Owner UID
+    pub uid: u32,
+    /// Owner GID
+    pub gid: u32,
+}
+
 /// Virtual file system with persistent data structures
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct VirtualFileSystem {
@@ -38,6 +77,12 @@ pub struct Inode {
     pub permissions: FilePermissions,
     /// Number of hard links to this inode
     pub nlinks: u64,
+    /// Access time (atime) - last read
+    pub atime: Timestamp,
+    /// Modification time (mtime) - last content change
+    pub mtime: Timestamp,
+    /// Change time (ctime) - last metadata change
+    pub ctime: Timestamp,
 }
 
 /// Type of inode
@@ -249,6 +294,14 @@ pub enum VfsError {
     SymlinkLoop,
 }
 
+/// Helper function to get current timestamp
+fn current_timestamp() -> Timestamp {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
 impl VirtualFileSystem {
     /// Create a new VFS with root directory and standard directory structure
     pub fn new() -> Self {
@@ -256,6 +309,7 @@ impl VirtualFileSystem {
         let mut inodes = im::HashMap::new();
 
         // Create root directory with proper permissions (0755 - rwxr-xr-x)
+        let now = current_timestamp();
         let root = Inode {
             ino: root_ino,
             inode_type: InodeType::Directory {
@@ -263,6 +317,9 @@ impl VirtualFileSystem {
             },
             permissions: FilePermissions::new(0o755, 0, 0), // Root owned, world-readable/executable
             nlinks: 1,
+            atime: now,
+            mtime: now,
+            ctime: now,
         };
         inodes.insert(root_ino, root);
 
@@ -485,6 +542,7 @@ impl VirtualFileSystem {
 
         let permissions = FilePermissions::new(mode, self.current_uid, gid);
 
+        let now = current_timestamp();
         let new_dir = Inode {
             ino: new_ino,
             inode_type: InodeType::Directory {
@@ -492,6 +550,9 @@ impl VirtualFileSystem {
             },
             permissions,
             nlinks: 1,
+            atime: now,
+            mtime: now,
+            ctime: now,
         };
 
         self.inodes.insert(new_ino, new_dir);
@@ -507,6 +568,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry added
+            ctime: now, // Parent's ctime changes when entry added
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -552,6 +616,7 @@ impl VirtualFileSystem {
         let mut new_entries = parent_entries;
         new_entries.remove(&name);
 
+        let now = current_timestamp();
         let updated_parent = Inode {
             ino: parent_ino,
             inode_type: InodeType::Directory {
@@ -559,6 +624,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry removed
+            ctime: now, // Parent's ctime changes when entry removed
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -614,11 +682,15 @@ impl VirtualFileSystem {
         // Symlinks typically have 0777 permissions (permissions are checked on target)
         let permissions = FilePermissions::new(0o777, self.current_uid, self.current_gid);
 
+        let now = current_timestamp();
         let new_symlink = Inode {
             ino: new_ino,
             inode_type: InodeType::Symlink { target },
             permissions,
             nlinks: 1,
+            atime: now,
+            mtime: now,
+            ctime: now,
         };
 
         self.inodes.insert(new_ino, new_symlink);
@@ -634,6 +706,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry added
+            ctime: now, // Parent's ctime changes when entry added
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -753,11 +828,15 @@ impl VirtualFileSystem {
 
         let permissions = FilePermissions::new(mode, self.current_uid, gid);
 
+        let now = current_timestamp();
         let new_file = Inode {
             ino: new_ino,
             inode_type: InodeType::File { content },
             permissions,
             nlinks: 1,
+            atime: now,
+            mtime: now,
+            ctime: now,
         };
 
         self.inodes.insert(new_ino, new_file);
@@ -773,6 +852,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry added
+            ctime: now, // Parent's ctime changes when entry added
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -781,8 +863,10 @@ impl VirtualFileSystem {
     }
 
     /// Read file contents (uses current user context)
-    pub fn read_file(&self, path: &Path) -> Result<Vec<u8>, VfsError> {
-        self.read_file_as(path, self.current_uid, self.current_gid)
+    pub fn read_file(&mut self, path: &Path) -> Result<Vec<u8>, VfsError> {
+        let uid = self.current_uid;
+        let gid = self.current_gid;
+        self.read_file_as(path, uid, gid)
     }
 
     /// Write to file (overwrites existing content, uses current user context)
@@ -825,6 +909,7 @@ impl VirtualFileSystem {
         let mut new_entries = parent_entries;
         new_entries.remove(&name);
 
+        let now = current_timestamp();
         let updated_parent = Inode {
             ino: parent_ino,
             inode_type: InodeType::Directory {
@@ -832,6 +917,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry removed
+            ctime: now, // Parent's ctime changes when entry removed
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -856,11 +944,15 @@ impl VirtualFileSystem {
         let ino = self.resolve_path(path)?;
         let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
 
+        let now = current_timestamp();
         let updated_inode = Inode {
             ino,
             inode_type: inode.inode_type.clone(),
             permissions,
             nlinks: inode.nlinks,
+            atime: inode.atime,
+            mtime: inode.mtime,
+            ctime: now, // ctime changes when permissions change
         };
 
         self.inodes.insert(ino, updated_inode);
@@ -901,6 +993,7 @@ impl VirtualFileSystem {
         let mut new_entries = entries;
         new_entries.insert(name, old_ino);
 
+        let now = current_timestamp();
         let updated_parent = Inode {
             ino: parent_ino,
             inode_type: InodeType::Directory {
@@ -908,6 +1001,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry added
+            ctime: now, // Parent's ctime changes when entry added
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -919,6 +1015,9 @@ impl VirtualFileSystem {
             inode_type: inode.inode_type.clone(),
             permissions: inode.permissions.clone(),
             nlinks: inode.nlinks + 1,
+            atime: inode.atime,
+            mtime: inode.mtime,
+            ctime: inode.ctime, // ctime doesn't change for hard links (only nlinks metadata changed)
         };
         self.inodes.insert(old_ino, updated_inode);
 
@@ -948,6 +1047,7 @@ impl VirtualFileSystem {
         let mut new_entries = parent_entries;
         new_entries.remove(&name);
 
+        let now = current_timestamp();
         let updated_parent = Inode {
             ino: parent_ino,
             inode_type: InodeType::Directory {
@@ -955,6 +1055,9 @@ impl VirtualFileSystem {
             },
             permissions: parent.permissions,
             nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now, // Parent's mtime changes when entry removed
+            ctime: now, // Parent's ctime changes when entry removed
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -972,6 +1075,9 @@ impl VirtualFileSystem {
                 inode_type: inode.inode_type.clone(),
                 permissions: inode.permissions.clone(),
                 nlinks: new_nlinks,
+                atime: inode.atime,
+                mtime: inode.mtime,
+                ctime: inode.ctime, // ctime doesn't change for hard links (only nlinks metadata changed)
             };
             self.inodes.insert(ino, updated_inode);
         }
@@ -1076,11 +1182,15 @@ impl VirtualFileSystem {
         let mut new_perms = inode.permissions.clone();
         new_perms.mode = mode;
 
+        let now = current_timestamp();
         let updated_inode = Inode {
             ino,
             inode_type: inode.inode_type.clone(),
             permissions: new_perms,
             nlinks: inode.nlinks,
+            atime: inode.atime,
+            mtime: inode.mtime,
+            ctime: now, // ctime changes when permissions change
         };
 
         self.inodes.insert(ino, updated_inode);
@@ -1111,11 +1221,15 @@ impl VirtualFileSystem {
             new_perms.gid = new_gid;
         }
 
+        let now = current_timestamp();
         let updated_inode = Inode {
             ino,
             inode_type: inode.inode_type.clone(),
             permissions: new_perms,
             nlinks: inode.nlinks,
+            atime: inode.atime,
+            mtime: inode.mtime,
+            ctime: now, // ctime changes when owner changes
         };
 
         self.inodes.insert(ino, updated_inode);
@@ -1144,14 +1258,27 @@ impl VirtualFileSystem {
     }
 
     /// Read file as specific user (permission check)
-    pub fn read_file_as(&self, path: &Path, uid: u32, gid: u32) -> Result<Vec<u8>, VfsError> {
+    pub fn read_file_as(&mut self, path: &Path, uid: u32, gid: u32) -> Result<Vec<u8>, VfsError> {
         let ino = self.resolve_path(path)?;
-        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?.clone();
 
         // Check read permission (mode_bit 4 = read)
-        if !self.check_permission(inode, uid, gid, 4) {
+        if !self.check_permission(&inode, uid, gid, 4) {
             return Err(VfsError::PermissionDenied);
         }
+
+        // Update atime
+        let now = current_timestamp();
+        let updated_inode = Inode {
+            ino,
+            inode_type: inode.inode_type.clone(),
+            permissions: inode.permissions.clone(),
+            nlinks: inode.nlinks,
+            atime: now,           // Update on read
+            mtime: inode.mtime,   // Preserve mtime
+            ctime: inode.ctime,   // Preserve ctime
+        };
+        self.inodes.insert(ino, updated_inode);
 
         match &inode.inode_type {
             InodeType::File { content } => Ok(content.clone()),
@@ -1178,11 +1305,15 @@ impl VirtualFileSystem {
 
         match &inode.inode_type {
             InodeType::File { .. } => {
+                let now = current_timestamp();
                 let updated_inode = Inode {
                     ino,
                     inode_type: InodeType::File { content },
                     permissions: inode.permissions.clone(),
                     nlinks: inode.nlinks,
+                    atime: inode.atime,
+                    mtime: now, // mtime changes when file content is written
+                    ctime: now, // ctime changes when file content is written
                 };
                 self.inodes.insert(ino, updated_inode);
                 Ok(())
@@ -1246,6 +1377,44 @@ impl VirtualFileSystem {
         self.current_uid = uid;
         self.current_gid = gid;
     }
+
+    // ========== File Metadata Methods ==========
+
+    /// Get file metadata (stat) - follows symlinks
+    pub fn stat(&self, path: &Path) -> Result<FileStat, VfsError> {
+        let ino = self.resolve_path(path)?; // follows symlinks
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(self.inode_to_filestat(inode))
+    }
+
+    /// Get file metadata (lstat) - does NOT follow symlinks
+    pub fn lstat(&self, path: &Path) -> Result<FileStat, VfsError> {
+        let ino = self.resolve_path_no_follow(path)?; // doesn't follow final symlink
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(self.inode_to_filestat(inode))
+    }
+
+    /// Helper to convert Inode to FileStat
+    fn inode_to_filestat(&self, inode: &Inode) -> FileStat {
+        let (file_type, size) = match &inode.inode_type {
+            InodeType::File { content } => (FileType::RegularFile, content.len() as u64),
+            InodeType::Directory { .. } => (FileType::Directory, 4096), // Fixed size for directories
+            InodeType::Symlink { .. } => (FileType::Symlink, 0), // Symlinks have size 0
+        };
+
+        FileStat {
+            file_type,
+            size,
+            atime: inode.atime,
+            mtime: inode.mtime,
+            ctime: inode.ctime,
+            ino: inode.ino,
+            nlinks: inode.nlinks,
+            mode: inode.permissions.mode,
+            uid: inode.permissions.uid,
+            gid: inode.permissions.gid,
+        }
+    }
 }
 
 impl Default for VirtualFileSystem {
@@ -1260,14 +1429,14 @@ mod tests {
 
     #[test]
     fn test_vfs_creation() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         assert_eq!(vfs.cwd(), &PathBuf::from("/"));
         assert_eq!(vfs.file_count(), 0);
     }
 
     #[test]
     fn test_vfs_clone_cheap() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         let _cloned = vfs.clone();
         // Clone should be O(1) due to persistent data structures
         assert_eq!(vfs, _cloned);
@@ -1308,7 +1477,7 @@ mod tests {
 
     #[test]
     fn test_read_nonexistent_file() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         let path = PathBuf::from("/nonexistent.txt");
 
         let result = vfs.read_file(&path);
@@ -1543,7 +1712,7 @@ mod tests {
 
     #[test]
     fn test_list_directory_not_found() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         let result = vfs.list_directory(&PathBuf::from("/nonexistent"));
         assert_eq!(result, Err(VfsError::NotFound));
     }
@@ -1643,7 +1812,7 @@ mod tests {
 
     #[test]
     fn test_root_directory_exists() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         assert!(
             vfs.is_directory(&PathBuf::from("/")),
             "Root directory should always exist"
@@ -2788,7 +2957,7 @@ mod tests {
 
     #[test]
     fn test_stat_nonexistent_file() {
-        let vfs = VirtualFileSystem::new();
+        let mut vfs = VirtualFileSystem::new();
         let result = vfs.stat(&PathBuf::from("/nonexistent.txt"));
         assert_eq!(result, Err(VfsError::NotFound));
     }

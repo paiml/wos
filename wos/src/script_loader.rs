@@ -14,13 +14,13 @@ impl ScriptLoader {
     /// Load a script from the VFS at the given path
     ///
     /// # Arguments
-    /// * `vfs` - Virtual file system to read from
+    /// * `vfs` - Virtual file system to read from (mutable)
     /// * `path` - Path to the script file (relative or absolute)
     ///
     /// # Returns
     /// * `Ok(Script)` - Loaded and validated script
     /// * `Err(ScriptError)` - If file not found, invalid shebang, or read error
-    pub fn load(vfs: &VirtualFileSystem, path: &str) -> Result<Script, ScriptError> {
+    pub fn load(vfs: &mut VirtualFileSystem, path: &str) -> Result<Script, ScriptError> {
         Self::load_with_validation(vfs, path, true)
     }
 
@@ -30,19 +30,19 @@ impl ScriptLoader {
     /// Shebang validation is only required for `./script.sh` execution.
     ///
     /// # Arguments
-    /// * `vfs` - Virtual file system to read from
+    /// * `vfs` - Virtual file system to read from (mutable)
     /// * `path` - Path to the script file (relative or absolute)
     ///
     /// # Returns
     /// * `Ok(Script)` - Loaded script (shebang optional)
     /// * `Err(ScriptError)` - If file not found or read error
-    pub fn load_no_validation(vfs: &VirtualFileSystem, path: &str) -> Result<Script, ScriptError> {
+    pub fn load_no_validation(vfs: &mut VirtualFileSystem, path: &str) -> Result<Script, ScriptError> {
         Self::load_with_validation(vfs, path, false)
     }
 
     /// Internal load function with optional shebang validation
     fn load_with_validation(
-        vfs: &VirtualFileSystem,
+        vfs: &mut VirtualFileSystem,
         path: &str,
         validate_shebang: bool,
     ) -> Result<Script, ScriptError> {
@@ -130,8 +130,8 @@ mod tests {
     // WOS-201 Test 1: test_load_script_with_valid_shebang
     #[test]
     fn test_load_script_with_valid_shebang() {
-        let vfs = create_test_vfs();
-        let script = ScriptLoader::load(&vfs, "/test.sh").expect("should load script");
+        let mut vfs = create_test_vfs();
+        let script = ScriptLoader::load(&mut vfs, "/test.sh").expect("should load script");
 
         assert_eq!(script.path, "/test.sh");
         assert_eq!(script.content, "#!/bin/bash\necho hello");
@@ -148,7 +148,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = ScriptLoader::load(&vfs, "/invalid.sh");
+        let result = ScriptLoader::load(&mut vfs, "/invalid.sh");
         assert!(result.is_err());
 
         if let Err(ScriptError::InvalidShebang { shebang, reason }) = result {
@@ -162,8 +162,8 @@ mod tests {
     // WOS-201 Test 3: test_load_script_file_not_found
     #[test]
     fn test_load_script_file_not_found() {
-        let vfs = VirtualFileSystem::new();
-        let result = ScriptLoader::load(&vfs, "/nonexistent.sh");
+        let mut vfs = VirtualFileSystem::new();
+        let result = ScriptLoader::load(&mut vfs, "/nonexistent.sh");
 
         assert!(result.is_err());
         if let Err(ScriptError::FileNotFound { path }) = result {
@@ -183,7 +183,7 @@ mod tests {
         )
         .unwrap();
 
-        let script = ScriptLoader::load(&vfs, "/home/user/script.sh")
+        let script = ScriptLoader::load(&mut vfs, "/home/user/script.sh")
             .expect("should load from absolute path");
 
         assert_eq!(script.path, "/home/user/script.sh");
@@ -200,7 +200,7 @@ mod tests {
         )
         .unwrap();
 
-        let script = ScriptLoader::load(&vfs, "test.sh").expect("should load from relative path");
+        let script = ScriptLoader::load(&mut vfs, "test.sh").expect("should load from relative path");
 
         assert_eq!(script.path, "test.sh");
         assert_eq!(script.shebang, "#!/bin/bash");
@@ -263,7 +263,7 @@ mod tests {
         )
         .unwrap();
 
-        let script = ScriptLoader::load(&vfs, "/roundtrip.sh").unwrap();
+        let script = ScriptLoader::load(&mut vfs, "/roundtrip.sh").unwrap();
         assert_eq!(script.content, original_content);
     }
 
@@ -289,7 +289,7 @@ mod tests {
         vfs.create_file(PathBuf::from("/empty.sh"), "".as_bytes().to_vec())
             .unwrap();
 
-        let result = ScriptLoader::load(&vfs, "/empty.sh");
+        let result = ScriptLoader::load(&mut vfs, "/empty.sh");
         assert!(result.is_err());
 
         if let Err(ScriptError::InvalidShebang { shebang, reason }) = result {
@@ -309,7 +309,7 @@ mod tests {
         vfs.create_file(PathBuf::from("/multi.sh"), content.as_bytes().to_vec())
             .unwrap();
 
-        let script = ScriptLoader::load(&vfs, "/multi.sh").unwrap();
+        let script = ScriptLoader::load(&mut vfs, "/multi.sh").unwrap();
         assert_eq!(script.content, content);
         assert_eq!(script.shebang, "#!/bin/bash");
         assert_eq!(script.content.lines().count(), 4);
@@ -328,9 +328,9 @@ mod proptests {
             path in "[a-z/]{1,20}",
             _content in "[a-zA-Z0-9 \n]{0,100}"
         ) {
-            let vfs = VirtualFileSystem::new();
+            let mut vfs = VirtualFileSystem::new();
             // Loading may succeed or fail, but should never panic
-            let _ = ScriptLoader::load(&vfs, &path);
+            let _ = ScriptLoader::load(&mut vfs, &path);
         }
     }
 
@@ -389,7 +389,7 @@ mod proptests {
                 .create_file(PathBuf::from(&path), content.as_bytes().to_vec())
                 .is_ok()
             {
-                if let Ok(script) = ScriptLoader::load(&vfs, &path) {
+                if let Ok(script) = ScriptLoader::load(&mut vfs, &path) {
                     prop_assert_eq!(script.content, content);
                     prop_assert_eq!(script.path, path);
                 }

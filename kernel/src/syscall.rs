@@ -357,18 +357,20 @@ fn sys_close(
 
 /// Handle Read syscall
 fn sys_read(
-    state: KernelState,
+    mut state: KernelState,
     calling_pid: ProcessId,
     fd: u32,
     count: usize,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
-    let process = state
-        .get_process(calling_pid)
-        .ok_or(KernelError::ProcessNotFound(calling_pid))?;
-
-    let path = process
-        .get_file_path(fd)
-        .ok_or(KernelError::InvalidFileDescriptor(fd))?;
+    let path = {
+        let process = state
+            .get_process(calling_pid)
+            .ok_or(KernelError::ProcessNotFound(calling_pid))?;
+        process
+            .get_file_path(fd)
+            .ok_or(KernelError::InvalidFileDescriptor(fd))?
+            .clone()
+    };
 
     // Check if this is a pipe read
     if path
@@ -386,7 +388,7 @@ fn sys_read(
     }
 
     // Check if this is a ProcFS path
-    if let Some(procfs_result) = try_read_procfs(&state, path, calling_pid) {
+    if let Some(procfs_result) = try_read_procfs(&state, &path, calling_pid) {
         let content = procfs_result?;
         let bytes_to_return = content.len().min(count);
         let data = content[..bytes_to_return].to_vec();
@@ -394,7 +396,7 @@ fn sys_read(
     }
 
     // Read from VFS
-    match state.vfs.read_file(path) {
+    match state.vfs.read_file(&path) {
         Ok(content) => {
             let bytes_to_return = content.len().min(count);
             let data = content[..bytes_to_return].to_vec();
@@ -1522,7 +1524,7 @@ mod tests {
             },
             pid,
         );
-        let (new_state, output) = result.unwrap();
+        let (mut new_state, output) = result.unwrap();
 
         // Should return number of bytes written
         match output {
@@ -1668,11 +1670,14 @@ mod tests {
             },
             pid,
         );
-        let (state, output) = result.unwrap();
+        let (mut state, output) = result.unwrap();
         let fd = match output {
             SyscallOutput::FileDescriptor(fd) => fd,
             _ => panic!("Expected FileDescriptor"),
         };
+
+        // Set VFS context to non-root user to test permission denial
+        state.vfs.set_context(1000, 1000);
 
         // Try to read (should fail with permission denied)
         let result = dispatch_syscall(state, SystemCall::Read { fd, count: 100 }, pid);
@@ -1709,11 +1714,14 @@ mod tests {
             },
             pid,
         );
-        let (state, output) = result.unwrap();
+        let (mut state, output) = result.unwrap();
         let fd = match output {
             SyscallOutput::FileDescriptor(fd) => fd,
             _ => panic!("Expected FileDescriptor"),
         };
+
+        // Set VFS context to non-root user to test permission denial
+        state.vfs.set_context(1000, 1000);
 
         // Try to write (should fail with permission denied)
         let result = dispatch_syscall(
