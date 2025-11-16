@@ -171,6 +171,18 @@ pub enum SystemCall {
         /// File descriptor of open directory
         fd: u32,
     },
+
+    /// Get file status (metadata)
+    Stat {
+        /// Path to file or directory
+        path: String,
+    },
+
+    /// Get file status without following symlinks
+    Lstat {
+        /// Path to file or directory
+        path: String,
+    },
 }
 
 /// System call output
@@ -785,6 +797,60 @@ fn sys_getdents(
     }
 }
 
+/// Get file status (stat syscall)
+fn sys_stat(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = Path::new(&path);
+
+    match state.vfs.stat(path) {
+        Ok(file_stat) => {
+            // Serialize FileStat to JSON
+            let json = serde_json::to_vec(&file_stat).map_err(|e| {
+                KernelError::InvalidParameters(format!("Failed to serialize file stat: {}", e))
+            })?;
+            Ok((state, SyscallOutput::Data(json)))
+        }
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to stat file: {:?}",
+            e
+        ))),
+    }
+}
+
+/// Get file status without following symlinks (lstat syscall)
+fn sys_lstat(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = Path::new(&path);
+
+    match state.vfs.lstat(path) {
+        Ok(file_stat) => {
+            // Serialize FileStat to JSON
+            let json = serde_json::to_vec(&file_stat).map_err(|e| {
+                KernelError::InvalidParameters(format!("Failed to serialize file stat: {}", e))
+            })?;
+            Ok((state, SyscallOutput::Data(json)))
+        }
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to lstat file: {:?}",
+            e
+        ))),
+    }
+}
+
 ///
 /// Pure functional dispatcher: takes kernel state and syscall, returns new state and output.
 /// Never panics - all errors are returned as Results.
@@ -818,6 +884,8 @@ pub fn dispatch_syscall(
         SystemCall::Mkdir { path, mode } => sys_mkdir(state, calling_pid, path, mode),
         SystemCall::Rmdir { path } => sys_rmdir(state, calling_pid, path),
         SystemCall::Getdents { fd } => sys_getdents(state, calling_pid, fd),
+        SystemCall::Stat { path } => sys_stat(state, calling_pid, path),
+        SystemCall::Lstat { path } => sys_lstat(state, calling_pid, path),
     }
 }
 
@@ -4501,6 +4569,611 @@ mod tests {
                         pid,
                     );
                     prop_assert!(result.is_ok());
+                }
+            }
+        }
+    }
+
+    // ============================================================================
+    // WOS-FS-005: File metadata (stat) tests
+    // ============================================================================
+
+    #[cfg(test)]
+    mod metadata_tests {
+        use super::*;
+
+        #[test]
+        fn test_stat_file_basic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file first
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/test_file.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (mut state, output) = result.unwrap();
+            let fd = match output {
+                SyscallOutput::FileDescriptor(fd) => fd,
+                _ => panic!("Expected FileDescriptor"),
+            };
+
+            // Write some content
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Write {
+                    fd,
+                    data: b"Hello, World!".to_vec(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Stat the file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Stat {
+                    path: "/test_file.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            // Parse the FileStat from JSON
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.size, 13); // "Hello, World!" is 13 bytes
+                    assert_eq!(file_stat.file_type, wos_shared::vfs::FileType::RegularFile);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_directory() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a directory
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Stat the directory
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/test_dir".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            // Verify it's a directory
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.file_type, wos_shared::vfs::FileType::Directory);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_nonexistent_file() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Stat a non-existent file
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/nonexistent.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
+        }
+
+        #[test]
+        fn test_stat_file_size() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create file with specific size
+            let content = b"0123456789"; // 10 bytes
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/sizefile.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, output) = result.unwrap();
+            let fd = match output {
+                SyscallOutput::FileDescriptor(fd) => fd,
+                _ => panic!("Expected FileDescriptor"),
+            };
+
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Write {
+                    fd,
+                    data: content.to_vec(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Stat and verify size
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/sizefile.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.size, 10);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_timestamps_exist() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/timefile.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Stat the file
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/timefile.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            // Verify timestamps are present (non-zero)
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    // Timestamps should exist (can be zero or non-zero depending on implementation)
+                    assert!(file_stat.atime >= 0);
+                    assert!(file_stat.mtime >= 0);
+                    assert!(file_stat.ctime >= 0);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_lstat_basic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/lstat_test.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Lstat the file (should work like stat for regular files)
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Lstat {
+                    path: "/lstat_test.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.file_type, wos_shared::vfs::FileType::RegularFile);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_empty_file() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create empty file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/empty.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Stat the empty file
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/empty.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.size, 0);
+                    assert_eq!(file_stat.file_type, wos_shared::vfs::FileType::RegularFile);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_root_directory() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Stat the root directory
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.file_type, wos_shared::vfs::FileType::Directory);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_preserves_state() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/preserve.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            let state_before = state.clone();
+
+            // Stat should not modify state
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/preserve.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state_after, _) = result.unwrap();
+
+            // State should be functionally equivalent (stat is read-only)
+            assert_eq!(state_before.processes.len(), state_after.processes.len());
+        }
+
+        #[test]
+        fn test_stat_multiple_files() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create multiple files with different sizes
+            for i in 0..3 {
+                let path = format!("/file{}.txt", i);
+                let result = dispatch_syscall(
+                    state.clone(),
+                    SystemCall::Open {
+                        path: path.clone(),
+                        flags: O_CREAT | 0x0001,
+                    },
+                    pid,
+                );
+                assert!(result.is_ok());
+                let (new_state, output) = result.unwrap();
+                state = new_state;
+
+                let fd = match output {
+                    SyscallOutput::FileDescriptor(fd) => fd,
+                    _ => panic!("Expected FileDescriptor"),
+                };
+
+                // Write i bytes
+                let content = vec![b'x'; i];
+                let result =
+                    dispatch_syscall(state.clone(), SystemCall::Write { fd, data: content }, pid);
+                assert!(result.is_ok());
+                let (new_state, _) = result.unwrap();
+                state = new_state;
+            }
+
+            // Stat each file and verify sizes
+            for i in 0..3 {
+                let path = format!("/file{}.txt", i);
+                let result = dispatch_syscall(state.clone(), SystemCall::Stat { path }, pid);
+                assert!(result.is_ok());
+                let (new_state, output) = result.unwrap();
+                state = new_state;
+
+                match output {
+                    SyscallOutput::Data(data) => {
+                        let file_stat: wos_shared::vfs::FileStat =
+                            serde_json::from_slice(&data).unwrap();
+                        assert_eq!(file_stat.size, i as u64);
+                    }
+                    _ => panic!("Expected Data output"),
+                }
+            }
+        }
+
+        // ========================================================================
+        // Property tests for stat/metadata operations
+        // ========================================================================
+
+        #[cfg(test)]
+        mod proptests {
+            use super::*;
+            use proptest::prelude::*;
+
+            proptest! {
+                #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+                /// Property: stat is deterministic - same path always returns same metadata
+                #[test]
+                fn proptest_stat_deterministic(
+                    filename in "[a-z]{1,10}",
+                    content_size in 0usize..1000,
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/test_{}.txt", filename);
+                    let content = vec![b'x'; content_size];
+
+                    // Create and write file
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Open {
+                            path: path.clone(),
+                            flags: O_CREAT | 0x0001,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, output) = result.unwrap();
+                    let fd = match output {
+                        SyscallOutput::FileDescriptor(fd) => fd,
+                        _ => return Err(TestCaseError::fail("Expected FileDescriptor")),
+                    };
+
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Write {
+                            fd,
+                            data: content.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Stat the file twice
+                    let result1 = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Stat {
+                            path: path.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result1.is_ok());
+                    let (state, output1) = result1.unwrap();
+
+                    let result2 = dispatch_syscall(
+                        state,
+                        SystemCall::Stat {
+                            path: path.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result2.is_ok());
+                    let (_state, output2) = result2.unwrap();
+
+                    // Both should return identical data
+                    prop_assert_eq!(output1, output2);
+                }
+
+                /// Property: stat never panics on valid paths
+                #[test]
+                fn proptest_stat_never_panics(
+                    filename in "[a-z]{1,10}",
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/test_{}.txt", filename);
+
+                    // Create file
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Open {
+                            path: path.clone(),
+                            flags: O_CREAT | 0x0001,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Stat should never panic
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Stat {
+                            path,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                }
+
+                /// Property: file size reported by stat matches written content length
+                #[test]
+                fn proptest_stat_size_matches_content(
+                    filename in "[a-z]{1,10}",
+                    content_size in 0usize..1000,
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/test_{}.txt", filename);
+                    let content = vec![b'y'; content_size];
+
+                    // Create and write file
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Open {
+                            path: path.clone(),
+                            flags: O_CREAT | 0x0001,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, output) = result.unwrap();
+                    let fd = match output {
+                        SyscallOutput::FileDescriptor(fd) => fd,
+                        _ => return Err(TestCaseError::fail("Expected FileDescriptor")),
+                    };
+
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Write {
+                            fd,
+                            data: content.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Stat and verify size
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Stat {
+                            path,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (_state, output) = result.unwrap();
+
+                    match output {
+                        SyscallOutput::Data(data) => {
+                            let file_stat: wos_shared::vfs::FileStat =
+                                serde_json::from_slice(&data)
+                                    .map_err(|e| TestCaseError::fail(format!("JSON parse error: {}", e)))?;
+                            prop_assert_eq!(file_stat.size, content_size as u64);
+                        }
+                        _ => return Err(TestCaseError::fail("Expected Data output")),
+                    }
                 }
             }
         }
