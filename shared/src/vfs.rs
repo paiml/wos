@@ -30,6 +30,8 @@ pub struct Inode {
     pub inode_type: InodeType,
     /// File permissions (simplified)
     pub permissions: FilePermissions,
+    /// Number of hard links to this inode
+    pub nlinks: u64,
 }
 
 /// Type of inode
@@ -189,6 +191,7 @@ impl VirtualFileSystem {
                 entries: im::HashMap::new(),
             },
             permissions: FilePermissions::default(),
+            nlinks: 1,
         };
         inodes.insert(root_ino, root);
 
@@ -389,6 +392,7 @@ impl VirtualFileSystem {
                 entries: im::HashMap::new(),
             },
             permissions: FilePermissions::default(),
+            nlinks: 1,
         };
 
         self.inodes.insert(new_ino, new_dir);
@@ -403,6 +407,7 @@ impl VirtualFileSystem {
                 entries: new_entries,
             },
             permissions: parent.permissions,
+            nlinks: parent.nlinks,
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -454,6 +459,7 @@ impl VirtualFileSystem {
                 entries: new_entries,
             },
             permissions: parent.permissions,
+            nlinks: parent.nlinks,
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -510,6 +516,7 @@ impl VirtualFileSystem {
             ino: new_ino,
             inode_type: InodeType::Symlink { target },
             permissions: FilePermissions::default(),
+            nlinks: 1,
         };
 
         self.inodes.insert(new_ino, new_symlink);
@@ -524,6 +531,7 @@ impl VirtualFileSystem {
                 entries: new_entries,
             },
             permissions: parent.permissions,
+            nlinks: parent.nlinks,
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -635,6 +643,7 @@ impl VirtualFileSystem {
             ino: new_ino,
             inode_type: InodeType::File { content },
             permissions: FilePermissions::default(),
+            nlinks: 1,
         };
 
         self.inodes.insert(new_ino, new_file);
@@ -649,6 +658,7 @@ impl VirtualFileSystem {
                 entries: new_entries,
             },
             permissions: parent.permissions,
+            nlinks: parent.nlinks,
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -691,6 +701,7 @@ impl VirtualFileSystem {
                     ino,
                     inode_type: InodeType::File { content },
                     permissions: inode.permissions.clone(),
+                    nlinks: inode.nlinks,
                 };
                 self.inodes.insert(ino, updated_inode);
                 Ok(())
@@ -739,6 +750,7 @@ impl VirtualFileSystem {
                 entries: new_entries,
             },
             permissions: parent.permissions,
+            nlinks: parent.nlinks,
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -767,10 +779,140 @@ impl VirtualFileSystem {
             ino,
             inode_type: inode.inode_type.clone(),
             permissions,
+            nlinks: inode.nlinks,
         };
 
         self.inodes.insert(ino, updated_inode);
         Ok(())
+    }
+
+    /// Create a hard link (multiple directory entries pointing to same inode)
+    pub fn link(&mut self, old_path: PathBuf, new_path: PathBuf) -> Result<(), VfsError> {
+        // Get the inode of the existing file
+        let old_ino = self.resolve_path(&old_path)?;
+        let inode = self.inodes.get(&old_ino).ok_or(VfsError::NotFound)?;
+
+        // Check if it's a directory (POSIX restriction: no hard links to directories)
+        if matches!(inode.inode_type, InodeType::Directory { .. }) {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        // Get parent directory for new path
+        let (parent_ino, name) = self.resolve_parent(&new_path)?;
+        let parent = self
+            .inodes
+            .get(&parent_ino)
+            .ok_or(VfsError::NotFound)?
+            .clone();
+
+        let entries = match &parent.inode_type {
+            InodeType::Directory { entries } => entries.clone(),
+            InodeType::File { .. } | InodeType::Symlink { .. } => {
+                return Err(VfsError::NotADirectory)
+            }
+        };
+
+        if entries.contains_key(&name) {
+            return Err(VfsError::AlreadyExists);
+        }
+
+        // Add new directory entry pointing to existing inode
+        let mut new_entries = entries;
+        new_entries.insert(name, old_ino);
+
+        let updated_parent = Inode {
+            ino: parent_ino,
+            inode_type: InodeType::Directory {
+                entries: new_entries,
+            },
+            permissions: parent.permissions,
+            nlinks: parent.nlinks,
+        };
+
+        self.inodes.insert(parent_ino, updated_parent);
+
+        // Increment the link count on the inode
+        let inode = self.inodes.get(&old_ino).ok_or(VfsError::NotFound)?.clone();
+        let updated_inode = Inode {
+            ino: old_ino,
+            inode_type: inode.inode_type.clone(),
+            permissions: inode.permissions.clone(),
+            nlinks: inode.nlinks + 1,
+        };
+        self.inodes.insert(old_ino, updated_inode);
+
+        Ok(())
+    }
+
+    /// Remove a directory entry (decrement reference count, delete inode if refcount reaches 0)
+    pub fn unlink(&mut self, path: &Path) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?.clone();
+
+        // Get parent and remove directory entry
+        let (parent_ino, name) = self.resolve_parent(path)?;
+        let parent = self
+            .inodes
+            .get(&parent_ino)
+            .ok_or(VfsError::NotFound)?
+            .clone();
+
+        let parent_entries = match &parent.inode_type {
+            InodeType::Directory { entries } => entries.clone(),
+            InodeType::File { .. } | InodeType::Symlink { .. } => {
+                return Err(VfsError::NotADirectory)
+            }
+        };
+
+        let mut new_entries = parent_entries;
+        new_entries.remove(&name);
+
+        let updated_parent = Inode {
+            ino: parent_ino,
+            inode_type: InodeType::Directory {
+                entries: new_entries,
+            },
+            permissions: parent.permissions,
+            nlinks: parent.nlinks,
+        };
+
+        self.inodes.insert(parent_ino, updated_parent);
+
+        // Decrement link count
+        let new_nlinks = inode.nlinks - 1;
+
+        if new_nlinks == 0 {
+            // Last link removed - delete the inode
+            self.inodes.remove(&ino);
+        } else {
+            // Still has links - just decrement count
+            let updated_inode = Inode {
+                ino,
+                inode_type: inode.inode_type.clone(),
+                permissions: inode.permissions.clone(),
+                nlinks: new_nlinks,
+            };
+            self.inodes.insert(ino, updated_inode);
+        }
+
+        Ok(())
+    }
+
+    /// Get the link count (number of hard links) for a file
+    pub fn get_link_count(&self, path: &Path) -> Result<u64, VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+        Ok(inode.nlinks)
+    }
+
+    /// Get the inode number for a path
+    pub fn get_inode_number(&self, path: &Path) -> Result<InodeNumber, VfsError> {
+        self.resolve_path(path)
+    }
+
+    /// Check if an inode exists
+    pub fn inode_exists(&self, ino: InodeNumber) -> bool {
+        self.inodes.contains_key(&ino)
     }
 
     /// List all files (returns paths) - legacy method for compatibility
@@ -1484,7 +1626,10 @@ mod tests {
             .unwrap();
 
         // Create hard link
-        let result = vfs.link(PathBuf::from("/original.txt"), PathBuf::from("/hardlink.txt"));
+        let result = vfs.link(
+            PathBuf::from("/original.txt"),
+            PathBuf::from("/hardlink.txt"),
+        );
         assert!(result.is_ok(), "Should create hard link successfully");
 
         // Both paths should exist
@@ -1496,7 +1641,8 @@ mod tests {
     fn test_hard_link_shares_inode() {
         let mut vfs = VirtualFileSystem::new();
 
-        vfs.create_file(PathBuf::from("/file1.txt"), vec![]).unwrap();
+        vfs.create_file(PathBuf::from("/file1.txt"), vec![])
+            .unwrap();
         vfs.link(PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"))
             .unwrap();
 
@@ -1586,7 +1732,11 @@ mod tests {
         // Link should still exist and be readable
         assert!(vfs.exists(&PathBuf::from("/link.txt")));
         let content = vfs.read_file(&PathBuf::from("/link.txt")).unwrap();
-        assert_eq!(content, b"data".to_vec(), "File should persist through link");
+        assert_eq!(
+            content,
+            b"data".to_vec(),
+            "File should persist through link"
+        );
     }
 
     #[test]
@@ -1598,9 +1748,7 @@ mod tests {
         vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/link.txt"))
             .unwrap();
 
-        let inode_num = vfs
-            .get_inode_number(&PathBuf::from("/file.txt"))
-            .unwrap();
+        let inode_num = vfs.get_inode_number(&PathBuf::from("/file.txt")).unwrap();
 
         // Unlink both
         vfs.unlink(&PathBuf::from("/file.txt")).unwrap();
@@ -1744,8 +1892,11 @@ mod tests {
             .unwrap();
         vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/hardlink.txt"))
             .unwrap();
-        vfs.create_symlink(PathBuf::from("/symlink.txt"), PathBuf::from("/hardlink.txt"))
-            .unwrap();
+        vfs.create_symlink(
+            PathBuf::from("/symlink.txt"),
+            PathBuf::from("/hardlink.txt"),
+        )
+        .unwrap();
 
         // Read through symlink -> hard link -> file
         let content = vfs.read_file(&PathBuf::from("/symlink.txt")).unwrap();
@@ -1763,8 +1914,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            vfs.get_link_count(&PathBuf::from("/dir/file.txt"))
-                .unwrap(),
+            vfs.get_link_count(&PathBuf::from("/dir/file.txt")).unwrap(),
             2
         );
 
@@ -2103,8 +2253,8 @@ mod tests {
                 // Both should have same content
                 let content1 = vfs.read_file(&file).unwrap();
                 let content2 = vfs.read_file(&link).unwrap();
-                prop_assert_eq!(content1, content2);
-                prop_assert_eq!(content1, content);
+                prop_assert_eq!(&content1, &content2);
+                prop_assert_eq!(&content1, &content);
 
                 // Write through one link
                 let new_content: Vec<u8> = (0..content.len()).map(|i| !content[i]).collect();
