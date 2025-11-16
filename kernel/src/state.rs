@@ -75,6 +75,8 @@ pub struct Process {
     pub memory: VirtualMemory,
     /// Message queue (FIFO)
     pub message_queue: im::Vector<Message>,
+    /// Wakeup time in microseconds (for sleeping processes)
+    pub wakeup_time: Option<u64>,
 }
 
 impl Process {
@@ -94,6 +96,7 @@ impl Process {
             open_files,
             memory: VirtualMemory::new(),
             message_queue: im::Vector::new(),
+            wakeup_time: None,
         }
     }
 
@@ -189,6 +192,8 @@ pub struct KernelState {
     pub vfs: VirtualFileSystem,
     /// Pipe buffers (keyed by read FD)
     pub pipes: HashMap<FileDescriptor, PipeBuffer>,
+    /// Simulated clock for time tracking
+    pub simulated_clock: wos_shared::SimulatedClock,
 }
 
 impl KernelState {
@@ -200,6 +205,7 @@ impl KernelState {
             current_pid: None,
             vfs: VirtualFileSystem::new(),
             pipes: HashMap::new(),
+            simulated_clock: wos_shared::SimulatedClock::new(),
         }
     }
 

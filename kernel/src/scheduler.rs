@@ -96,6 +96,41 @@ impl Default for Scheduler {
     }
 }
 
+/// Standalone schedule function that wakes up sleeping processes
+///
+/// Checks all blocked processes and wakes those whose wakeup time has passed.
+/// Returns the updated kernel state and optionally the next process to run.
+pub fn schedule(
+    mut state: KernelState,
+) -> Result<(KernelState, Option<ProcessId>), crate::syscall::KernelError> {
+    let current_time = state.simulated_clock.current_time();
+
+    // Wake up any sleeping processes whose wakeup time has passed
+    let mut processes_to_wake = Vec::new();
+
+    for (pid, process) in state.processes.iter() {
+        if matches!(process.state, crate::state::ProcessState::Blocked) {
+            if let Some(wakeup_time) = process.wakeup_time {
+                if current_time >= wakeup_time {
+                    processes_to_wake.push(*pid);
+                }
+            }
+        }
+    }
+
+    // Wake up the processes
+    for pid in processes_to_wake {
+        if let Some(mut process) = state.processes.get(&pid).cloned() {
+            process.state = crate::state::ProcessState::Ready;
+            process.wakeup_time = None;
+            state.processes.insert(pid, process);
+        }
+    }
+
+    // Return state and no specific process (scheduler can choose)
+    Ok((state, None))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

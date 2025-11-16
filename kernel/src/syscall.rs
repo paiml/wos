@@ -310,6 +310,41 @@ fn sys_waitpid(
     }
 }
 
+/// Handle Sleep syscall
+fn sys_sleep(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    duration_us: u64,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let mut process = state
+        .get_process(calling_pid)
+        .ok_or(KernelError::ProcessNotFound(calling_pid))?
+        .clone();
+
+    // Check if process is terminated
+    if matches!(process.state, crate::state::ProcessState::Terminated(_)) {
+        return Err(KernelError::InvalidProcessState);
+    }
+
+    // Special case: sleep(0) is a no-op
+    if duration_us == 0 {
+        return Ok((state, SyscallOutput::Success));
+    }
+
+    // Calculate wakeup time
+    let current_time = state.simulated_clock.current_time();
+    let wakeup_time = current_time + duration_us;
+
+    // Update process state to blocked and set wakeup time
+    process.state = crate::state::ProcessState::Blocked;
+    process.wakeup_time = Some(wakeup_time);
+
+    // Update process in state
+    state.processes.insert(calling_pid, process);
+
+    Ok((state, SyscallOutput::Success))
+}
+
 /// Handle Open syscall
 fn sys_open(
     mut state: KernelState,
@@ -599,7 +634,7 @@ pub fn dispatch_syscall(
         SystemCall::Fork => sys_fork(state, calling_pid),
         SystemCall::Exit(code) => sys_exit(state, calling_pid, code),
         SystemCall::WaitPid(wait_pid) => sys_waitpid(state, calling_pid, wait_pid),
-        SystemCall::Sleep(_duration) => Err(KernelError::NotImplemented),
+        SystemCall::Sleep(duration) => sys_sleep(state, calling_pid, duration),
         SystemCall::Open { path, flags } => sys_open(state, calling_pid, path, flags),
         SystemCall::Close { fd } => sys_close(state, calling_pid, fd),
         SystemCall::Read { fd, count } => sys_read(state, calling_pid, fd, count),
@@ -654,9 +689,10 @@ mod tests {
         let proc = Process::new(pid, None);
         state.add_process(proc);
 
-        // Test unimplemented syscalls (Sleep)
-        // Note: Open, Close, Read, Write are now implemented
-        let syscalls = vec![SystemCall::Sleep(1000)];
+        // All previously unimplemented syscalls are now implemented
+        // (Sleep, Open, Close, Read, Write, Mmap, Munmap, Send, Recv, Pipe, Dup2)
+        // This test is kept for future use when new syscalls are added
+        let syscalls: Vec<SystemCall> = vec![];
 
         for syscall in syscalls {
             let result = dispatch_syscall(state.clone(), syscall, pid);
@@ -3000,10 +3036,11 @@ mod tests {
 
         // Put process to sleep for 100 microseconds
         let (mut state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid).unwrap();
-        let wakeup_time = state.get_process(pid).unwrap().wakeup_time.unwrap();
 
         // Process should be blocked
         assert_eq!(state.get_process(pid).unwrap().state, ProcessState::Blocked);
+        // Verify wakeup time is set
+        assert!(state.get_process(pid).unwrap().wakeup_time.is_some());
 
         // Advance clock past wakeup time
         state.simulated_clock.advance(150);
@@ -3172,11 +3209,11 @@ mod tests {
 
                 if duration == 0 {
                     // Zero sleep should not block
-                    prop_assert_eq!(process.state, ProcessState::Ready);
+                    prop_assert_eq!(&process.state, &ProcessState::Ready);
                     prop_assert!(process.wakeup_time.is_none());
                 } else {
                     // Non-zero sleep should block
-                    prop_assert_eq!(process.state, ProcessState::Blocked);
+                    prop_assert_eq!(&process.state, &ProcessState::Blocked);
                     prop_assert!(process.wakeup_time.is_some());
                 }
             }
