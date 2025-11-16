@@ -139,10 +139,30 @@ pub enum SystemCall {
         /// New file descriptor
         newfd: u32,
     },
+
+    /// Create directory
+    Mkdir {
+        /// Path to directory
+        path: String,
+        /// Directory mode (permissions)
+        mode: u32,
+    },
+
+    /// Remove empty directory
+    Rmdir {
+        /// Path to directory
+        path: String,
+    },
+
+    /// List directory contents
+    Listdir {
+        /// Path to directory
+        path: String,
+    },
 }
 
 /// System call output
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SyscallOutput {
     /// Process ID
     Pid(ProcessId),
@@ -169,6 +189,9 @@ pub enum SyscallOutput {
         /// Write file descriptor
         write_fd: u32,
     },
+
+    /// Directory entries (for listdir)
+    DirectoryEntries(Vec<wos_shared::vfs::DirectoryEntry>),
 }
 
 /// Generate /proc/PID/status content
@@ -610,6 +633,9 @@ pub fn dispatch_syscall(
         SystemCall::Recv { timeout: _ } => sys_recv(state, calling_pid),
         SystemCall::Pipe => sys_pipe(state, calling_pid),
         SystemCall::Dup2 { oldfd, newfd } => sys_dup2(state, calling_pid, oldfd, newfd),
+        SystemCall::Mkdir { path, mode } => sys_mkdir(state, calling_pid, path, mode),
+        SystemCall::Rmdir { path } => sys_rmdir(state, calling_pid, path),
+        SystemCall::Listdir { path } => sys_listdir(state, calling_pid, path),
     }
 }
 
@@ -2828,6 +2854,906 @@ mod tests {
 
                 let (_state, output) = result.unwrap();
                 prop_assert_eq!(output, SyscallOutput::Value(exit_code));
+            }
+        }
+    }
+
+    // ========================================================================
+    // Directory Syscall Tests (WOS-FS-001)
+    // ========================================================================
+
+    mod directory_tests {
+        use super::*;
+        use std::path::PathBuf;
+
+        // Unit Tests (20)
+
+        #[test]
+        fn test_mkdir_basic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            assert_eq!(output, SyscallOutput::Success);
+            assert!(state.vfs.is_directory(&PathBuf::from("/test_dir")));
+        }
+
+        #[test]
+        fn test_mkdir_with_parent() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create parent
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/parent".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Create child
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/parent/child".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            assert_eq!(output, SyscallOutput::Success);
+            assert!(state.vfs.is_directory(&PathBuf::from("/parent/child")));
+        }
+
+        #[test]
+        fn test_mkdir_already_exists() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create directory
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Try to create again (should fail)
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+
+            assert!(result.is_err());
+            assert_eq!(
+                result.unwrap_err(),
+                KernelError::FileAlreadyExists("/test_dir".to_string())
+            );
+        }
+
+        #[test]
+        fn test_mkdir_parent_not_found() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Try to create child without parent
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/nonexistent/child".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+
+            assert!(result.is_err());
+            assert_eq!(
+                result.unwrap_err(),
+                KernelError::FileNotFound("/nonexistent".to_string())
+            );
+        }
+
+        #[test]
+        fn test_rmdir_basic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create directory
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Remove directory
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Rmdir {
+                    path: "/test_dir".to_string(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            assert_eq!(output, SyscallOutput::Success);
+            assert!(!state.vfs.exists(&PathBuf::from("/test_dir")));
+        }
+
+        #[test]
+        fn test_rmdir_not_empty() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create parent and child
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/parent".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/parent/child".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Try to remove non-empty parent (should fail)
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Rmdir {
+                    path: "/parent".to_string(),
+                },
+                pid,
+            );
+
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_rmdir_not_found() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Rmdir {
+                    path: "/nonexistent".to_string(),
+                },
+                pid,
+            );
+
+            assert!(result.is_err());
+            assert_eq!(
+                result.unwrap_err(),
+                KernelError::FileNotFound("/nonexistent".to_string())
+            );
+        }
+
+        #[test]
+        fn test_rmdir_root() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Rmdir {
+                    path: "/".to_string(),
+                },
+                pid,
+            );
+
+            assert!(result.is_err());
+            assert_eq!(result.unwrap_err(), KernelError::PermissionDenied);
+        }
+
+        #[test]
+        fn test_listdir_basic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create directory with some entries
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Listdir {
+                    path: "/test_dir".to_string(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            match output {
+                SyscallOutput::DirectoryEntries(entries) => {
+                    assert_eq!(entries.len(), 0); // Empty directory
+                }
+                _ => panic!("Expected DirectoryEntries"),
+            }
+        }
+
+        #[test]
+        fn test_listdir_with_entries() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create parent directory
+            let (mut state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/parent".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Create child directories
+            state
+                .vfs
+                .create_directory(PathBuf::from("/parent/child1"))
+                .unwrap();
+            state
+                .vfs
+                .create_directory(PathBuf::from("/parent/child2"))
+                .unwrap();
+            state
+                .vfs
+                .create_file(PathBuf::from("/parent/file.txt"), b"test".to_vec())
+                .unwrap();
+
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Listdir {
+                    path: "/parent".to_string(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            match output {
+                SyscallOutput::DirectoryEntries(entries) => {
+                    assert_eq!(entries.len(), 3);
+                    let names: Vec<String> = entries.iter().map(|e| e.name.clone()).collect();
+                    assert!(names.contains(&"child1".to_string()));
+                    assert!(names.contains(&"child2".to_string()));
+                    assert!(names.contains(&"file.txt".to_string()));
+                }
+                _ => panic!("Expected DirectoryEntries"),
+            }
+        }
+
+        #[test]
+        fn test_listdir_not_found() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Listdir {
+                    path: "/nonexistent".to_string(),
+                },
+                pid,
+            );
+
+            assert!(result.is_err());
+            assert_eq!(
+                result.unwrap_err(),
+                KernelError::FileNotFound("/nonexistent".to_string())
+            );
+        }
+
+        #[test]
+        fn test_nested_directory_creation() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create /a
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/a".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Create /a/b
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/a/b".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Create /a/b/c
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/a/b/c".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            assert_eq!(output, SyscallOutput::Success);
+            assert!(state.vfs.is_directory(&PathBuf::from("/a/b/c")));
+        }
+
+        #[test]
+        fn test_nested_directory_removal() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create nested directories
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/a".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/a/b".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Remove leaf directory
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Rmdir {
+                    path: "/a/b".to_string(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Remove parent directory
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Rmdir {
+                    path: "/a".to_string(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            assert_eq!(output, SyscallOutput::Success);
+            assert!(!state.vfs.exists(&PathBuf::from("/a")));
+        }
+
+        #[test]
+        fn test_directory_with_permissions() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o750,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Check directory was created (permissions will be tested in VFS layer)
+            assert!(state.vfs.is_directory(&PathBuf::from("/test_dir")));
+        }
+
+        #[test]
+        fn test_listdir_root() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create some directories in root
+            state.vfs.create_directory(PathBuf::from("/home")).unwrap();
+            state.vfs.create_directory(PathBuf::from("/tmp")).unwrap();
+            state.vfs.create_directory(PathBuf::from("/var")).unwrap();
+
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Listdir {
+                    path: "/".to_string(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            match output {
+                SyscallOutput::DirectoryEntries(entries) => {
+                    assert!(entries.len() >= 3);
+                    let names: Vec<String> = entries.iter().map(|e| e.name.clone()).collect();
+                    assert!(names.contains(&"home".to_string()));
+                    assert!(names.contains(&"tmp".to_string()));
+                    assert!(names.contains(&"var".to_string()));
+                }
+                _ => panic!("Expected DirectoryEntries"),
+            }
+        }
+
+        #[test]
+        fn test_mkdir_rmdir_sequence() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/test".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+            assert!(state.vfs.exists(&PathBuf::from("/test")));
+
+            // Remove
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Rmdir {
+                    path: "/test".to_string(),
+                },
+                pid,
+            )
+            .unwrap();
+            assert!(!state.vfs.exists(&PathBuf::from("/test")));
+
+            // Create again
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/test".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            assert_eq!(output, SyscallOutput::Success);
+            assert!(state.vfs.exists(&PathBuf::from("/test")));
+        }
+
+        #[test]
+        fn test_listdir_distinguishes_types() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create directory
+            state.vfs.create_directory(PathBuf::from("/test")).unwrap();
+
+            // Create subdirectory
+            state
+                .vfs
+                .create_directory(PathBuf::from("/test/subdir"))
+                .unwrap();
+
+            // Create file
+            state
+                .vfs
+                .create_file(PathBuf::from("/test/file.txt"), b"data".to_vec())
+                .unwrap();
+
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Listdir {
+                    path: "/test".to_string(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            match output {
+                SyscallOutput::DirectoryEntries(entries) => {
+                    assert_eq!(entries.len(), 2);
+
+                    let dir_entry = entries.iter().find(|e| e.name == "subdir").unwrap();
+                    assert!(dir_entry.is_directory());
+
+                    let file_entry = entries.iter().find(|e| e.name == "file.txt").unwrap();
+                    assert!(file_entry.is_file());
+                }
+                _ => panic!("Expected DirectoryEntries"),
+            }
+        }
+
+        #[test]
+        fn test_mkdir_multiple_at_same_level() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create parent
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/parent".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // Create multiple children
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/parent/child1".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/parent/child2".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/parent/child3".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            // List parent
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Listdir {
+                    path: "/parent".to_string(),
+                },
+                pid,
+            )
+            .unwrap();
+
+            match output {
+                SyscallOutput::DirectoryEntries(entries) => {
+                    assert_eq!(entries.len(), 3);
+                }
+                _ => panic!("Expected DirectoryEntries"),
+            }
+        }
+
+        #[test]
+        fn test_complex_directory_tree() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create complex tree: /root/branch1/leaf1, /root/branch2/leaf2
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/root".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/root/branch1".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/root/branch2".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            let (state, _) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/root/branch1/leaf1".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            let (state, output) = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/root/branch2/leaf2".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            )
+            .unwrap();
+
+            assert_eq!(output, SyscallOutput::Success);
+            assert!(state
+                .vfs
+                .is_directory(&PathBuf::from("/root/branch1/leaf1")));
+            assert!(state
+                .vfs
+                .is_directory(&PathBuf::from("/root/branch2/leaf2")));
+        }
+
+        // Property-based tests (5)
+        #[cfg(test)]
+        mod proptests {
+            use super::*;
+            use proptest::prelude::*;
+
+            proptest! {
+                #[test]
+                fn proptest_mkdir_creates_directory(
+                    name in "[a-z]{1,20}",
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/{}", name);
+                    let (state, output) = dispatch_syscall(
+                        state,
+                        SystemCall::Mkdir {
+                            path: path.clone(),
+                            mode: 0o755,
+                        },
+                        pid,
+                    )?;
+
+                    prop_assert_eq!(output, SyscallOutput::Success);
+                    prop_assert!(state.vfs.exists(&PathBuf::from(&path)));
+                    prop_assert!(state.vfs.is_directory(&PathBuf::from(&path)));
+                }
+
+                #[test]
+                fn proptest_mkdir_rmdir_reversible(
+                    name in "[a-z]{1,20}",
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/{}", name);
+
+                    // Create
+                    let (state, _) = dispatch_syscall(
+                        state,
+                        SystemCall::Mkdir {
+                            path: path.clone(),
+                            mode: 0o755,
+                        },
+                        pid,
+                    )?;
+                    prop_assert!(state.vfs.exists(&PathBuf::from(&path)));
+
+                    // Remove
+                    let (state, _) = dispatch_syscall(
+                        state,
+                        SystemCall::Rmdir {
+                            path: path.clone(),
+                        },
+                        pid,
+                    )?;
+                    prop_assert!(!state.vfs.exists(&PathBuf::from(&path)));
+                }
+
+                #[test]
+                fn proptest_listdir_includes_created_entries(
+                    entries in prop::collection::vec("[a-z]{1,10}", 1..10),
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Create parent
+                    let (mut state, _) = dispatch_syscall(
+                        state,
+                        SystemCall::Mkdir {
+                            path: "/parent".to_string(),
+                            mode: 0o755,
+                        },
+                        pid,
+                    )?;
+
+                    // Create child directories
+                    for entry in &entries {
+                        state.vfs.create_directory(PathBuf::from(format!("/parent/{}", entry))).unwrap();
+                    }
+
+                    // List directory
+                    let (state, output) = dispatch_syscall(
+                        state,
+                        SystemCall::Listdir {
+                            path: "/parent".to_string(),
+                        },
+                        pid,
+                    )?;
+
+                    match output {
+                        SyscallOutput::DirectoryEntries(dir_entries) => {
+                            let names: Vec<String> = dir_entries.iter().map(|e| e.name.clone()).collect();
+                            for entry in &entries {
+                                prop_assert!(names.contains(entry));
+                            }
+                        }
+                        _ => return Err(proptest::test_runner::TestCaseError::fail("Expected DirectoryEntries")),
+                    }
+                }
+
+                #[test]
+                fn proptest_rmdir_only_removes_empty(
+                    has_child in prop::bool::ANY,
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Create parent
+                    let (mut state, _) = dispatch_syscall(
+                        state,
+                        SystemCall::Mkdir {
+                            path: "/parent".to_string(),
+                            mode: 0o755,
+                        },
+                        pid,
+                    )?;
+
+                    if has_child {
+                        // Create child
+                        state.vfs.create_directory(PathBuf::from("/parent/child")).unwrap();
+                    }
+
+                    // Try to remove
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Rmdir {
+                            path: "/parent".to_string(),
+                        },
+                        pid,
+                    );
+
+                    if has_child {
+                        prop_assert!(result.is_err());
+                    } else {
+                        prop_assert!(result.is_ok());
+                    }
+                }
+
+                #[test]
+                fn proptest_nested_mkdir(
+                    depth in 1..10usize,
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Create nested directories
+                    let mut current_path = String::from("");
+                    for i in 0..depth {
+                        current_path.push_str(&format!("/dir{}", i));
+                        let (new_state, _) = dispatch_syscall(
+                            state,
+                            SystemCall::Mkdir {
+                                path: current_path.clone(),
+                                mode: 0o755,
+                            },
+                            pid,
+                        )?;
+                        state = new_state;
+                    }
+
+                    // Verify deepest directory exists
+                    prop_assert!(state.vfs.exists(&PathBuf::from(&current_path)));
+                    prop_assert!(state.vfs.is_directory(&PathBuf::from(&current_path)));
+                }
             }
         }
     }
