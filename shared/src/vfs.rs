@@ -1471,6 +1471,308 @@ mod tests {
         );
     }
 
+    // ========================================================================
+    // WOS-FS-003: Hard Links and Inode Reference Counting Tests (RED PHASE)
+    // ========================================================================
+
+    #[test]
+    fn test_create_hard_link() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create original file
+        vfs.create_file(PathBuf::from("/original.txt"), b"content".to_vec())
+            .unwrap();
+
+        // Create hard link
+        let result = vfs.link(PathBuf::from("/original.txt"), PathBuf::from("/hardlink.txt"));
+        assert!(result.is_ok(), "Should create hard link successfully");
+
+        // Both paths should exist
+        assert!(vfs.exists(&PathBuf::from("/original.txt")));
+        assert!(vfs.exists(&PathBuf::from("/hardlink.txt")));
+    }
+
+    #[test]
+    fn test_hard_link_shares_inode() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file1.txt"), vec![]).unwrap();
+        vfs.link(PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"))
+            .unwrap();
+
+        // Both should point to the same inode
+        let inode1 = vfs.get_inode_number(&PathBuf::from("/file1.txt")).unwrap();
+        let inode2 = vfs.get_inode_number(&PathBuf::from("/file2.txt")).unwrap();
+        assert_eq!(inode1, inode2, "Hard links should share the same inode");
+    }
+
+    #[test]
+    fn test_hard_link_shares_content() {
+        let mut vfs = VirtualFileSystem::new();
+
+        let content = b"shared content".to_vec();
+        vfs.create_file(PathBuf::from("/file1.txt"), content.clone())
+            .unwrap();
+        vfs.link(PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"))
+            .unwrap();
+
+        // Content should be the same
+        let content1 = vfs.read_file(&PathBuf::from("/file1.txt")).unwrap();
+        let content2 = vfs.read_file(&PathBuf::from("/file2.txt")).unwrap();
+        assert_eq!(content1, content2, "Hard links should share content");
+        assert_eq!(content1, content, "Content should match original");
+    }
+
+    #[test]
+    fn test_write_through_hard_link() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file1.txt"), b"initial".to_vec())
+            .unwrap();
+        vfs.link(PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"))
+            .unwrap();
+
+        // Write through one link
+        vfs.write_file(&PathBuf::from("/file2.txt"), b"updated".to_vec())
+            .unwrap();
+
+        // Read through the other link
+        let content = vfs.read_file(&PathBuf::from("/file1.txt")).unwrap();
+        assert_eq!(
+            content,
+            b"updated".to_vec(),
+            "Write through one hard link should be visible in others"
+        );
+    }
+
+    #[test]
+    fn test_unlink_decrements_refcount() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+        vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/link.txt"))
+            .unwrap();
+
+        // Initial link count should be 2
+        assert_eq!(
+            vfs.get_link_count(&PathBuf::from("/file.txt")).unwrap(),
+            2,
+            "Link count should be 2 after creating hard link"
+        );
+
+        // Unlink one
+        vfs.unlink(&PathBuf::from("/link.txt")).unwrap();
+
+        // Link count should be 1
+        assert_eq!(
+            vfs.get_link_count(&PathBuf::from("/file.txt")).unwrap(),
+            1,
+            "Link count should be 1 after unlinking"
+        );
+    }
+
+    #[test]
+    fn test_file_persists_with_links() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+        vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/link.txt"))
+            .unwrap();
+
+        // Unlink original
+        vfs.unlink(&PathBuf::from("/file.txt")).unwrap();
+
+        // Link should still exist and be readable
+        assert!(vfs.exists(&PathBuf::from("/link.txt")));
+        let content = vfs.read_file(&PathBuf::from("/link.txt")).unwrap();
+        assert_eq!(content, b"data".to_vec(), "File should persist through link");
+    }
+
+    #[test]
+    fn test_file_deleted_when_refcount_zero() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+        vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/link.txt"))
+            .unwrap();
+
+        let inode_num = vfs
+            .get_inode_number(&PathBuf::from("/file.txt"))
+            .unwrap();
+
+        // Unlink both
+        vfs.unlink(&PathBuf::from("/file.txt")).unwrap();
+        vfs.unlink(&PathBuf::from("/link.txt")).unwrap();
+
+        // Inode should be freed
+        assert!(
+            !vfs.inode_exists(inode_num),
+            "Inode should be freed when refcount reaches 0"
+        );
+    }
+
+    #[test]
+    fn test_hard_link_to_nonexistent() {
+        let mut vfs = VirtualFileSystem::new();
+
+        let result = vfs.link(
+            PathBuf::from("/nonexistent.txt"),
+            PathBuf::from("/link.txt"),
+        );
+        assert_eq!(
+            result,
+            Err(VfsError::NotFound),
+            "Hard link to non-existent file should fail"
+        );
+    }
+
+    #[test]
+    fn test_hard_link_to_directory() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+
+        let result = vfs.link(PathBuf::from("/dir"), PathBuf::from("/dirlink"));
+        assert!(
+            result.is_err(),
+            "Hard link to directory should fail (POSIX restriction)"
+        );
+    }
+
+    #[test]
+    fn test_get_link_count() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+
+        // Initial link count should be 1
+        assert_eq!(vfs.get_link_count(&PathBuf::from("/file.txt")).unwrap(), 1);
+
+        // Add hard links
+        vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/link1.txt"))
+            .unwrap();
+        assert_eq!(vfs.get_link_count(&PathBuf::from("/file.txt")).unwrap(), 2);
+
+        vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/link2.txt"))
+            .unwrap();
+        assert_eq!(vfs.get_link_count(&PathBuf::from("/file.txt")).unwrap(), 3);
+    }
+
+    // Integration tests (more complex scenarios)
+
+    #[test]
+    fn test_hard_link_complex_scenario() {
+        let mut vfs = VirtualFileSystem::new();
+
+        // Create file with multiple hard links in different directories
+        vfs.create_directory(PathBuf::from("/dir1")).unwrap();
+        vfs.create_directory(PathBuf::from("/dir2")).unwrap();
+
+        vfs.create_file(PathBuf::from("/dir1/file.txt"), b"data".to_vec())
+            .unwrap();
+        vfs.link(
+            PathBuf::from("/dir1/file.txt"),
+            PathBuf::from("/dir2/file.txt"),
+        )
+        .unwrap();
+        vfs.link(PathBuf::from("/dir1/file.txt"), PathBuf::from("/root.txt"))
+            .unwrap();
+
+        // All should share content
+        assert_eq!(
+            vfs.read_file(&PathBuf::from("/dir1/file.txt")).unwrap(),
+            b"data".to_vec()
+        );
+        assert_eq!(
+            vfs.read_file(&PathBuf::from("/dir2/file.txt")).unwrap(),
+            b"data".to_vec()
+        );
+        assert_eq!(
+            vfs.read_file(&PathBuf::from("/root.txt")).unwrap(),
+            b"data".to_vec()
+        );
+
+        // Link count should be 3
+        assert_eq!(
+            vfs.get_link_count(&PathBuf::from("/dir1/file.txt"))
+                .unwrap(),
+            3
+        );
+    }
+
+    #[test]
+    fn test_unlink_vs_delete_file() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+        vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/link.txt"))
+            .unwrap();
+
+        // unlink() should work with hard links
+        vfs.unlink(&PathBuf::from("/file.txt")).unwrap();
+        assert!(vfs.exists(&PathBuf::from("/link.txt")));
+
+        // delete_file() should be equivalent to unlink() for files
+        vfs.unlink(&PathBuf::from("/link.txt")).unwrap();
+        assert!(!vfs.exists(&PathBuf::from("/link.txt")));
+    }
+
+    #[test]
+    fn test_hard_link_preserves_permissions() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file.txt"), vec![]).unwrap();
+        vfs.set_permissions(&PathBuf::from("/file.txt"), FilePermissions::read_only())
+            .unwrap();
+
+        vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/link.txt"))
+            .unwrap();
+
+        // Permissions should be shared (same inode)
+        let perms = vfs.get_permissions(&PathBuf::from("/link.txt")).unwrap();
+        assert!(perms.read);
+        assert!(!perms.write);
+    }
+
+    #[test]
+    fn test_hard_link_and_symlink_combined() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_file(PathBuf::from("/file.txt"), b"data".to_vec())
+            .unwrap();
+        vfs.link(PathBuf::from("/file.txt"), PathBuf::from("/hardlink.txt"))
+            .unwrap();
+        vfs.create_symlink(PathBuf::from("/symlink.txt"), PathBuf::from("/hardlink.txt"))
+            .unwrap();
+
+        // Read through symlink -> hard link -> file
+        let content = vfs.read_file(&PathBuf::from("/symlink.txt")).unwrap();
+        assert_eq!(content, b"data".to_vec());
+    }
+
+    #[test]
+    fn test_link_count_after_directory_operations() {
+        let mut vfs = VirtualFileSystem::new();
+
+        vfs.create_directory(PathBuf::from("/dir")).unwrap();
+        vfs.create_file(PathBuf::from("/dir/file.txt"), vec![])
+            .unwrap();
+        vfs.link(PathBuf::from("/dir/file.txt"), PathBuf::from("/link.txt"))
+            .unwrap();
+
+        assert_eq!(
+            vfs.get_link_count(&PathBuf::from("/dir/file.txt"))
+                .unwrap(),
+            2
+        );
+
+        // Moving/renaming not implemented yet, but unlink should work
+        vfs.unlink(&PathBuf::from("/dir/file.txt")).unwrap();
+        assert_eq!(vfs.get_link_count(&PathBuf::from("/link.txt")).unwrap(), 1);
+    }
+
     // Property-based tests using proptest
     mod proptests {
         use super::*;
@@ -1776,6 +2078,106 @@ mod tests {
                 // Second removal should fail
                 let result = vfs.remove_directory(&dir_path);
                 prop_assert!(result.is_err());
+            }
+
+            // ========================================================================
+            // WOS-FS-003: Hard Link Property Tests
+            // ========================================================================
+
+            /// Property: Hard links always share content
+            #[test]
+            fn proptest_hard_links_share_content(
+                file_path in prop::string::string_regex("/[a-z]{1,10}\\.txt").unwrap(),
+                link_path in prop::string::string_regex("/[a-z]{1,10}_link\\.txt").unwrap(),
+                content in prop::collection::vec(any::<u8>(), 0..256),
+            ) {
+                prop_assume!(file_path != link_path);
+
+                let mut vfs = VirtualFileSystem::new();
+                let file = PathBuf::from(file_path);
+                let link = PathBuf::from(link_path);
+
+                vfs.create_file(file.clone(), content.clone()).unwrap();
+                vfs.link(file.clone(), link.clone()).unwrap();
+
+                // Both should have same content
+                let content1 = vfs.read_file(&file).unwrap();
+                let content2 = vfs.read_file(&link).unwrap();
+                prop_assert_eq!(content1, content2);
+                prop_assert_eq!(content1, content);
+
+                // Write through one link
+                let new_content: Vec<u8> = (0..content.len()).map(|i| !content[i]).collect();
+                vfs.write_file(&link, new_content.clone()).unwrap();
+
+                // Read through other link
+                let content3 = vfs.read_file(&file).unwrap();
+                prop_assert_eq!(content3, new_content);
+            }
+
+            /// Property: Reference count matches number of links
+            #[test]
+            fn proptest_refcount_matches_links(
+                base_path in prop::string::string_regex("/[a-z]{1,10}\\.txt").unwrap(),
+                num_links in 0_usize..10_usize,
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let base = PathBuf::from(&base_path);
+
+                vfs.create_file(base.clone(), vec![]).unwrap();
+
+                // Create hard links
+                for i in 0..num_links {
+                    let link_path = PathBuf::from(format!("/link{}.txt", i));
+                    vfs.link(base.clone(), link_path).unwrap();
+                }
+
+                // Link count should be num_links + 1 (original + links)
+                let link_count = vfs.get_link_count(&base).unwrap();
+                prop_assert_eq!(link_count, (num_links + 1) as u64);
+            }
+
+            /// Property: Unlink operations are atomic (refcount always consistent)
+            #[test]
+            fn proptest_unlink_atomicity(
+                file_path in prop::string::string_regex("/[a-z]{1,10}\\.txt").unwrap(),
+                link_paths in prop::collection::vec(
+                    prop::string::string_regex("/link[a-z0-9]{1,5}\\.txt").unwrap(),
+                    1..8
+                ),
+            ) {
+                let mut vfs = VirtualFileSystem::new();
+                let file = PathBuf::from(&file_path);
+
+                vfs.create_file(file.clone(), b"data".to_vec()).unwrap();
+
+                // Create unique links
+                let mut unique_links = std::collections::HashSet::new();
+                unique_links.insert(file_path.clone());
+
+                for link_path_str in &link_paths {
+                    if unique_links.insert(link_path_str.clone()) {
+                        let link_path = PathBuf::from(link_path_str);
+                        if vfs.link(file.clone(), link_path).is_ok() {
+                            // After each link, verify link count
+                            let count = vfs.get_link_count(&file).unwrap();
+                            prop_assert_eq!(count as usize, unique_links.len());
+                        }
+                    }
+                }
+
+                // Unlink all but the original
+                for link_path_str in &link_paths {
+                    let link_path = PathBuf::from(link_path_str);
+                    if vfs.exists(&link_path) {
+                        vfs.unlink(&link_path).unwrap();
+                        // Verify refcount decreased
+                        if vfs.exists(&file) {
+                            let count = vfs.get_link_count(&file).unwrap();
+                            prop_assert!(count > 0);
+                        }
+                    }
+                }
             }
         }
     }
