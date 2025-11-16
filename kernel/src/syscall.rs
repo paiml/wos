@@ -616,7 +616,7 @@ pub fn dispatch_syscall(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::Process;
+    use crate::state::{Process, ProcessState};
 
     #[test]
     fn test_syscall_dispatch_routing() {
@@ -2828,6 +2828,357 @@ mod tests {
 
                 let (_state, output) = result.unwrap();
                 prop_assert_eq!(output, SyscallOutput::Value(exit_code));
+            }
+        }
+    }
+
+    // =========================================================================
+    // WOS-KERN-002: Sleep Syscall Tests (RED phase)
+    // =========================================================================
+
+    /// Unit Tests (8 tests)
+
+    #[test]
+    fn test_sleep_basic() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Sleep for 100ms
+        let result = dispatch_syscall(state.clone(), SystemCall::Sleep(100), pid);
+        assert!(result.is_ok(), "Sleep syscall should succeed");
+
+        let (new_state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+
+        // Process should now be blocked (sleeping)
+        let process = new_state.get_process(pid).unwrap();
+        assert_eq!(process.state, ProcessState::Blocked);
+    }
+
+    #[test]
+    fn test_sleep_zero_duration() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Sleep for 0ms should succeed but not block
+        let result = dispatch_syscall(state.clone(), SystemCall::Sleep(0), pid);
+        assert!(result.is_ok());
+
+        let (new_state, _) = result.unwrap();
+        let process = new_state.get_process(pid).unwrap();
+        // Zero sleep should keep process ready
+        assert_eq!(process.state, ProcessState::Ready);
+    }
+
+    #[test]
+    fn test_sleep_sets_wakeup_time() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        let sleep_duration = 500; // 500 microseconds
+        let result = dispatch_syscall(state.clone(), SystemCall::Sleep(sleep_duration), pid);
+        assert!(result.is_ok());
+
+        let (new_state, _) = result.unwrap();
+        let process = new_state.get_process(pid).unwrap();
+
+        // Process should have wakeup_time set
+        assert!(process.wakeup_time.is_some());
+        let wakeup_time = process.wakeup_time.unwrap();
+
+        // Wakeup time should be current time + sleep duration
+        let expected_wakeup = new_state.simulated_clock.current_time() + sleep_duration;
+        assert_eq!(wakeup_time, expected_wakeup);
+    }
+
+    #[test]
+    fn test_sleep_on_terminated_process_fails() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let mut proc = Process::new(pid, None);
+        proc.state = ProcessState::Terminated(0);
+        state.add_process(proc);
+
+        let result = dispatch_syscall(state, SystemCall::Sleep(100), pid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sleep_multiple_processes_independent() {
+        let mut state = KernelState::new();
+
+        // Create two processes
+        let pid1 = state.allocate_pid();
+        let proc1 = Process::new(pid1, None);
+        state.add_process(proc1);
+
+        let pid2 = state.allocate_pid();
+        let proc2 = Process::new(pid2, None);
+        state.add_process(proc2);
+
+        // Both sleep for different durations
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid1).unwrap();
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(200), pid2).unwrap();
+
+        // Both should be blocked
+        assert_eq!(
+            state.get_process(pid1).unwrap().state,
+            ProcessState::Blocked
+        );
+        assert_eq!(
+            state.get_process(pid2).unwrap().state,
+            ProcessState::Blocked
+        );
+
+        // Wakeup times should be different
+        let wakeup1 = state.get_process(pid1).unwrap().wakeup_time.unwrap();
+        let wakeup2 = state.get_process(pid2).unwrap().wakeup_time.unwrap();
+        assert!(wakeup2 > wakeup1, "Process 2 should wake up later");
+    }
+
+    #[test]
+    fn test_sleep_large_duration() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Sleep for very long duration (1 hour = 3,600,000,000 microseconds)
+        let result = dispatch_syscall(state, SystemCall::Sleep(3_600_000_000), pid);
+        assert!(result.is_ok(), "Should handle large sleep durations");
+    }
+
+    #[test]
+    fn test_sleep_preserves_process_data() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let mut proc = Process::new(pid, Some(99));
+        proc.memory_pages.push(1);
+        proc.memory_pages.push(2);
+        state.add_process(proc);
+
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid).unwrap();
+
+        let process = state.get_process(pid).unwrap();
+        // Parent PID preserved
+        assert_eq!(process.parent_pid, Some(99));
+        // Memory preserved
+        assert_eq!(process.memory_pages, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_sleep_process_can_be_scheduled() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Put process to sleep
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid).unwrap();
+
+        // Scheduler should be able to handle sleeping process
+        // (sleeping processes should not be scheduled until wakeup)
+        assert_eq!(state.get_process(pid).unwrap().state, ProcessState::Blocked);
+    }
+
+    /// Integration Tests (3 tests)
+
+    #[test]
+    fn test_integration_scheduler_wakes_sleeping_process() {
+        use crate::scheduler::schedule;
+
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Put process to sleep for 100 microseconds
+        let (mut state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid).unwrap();
+        let wakeup_time = state.get_process(pid).unwrap().wakeup_time.unwrap();
+
+        // Process should be blocked
+        assert_eq!(state.get_process(pid).unwrap().state, ProcessState::Blocked);
+
+        // Advance clock past wakeup time
+        state.simulated_clock.advance(150);
+
+        // Scheduler should wake up the process
+        let (state, _) = schedule(state).unwrap();
+
+        // Process should now be ready or running
+        let process_state = state.get_process(pid).unwrap().state.clone();
+        assert!(
+            matches!(process_state, ProcessState::Ready | ProcessState::Running),
+            "Process should be awake after wakeup time"
+        );
+    }
+
+    #[test]
+    fn test_integration_multiple_processes_wake_in_order() {
+        use crate::scheduler::schedule;
+
+        let mut state = KernelState::new();
+
+        // Create 3 processes with different sleep durations
+        let pid1 = state.allocate_pid();
+        let proc1 = Process::new(pid1, None);
+        state.add_process(proc1);
+
+        let pid2 = state.allocate_pid();
+        let proc2 = Process::new(pid2, None);
+        state.add_process(proc2);
+
+        let pid3 = state.allocate_pid();
+        let proc3 = Process::new(pid3, None);
+        state.add_process(proc3);
+
+        // Sleep: pid1=100us, pid2=200us, pid3=300us
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(100), pid1).unwrap();
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(200), pid2).unwrap();
+        let (mut state, _) = dispatch_syscall(state, SystemCall::Sleep(300), pid3).unwrap();
+
+        // All sleeping
+        assert_eq!(
+            state.get_process(pid1).unwrap().state,
+            ProcessState::Blocked
+        );
+        assert_eq!(
+            state.get_process(pid2).unwrap().state,
+            ProcessState::Blocked
+        );
+        assert_eq!(
+            state.get_process(pid3).unwrap().state,
+            ProcessState::Blocked
+        );
+
+        // Advance to 150us - only pid1 should wake
+        state.simulated_clock.advance(150);
+        let (state, _) = schedule(state).unwrap();
+
+        assert!(matches!(
+            state.get_process(pid1).unwrap().state,
+            ProcessState::Ready | ProcessState::Running
+        ));
+        assert_eq!(
+            state.get_process(pid2).unwrap().state,
+            ProcessState::Blocked
+        );
+        assert_eq!(
+            state.get_process(pid3).unwrap().state,
+            ProcessState::Blocked
+        );
+
+        // Advance to 250us - pid2 should also wake
+        let mut state = state;
+        state.simulated_clock.advance(100); // Total 250us
+        let (state, _) = schedule(state).unwrap();
+
+        assert!(matches!(
+            state.get_process(pid2).unwrap().state,
+            ProcessState::Ready | ProcessState::Running
+        ));
+        assert_eq!(
+            state.get_process(pid3).unwrap().state,
+            ProcessState::Blocked
+        );
+
+        // Advance to 350us - pid3 should wake
+        let mut state = state;
+        state.simulated_clock.advance(100); // Total 350us
+        let (state, _) = schedule(state).unwrap();
+
+        assert!(matches!(
+            state.get_process(pid3).unwrap().state,
+            ProcessState::Ready | ProcessState::Running
+        ));
+    }
+
+    #[test]
+    fn test_integration_sleep_with_fork_and_exec() {
+        let mut state = KernelState::new();
+
+        // Parent process
+        let parent_pid = state.allocate_pid();
+        let parent = Process::new(parent_pid, None);
+        state.add_process(parent);
+
+        // Parent forks
+        let (state, output) = dispatch_syscall(state, SystemCall::Fork, parent_pid).unwrap();
+        let child_pid = match output {
+            SyscallOutput::Pid(pid) => pid,
+            _ => panic!("Expected Pid"),
+        };
+
+        // Child sleeps
+        let (state, _) = dispatch_syscall(state, SystemCall::Sleep(100), child_pid).unwrap();
+        assert_eq!(
+            state.get_process(child_pid).unwrap().state,
+            ProcessState::Blocked
+        );
+
+        // Parent remains ready
+        assert_eq!(
+            state.get_process(parent_pid).unwrap().state,
+            ProcessState::Ready
+        );
+    }
+
+    /// Property Tests (2 tests)
+
+    #[cfg(test)]
+    mod sleep_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+            #[test]
+            fn proptest_sleep_duration_accuracy(
+                duration in 1u64..10_000,
+            ) {
+                let mut state = KernelState::new();
+                let pid = state.allocate_pid();
+                let proc = Process::new(pid, None);
+                state.add_process(proc);
+
+                let start_time = state.simulated_clock.current_time();
+                let (state, _) = dispatch_syscall(state, SystemCall::Sleep(duration), pid).unwrap();
+
+                let process = state.get_process(pid).unwrap();
+                if let Some(wakeup_time) = process.wakeup_time {
+                    let expected_wakeup = start_time + duration;
+                    prop_assert_eq!(wakeup_time, expected_wakeup);
+                }
+            }
+
+            #[test]
+            fn proptest_sleep_state_transitions(
+                duration in 0u64..1_000,
+            ) {
+                let mut state = KernelState::new();
+                let pid = state.allocate_pid();
+                let proc = Process::new(pid, None);
+                state.add_process(proc);
+
+                let (state, _) = dispatch_syscall(state, SystemCall::Sleep(duration), pid).unwrap();
+                let process = state.get_process(pid).unwrap();
+
+                if duration == 0 {
+                    // Zero sleep should not block
+                    prop_assert_eq!(process.state, ProcessState::Ready);
+                    prop_assert!(process.wakeup_time.is_none());
+                } else {
+                    // Non-zero sleep should block
+                    prop_assert_eq!(process.state, ProcessState::Blocked);
+                    prop_assert!(process.wakeup_time.is_some());
+                }
             }
         }
     }
