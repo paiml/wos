@@ -6,13 +6,25 @@ use crate::state::{KernelState, ProcessId};
 use im::Vector;
 use serde::{Deserialize, Serialize};
 
-/// Round-robin process scheduler
+/// Number of priority levels (0 = highest, 7 = lowest)
+pub const NUM_PRIORITY_LEVELS: usize = 8;
+
+/// Aging threshold - boost priority after this many wait ticks
+pub const AGING_THRESHOLD: u64 = 5;
+
+/// Round-robin process scheduler with priority support
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Scheduler {
-    /// Ready queue (processes ready to run)
+    /// Ready queue (processes ready to run) - legacy round-robin
     ready_queue: Vector<ProcessId>,
     /// Current position in round-robin (for fairness tracking)
     current_index: usize,
+    /// Priority queues (one per priority level 0-7)
+    priority_queues: [Vector<ProcessId>; NUM_PRIORITY_LEVELS],
+    /// Current index within each priority level (for round-robin within priority)
+    priority_indices: [usize; NUM_PRIORITY_LEVELS],
+    /// Wait ticks tracking for aging (ProcessId -> wait_ticks)
+    wait_ticks: im::HashMap<ProcessId, u64>,
 }
 
 impl Scheduler {
@@ -21,6 +33,18 @@ impl Scheduler {
         Self {
             ready_queue: Vector::new(),
             current_index: 0,
+            priority_queues: [
+                Vector::new(),
+                Vector::new(),
+                Vector::new(),
+                Vector::new(),
+                Vector::new(),
+                Vector::new(),
+                Vector::new(),
+                Vector::new(),
+            ],
+            priority_indices: [0; NUM_PRIORITY_LEVELS],
+            wait_ticks: im::HashMap::new(),
         }
     }
 
@@ -81,11 +105,148 @@ impl Scheduler {
         self.ready_queue = Vector::new();
         self.current_index = 0;
 
-        // Add all runnable processes
+        // Clear priority queues
+        for i in 0..NUM_PRIORITY_LEVELS {
+            self.priority_queues[i] = Vector::new();
+            self.priority_indices[i] = 0;
+        }
+        self.wait_ticks.clear();
+
+        // Add all runnable processes to both queues
         for (pid, process) in state.processes.iter() {
             if process.is_runnable() {
                 self.ready_queue.push_back(*pid);
+
+                // Add to priority queue
+                let priority = process.priority.min(7) as usize; // Clamp to 0-7
+                if !self.priority_queues[priority].contains(pid) {
+                    self.priority_queues[priority].push_back(*pid);
+                }
+                self.wait_ticks.insert(*pid, process.wait_ticks);
             }
+        }
+    }
+
+    /// Add a process to a specific priority queue
+    pub fn enqueue_priority(&mut self, pid: ProcessId, priority: u8) {
+        let priority_level = priority.min(7) as usize;
+
+        // Only add if not already in queue
+        if !self.priority_queues[priority_level].contains(&pid) {
+            self.priority_queues[priority_level].push_back(pid);
+        }
+
+        // Initialize wait ticks
+        if !self.wait_ticks.contains_key(&pid) {
+            self.wait_ticks.insert(pid, 0);
+        }
+    }
+
+    /// Remove a process from priority queue
+    pub fn dequeue_priority(&mut self, pid: ProcessId, priority: u8) {
+        let priority_level = priority.min(7) as usize;
+
+        // Find and remove the process
+        if let Some(idx) = self.priority_queues[priority_level]
+            .iter()
+            .position(|&p| p == pid)
+        {
+            self.priority_queues[priority_level].remove(idx);
+
+            // Adjust current_index if needed
+            if self.priority_indices[priority_level] >= self.priority_queues[priority_level].len()
+                && !self.priority_queues[priority_level].is_empty()
+            {
+                self.priority_indices[priority_level] = 0;
+            }
+        }
+
+        self.wait_ticks.remove(&pid);
+    }
+
+    /// Select next process using priority-based scheduling with aging
+    ///
+    /// Returns the next process to run, selecting from the highest priority
+    /// non-empty queue. Uses round-robin within each priority level.
+    /// Implements aging to prevent starvation of low-priority processes.
+    pub fn schedule_priority(&mut self, state: &KernelState) -> Option<ProcessId> {
+        // Apply aging - boost priority for processes that have waited too long
+        self.apply_aging(state);
+
+        // Find highest priority non-empty queue
+        for priority_level in 0..NUM_PRIORITY_LEVELS {
+            if !self.priority_queues[priority_level].is_empty() {
+                let queue_len = self.priority_queues[priority_level].len();
+                let idx = self.priority_indices[priority_level];
+
+                let pid = self.priority_queues[priority_level][idx];
+
+                // Move to next process in this priority level (round-robin)
+                self.priority_indices[priority_level] = (idx + 1) % queue_len;
+
+                // Reset wait ticks for scheduled process
+                self.wait_ticks.insert(pid, 0);
+
+                // Increment wait ticks for all other processes
+                for other_priority in 0..NUM_PRIORITY_LEVELS {
+                    for other_pid in self.priority_queues[other_priority].iter() {
+                        if *other_pid != pid {
+                            let ticks = self.wait_ticks.get(other_pid).copied().unwrap_or(0);
+                            self.wait_ticks.insert(*other_pid, ticks + 1);
+                        }
+                    }
+                }
+
+                return Some(pid);
+            }
+        }
+
+        None
+    }
+
+    /// Apply aging to prevent starvation
+    ///
+    /// Processes that have waited too long get temporarily boosted priority
+    fn apply_aging(&mut self, _state: &KernelState) {
+        let mut processes_to_boost = Vec::new();
+
+        // Find processes that need priority boost
+        for priority_level in 1..NUM_PRIORITY_LEVELS {
+            for pid in self.priority_queues[priority_level].iter() {
+                if let Some(&ticks) = self.wait_ticks.get(pid) {
+                    if ticks >= AGING_THRESHOLD {
+                        // Boost to next higher priority level
+                        processes_to_boost.push((*pid, priority_level));
+                    }
+                }
+            }
+        }
+
+        // Apply boosts
+        for (pid, old_priority) in processes_to_boost {
+            // Remove from old priority queue
+            if let Some(idx) = self.priority_queues[old_priority]
+                .iter()
+                .position(|&p| p == pid)
+            {
+                self.priority_queues[old_priority].remove(idx);
+
+                // Adjust index if needed
+                if self.priority_indices[old_priority] >= self.priority_queues[old_priority].len()
+                    && !self.priority_queues[old_priority].is_empty()
+                {
+                    self.priority_indices[old_priority] = 0;
+                }
+            }
+
+            // Add to higher priority queue (one level up)
+            let new_priority = old_priority.saturating_sub(1);
+            if !self.priority_queues[new_priority].contains(&pid) {
+                self.priority_queues[new_priority].push_back(pid);
+            }
+
+            // Reset wait ticks after boost
+            self.wait_ticks.insert(pid, 0);
         }
     }
 }
@@ -483,5 +644,200 @@ mod tests {
         let scheduler2 = Scheduler::new();
         assert_eq!(scheduler1.ready_count(), scheduler2.ready_count());
         assert_eq!(scheduler1, scheduler2);
+    }
+
+    // WOS-022: Priority Scheduling Tests
+    mod priority_tests {
+        use super::*;
+
+        #[test]
+        fn test_priority_scheduler_creation() {
+            let scheduler = Scheduler::new();
+            assert_eq!(scheduler.ready_count(), 0);
+        }
+
+        #[test]
+        fn test_priority_scheduler_high_priority_first() {
+            let mut state = KernelState::new();
+            let mut scheduler = Scheduler::new();
+
+            // Create processes with different priorities
+            let pid_low = state.allocate_pid();
+            let mut proc_low = Process::new(pid_low, None);
+            proc_low.state = ProcessState::Ready;
+            proc_low.priority = 7; // Lowest priority
+            state.add_process(proc_low);
+
+            let pid_high = state.allocate_pid();
+            let mut proc_high = Process::new(pid_high, None);
+            proc_high.state = ProcessState::Ready;
+            proc_high.priority = 0; // Highest priority
+            state.add_process(proc_high);
+
+            let pid_med = state.allocate_pid();
+            let mut proc_med = Process::new(pid_med, None);
+            proc_med.state = ProcessState::Ready;
+            proc_med.priority = 4; // Normal priority
+            state.add_process(proc_med);
+
+            // Sync scheduler with state
+            scheduler.sync_with_state(&state);
+
+            // High priority process should be scheduled first (and keeps running)
+            let first = scheduler.schedule_priority(&state);
+            assert_eq!(first, Some(pid_high));
+
+            // In priority scheduling, highest priority process runs repeatedly
+            // until it blocks or terminates. Let's test this behavior.
+            assert_eq!(scheduler.schedule_priority(&state), Some(pid_high));
+            assert_eq!(scheduler.schedule_priority(&state), Some(pid_high));
+
+            // Remove high priority process from its queue
+            scheduler.dequeue_priority(pid_high, 0);
+
+            // Now medium priority should run
+            assert_eq!(scheduler.schedule_priority(&state), Some(pid_med));
+
+            // Remove medium priority process
+            scheduler.dequeue_priority(pid_med, 4);
+
+            // Now low priority should run
+            assert_eq!(scheduler.schedule_priority(&state), Some(pid_low));
+        }
+
+        #[test]
+        fn test_priority_scheduler_round_robin_within_priority() {
+            let mut state = KernelState::new();
+            let mut scheduler = Scheduler::new();
+
+            // Create multiple processes at same priority
+            let pid1 = state.allocate_pid();
+            let mut proc1 = Process::new(pid1, None);
+            proc1.state = ProcessState::Ready;
+            proc1.priority = 4;
+            state.add_process(proc1);
+
+            let pid2 = state.allocate_pid();
+            let mut proc2 = Process::new(pid2, None);
+            proc2.state = ProcessState::Ready;
+            proc2.priority = 4;
+            state.add_process(proc2);
+
+            let pid3 = state.allocate_pid();
+            let mut proc3 = Process::new(pid3, None);
+            proc3.state = ProcessState::Ready;
+            proc3.priority = 4;
+            state.add_process(proc3);
+
+            scheduler.sync_with_state(&state);
+
+            // Should cycle through processes at same priority level
+            let first = scheduler.schedule_priority(&state);
+            let second = scheduler.schedule_priority(&state);
+            let third = scheduler.schedule_priority(&state);
+            let fourth = scheduler.schedule_priority(&state);
+
+            assert!(first.is_some());
+            assert!(second.is_some());
+            assert!(third.is_some());
+            assert_eq!(first, fourth); // Should cycle back
+        }
+
+        #[test]
+        fn test_priority_no_starvation_with_aging() {
+            let mut state = KernelState::new();
+            let mut scheduler = Scheduler::new();
+
+            // Create high priority process
+            let pid_high = state.allocate_pid();
+            let mut proc_high = Process::new(pid_high, None);
+            proc_high.state = ProcessState::Ready;
+            proc_high.priority = 0; // Highest
+            state.add_process(proc_high);
+
+            // Create low priority process
+            let pid_low = state.allocate_pid();
+            let mut proc_low = Process::new(pid_low, None);
+            proc_low.state = ProcessState::Ready;
+            proc_low.priority = 7; // Lowest
+            state.add_process(proc_low);
+
+            scheduler.sync_with_state(&state);
+
+            // Schedule many times - low priority should eventually run due to aging
+            let mut low_priority_ran = false;
+            for i in 0..100 {
+                if let Some(pid) = scheduler.schedule_priority(&state) {
+                    if pid == pid_low {
+                        low_priority_ran = true;
+                        // Should run within reasonable time (before 100 iterations)
+                        assert!(i < 50, "Low priority process starved for too long");
+                        break;
+                    }
+                }
+            }
+
+            assert!(low_priority_ran, "Low priority process was starved");
+        }
+
+        #[test]
+        fn test_priority_levels_range() {
+            let mut state = KernelState::new();
+
+            // Test all priority levels 0-7
+            for priority in 0..=7 {
+                let pid = state.allocate_pid();
+                let mut proc = Process::new(pid, None);
+                proc.priority = priority;
+                proc.state = ProcessState::Ready;
+                state.add_process(proc);
+            }
+
+            let mut scheduler = Scheduler::new();
+            scheduler.sync_with_state(&state);
+
+            // Should have all processes
+            assert_eq!(scheduler.ready_count(), 8);
+        }
+
+        #[test]
+        fn test_default_priority_is_normal() {
+            let proc = Process::new(1, None);
+            assert_eq!(proc.priority, 4); // Normal/default priority
+        }
+
+        #[test]
+        fn test_priority_enqueue_maintains_order() {
+            let mut state = KernelState::new();
+            let mut scheduler = Scheduler::new();
+
+            // Add processes in mixed priority order
+            let mut pids_by_priority = std::collections::HashMap::new();
+            for priority in [7, 0, 4, 2, 5, 1, 6, 3] {
+                let pid = state.allocate_pid();
+                let mut proc = Process::new(pid, None);
+                proc.priority = priority;
+                proc.state = ProcessState::Ready;
+                state.add_process(proc.clone());
+                scheduler.enqueue_priority(pid, priority);
+                pids_by_priority.insert(priority, pid);
+            }
+
+            // Scheduling should respect priority order (0 is highest)
+            // Priority 0 process should always run first
+            for _ in 0..3 {
+                let scheduled = scheduler.schedule_priority(&state).unwrap();
+                let proc = state.get_process(scheduled).unwrap();
+                assert_eq!(proc.priority, 0, "Highest priority (0) should run first");
+            }
+
+            // Remove priority 0, then priority 1 should run
+            scheduler.dequeue_priority(*pids_by_priority.get(&0).unwrap(), 0);
+            for _ in 0..2 {
+                let scheduled = scheduler.schedule_priority(&state).unwrap();
+                let proc = state.get_process(scheduled).unwrap();
+                assert_eq!(proc.priority, 1, "Next highest priority (1) should run");
+            }
+        }
     }
 }
