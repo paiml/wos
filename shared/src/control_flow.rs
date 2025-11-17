@@ -352,10 +352,7 @@ pub fn parse_cfor_statement(lines: &[&str]) -> Result<ControlFlow, String> {
 /// Helper: Extract condition from control flow keyword
 fn extract_condition(line: &str, keyword: &str) -> Result<String, String> {
     // Remove keyword prefix
-    let after_keyword = line
-        .strip_prefix(keyword)
-        .map(|s| s.trim())
-        .unwrap_or("");
+    let after_keyword = line.strip_prefix(keyword).map(|s| s.trim()).unwrap_or("");
 
     let mut condition = after_keyword.to_string();
 
@@ -625,9 +622,7 @@ mod tests {
 
         let result = parse_for_statement(&lines);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("must have three parts"));
+        assert!(result.unwrap_err().contains("must have three parts"));
     }
 
     #[test]
