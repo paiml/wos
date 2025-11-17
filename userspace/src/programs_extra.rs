@@ -11,6 +11,7 @@
 //! - mkdir: create directories (WOS-PROG-020)
 //! - rm: remove files and directories (WOS-PROG-019)
 //! - chmod: change file permissions (WOS-PROG-014)
+//! - find: search directory trees for files (WOS-PROG-005)
 
 use std::path::PathBuf;
 use wos_kernel::{KernelState, ProcessId, SystemCall};
@@ -920,6 +921,166 @@ pub fn chmod_main_loop(chmod: &mut Chmod, state: &mut KernelState) -> Option<Sys
     Some(SystemCall::Exit(exit_code))
 }
 
+/// Find program - search directory trees for files
+/// WOS-PROG-005: find command
+#[derive(Clone, Debug, PartialEq)]
+pub struct Find {
+    /// Process ID
+    pub pid: ProcessId,
+    /// Starting path
+    pub path: PathBuf,
+    /// Name pattern to match (simple string matching)
+    pub name_pattern: Option<String>,
+    /// Type filter: 'f' for file, 'd' for directory
+    pub type_filter: Option<char>,
+    /// Matching paths found
+    pub matches: Vec<PathBuf>,
+    /// Output generated
+    pub output: String,
+    /// Operation completed
+    pub completed: bool,
+    /// Error message if any
+    pub error: Option<String>,
+}
+
+impl Find {
+    /// Create a new find program
+    pub fn new(
+        pid: ProcessId,
+        path: PathBuf,
+        name_pattern: Option<String>,
+        type_filter: Option<char>,
+    ) -> Self {
+        Self {
+            pid,
+            path,
+            name_pattern,
+            type_filter,
+            matches: Vec::new(),
+            output: String::new(),
+            completed: false,
+            error: None,
+        }
+    }
+
+    /// Search directory tree for matching files
+    pub fn search(&mut self, state: &mut KernelState) {
+        if !state.vfs.exists(&self.path) {
+            self.error = Some(format!(
+                "'{}': No such file or directory",
+                self.path.display()
+            ));
+            return;
+        }
+
+        // Perform recursive search
+        if let Err(e) = self.search_recursive(state, &self.path.clone()) {
+            self.error = Some(e);
+            return;
+        }
+
+        // Generate output from matches
+        if !self.matches.is_empty() {
+            self.output = self
+                .matches
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            self.output.push('\n');
+        }
+
+        self.completed = true;
+    }
+
+    /// Recursively search directory
+    fn search_recursive(&mut self, state: &mut KernelState, path: &PathBuf) -> Result<(), String> {
+        // Check if current path matches criteria
+        if self.matches_criteria(state, path) {
+            self.matches.push(path.clone());
+        }
+
+        // If path is a directory, recurse into it
+        if state.vfs.is_directory(path) {
+            let entries = state
+                .vfs
+                .list_directory(path)
+                .map_err(|e| format!("cannot list '{}': {:?}", path.display(), e))?;
+
+            for entry in &entries {
+                let entry_path = path.join(&entry.name);
+                self.search_recursive(state, &entry_path)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if path matches search criteria
+    fn matches_criteria(&self, state: &KernelState, path: &PathBuf) -> bool {
+        // Type filter
+        if let Some(type_filter) = self.type_filter {
+            let is_dir = state.vfs.is_directory(path);
+            match type_filter {
+                'd' => {
+                    if !is_dir {
+                        return false;
+                    }
+                }
+                'f' => {
+                    if is_dir {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+
+        // Name pattern filter (simple substring matching)
+        if let Some(ref pattern) = self.name_pattern {
+            if let Some(name) = path.file_name() {
+                if let Some(name_str) = name.to_str() {
+                    if !name_str.contains(pattern) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+/// Find main loop - searches for files and outputs matches
+pub fn find_main_loop(find: &mut Find, state: &mut KernelState) -> Option<SystemCall> {
+    if !find.completed && find.error.is_none() {
+        // First iteration: search
+        find.search(state);
+
+        if let Some(ref error) = find.error {
+            return Some(SystemCall::Write {
+                fd: 2, // stderr
+                data: format!("find: {}\n", error).as_bytes().to_vec(),
+            });
+        }
+
+        if !find.output.is_empty() {
+            return Some(SystemCall::Write {
+                fd: 1,
+                data: find.output.as_bytes().to_vec(),
+            });
+        }
+    }
+
+    // Done - exit with appropriate code
+    let exit_code = if find.error.is_some() { 1 } else { 0 };
+    Some(SystemCall::Exit(exit_code))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1472,5 +1633,154 @@ mod tests {
         assert_eq!(dir_perms.mode, 0o700);
         assert_eq!(file_perms.mode, 0o700);
         assert_eq!(subdir_perms.mode, 0o700);
+    }
+
+    // ============================================================================
+    // Find Tests (WOS-PROG-005)
+    // ============================================================================
+
+    #[test]
+    fn test_find_basic() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let mut find = Find::new(1, PathBuf::from("/"), None, None);
+
+        let syscall = find_main_loop(&mut find, &mut state);
+        assert!(find.completed);
+        assert!(find.error.is_none());
+
+        // Should find at least the root directory and the file
+        assert!(find.matches.len() >= 2);
+        assert!(find.matches.contains(&PathBuf::from("/")));
+        assert!(find.matches.contains(&PathBuf::from("/file.txt")));
+        assert!(matches!(syscall, Some(SystemCall::Write { fd: 1, .. })));
+    }
+
+    #[test]
+    fn test_find_with_name_pattern() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/test.txt"), b"hello".to_vec())
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.log"), b"world".to_vec())
+            .unwrap();
+
+        let mut find = Find::new(1, PathBuf::from("/"), Some("test".to_string()), None);
+
+        find_main_loop(&mut find, &mut state);
+        assert!(find.completed);
+
+        // Should only find files with "test" in the name
+        assert_eq!(find.matches.len(), 1);
+        assert!(find.matches.contains(&PathBuf::from("/test.txt")));
+    }
+
+    #[test]
+    fn test_find_type_file() {
+        let mut state = KernelState::new();
+        state.vfs.create_directory(PathBuf::from("/dir")).unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let mut find = Find::new(1, PathBuf::from("/"), None, Some('f'));
+
+        find_main_loop(&mut find, &mut state);
+        assert!(find.completed);
+
+        // Should only find files, not directories
+        assert_eq!(find.matches.len(), 1);
+        assert!(find.matches.contains(&PathBuf::from("/file.txt")));
+        assert!(!find.matches.contains(&PathBuf::from("/")));
+        assert!(!find.matches.contains(&PathBuf::from("/dir")));
+    }
+
+    #[test]
+    fn test_find_type_directory() {
+        let mut state = KernelState::new();
+        state.vfs.create_directory(PathBuf::from("/dir")).unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let mut find = Find::new(1, PathBuf::from("/"), None, Some('d'));
+
+        find_main_loop(&mut find, &mut state);
+        assert!(find.completed);
+
+        // Should only find directories, not files
+        // Note: KernelState may have default directories like /bin, /dev, etc.
+        assert!(find.matches.len() >= 2);
+        assert!(find.matches.contains(&PathBuf::from("/")));
+        assert!(find.matches.contains(&PathBuf::from("/dir")));
+        assert!(!find.matches.contains(&PathBuf::from("/file.txt")));
+    }
+
+    #[test]
+    fn test_find_nested_directories() {
+        let mut state = KernelState::new();
+        state.vfs.create_directory(PathBuf::from("/a")).unwrap();
+        state.vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/a/b/file.txt"), b"test".to_vec())
+            .unwrap();
+
+        let mut find = Find::new(1, PathBuf::from("/a"), None, None);
+
+        find_main_loop(&mut find, &mut state);
+        assert!(find.completed);
+
+        // Should find all nested items
+        assert!(find.matches.len() >= 3);
+        assert!(find.matches.contains(&PathBuf::from("/a")));
+        assert!(find.matches.contains(&PathBuf::from("/a/b")));
+        assert!(find.matches.contains(&PathBuf::from("/a/b/file.txt")));
+    }
+
+    #[test]
+    fn test_find_nonexistent_path() {
+        let mut state = KernelState::new();
+
+        let mut find = Find::new(1, PathBuf::from("/nonexistent"), None, None);
+
+        let syscall = find_main_loop(&mut find, &mut state);
+        assert!(!find.completed);
+        assert!(find.error.is_some());
+        assert!(find
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("No such file or directory"));
+        assert!(matches!(syscall, Some(SystemCall::Write { fd: 2, .. })));
+    }
+
+    #[test]
+    fn test_find_combined_filters() {
+        let mut state = KernelState::new();
+        state.vfs.create_directory(PathBuf::from("/test")).unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/test.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let mut find = Find::new(1, PathBuf::from("/"), Some("test".to_string()), Some('f'));
+
+        find_main_loop(&mut find, &mut state);
+        assert!(find.completed);
+
+        // Should only find files with "test" in name
+        assert_eq!(find.matches.len(), 1);
+        assert!(find.matches.contains(&PathBuf::from("/test.txt")));
+        assert!(!find.matches.contains(&PathBuf::from("/test")));
     }
 }
