@@ -189,6 +189,46 @@ pub enum SystemCall {
         /// Path to canonicalize
         path: String,
     },
+
+    /// Change file permissions
+    Chmod {
+        /// Path to file or directory
+        path: String,
+        /// New permission mode bits (e.g., 0o644)
+        mode: u32,
+    },
+
+    /// Change file ownership
+    Chown {
+        /// Path to file or directory
+        path: String,
+        /// New user ID (None means don't change)
+        uid: Option<u32>,
+        /// New group ID (None means don't change)
+        gid: Option<u32>,
+    },
+
+    /// Check file access permissions
+    Access {
+        /// Path to file or directory
+        path: String,
+        /// Access mode to check (F_OK=0, R_OK=4, W_OK=2, X_OK=1)
+        mode: u32,
+    },
+
+    /// Create symbolic link
+    Symlink {
+        /// Path where the symlink will be created
+        link_path: String,
+        /// Target path that the symlink points to
+        target: String,
+    },
+
+    /// Read symbolic link target
+    Readlink {
+        /// Path to symbolic link
+        path: String,
+    },
 }
 
 /// System call output
