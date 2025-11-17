@@ -1479,6 +1479,356 @@ pub fn cut_main_loop(cut: &mut Cut, state: &mut KernelState) -> Option<SystemCal
     Some(SystemCall::Exit(0))
 }
 
+// ============================================================================
+// Diff - Compare Files (WOS-PROG-012)
+// ============================================================================
+
+/// Diff command for comparing two files
+#[derive(Clone, Debug, PartialEq)]
+pub struct Diff {
+    /// Process ID
+    pub pid: ProcessId,
+    /// First file path
+    pub file1: PathBuf,
+    /// Second file path
+    pub file2: PathBuf,
+    /// Unified diff format
+    pub unified: bool,
+    /// Context lines (for unified diff)
+    pub context: usize,
+    /// Brief mode (report only if files differ)
+    pub brief: bool,
+    /// Ignore whitespace
+    pub ignore_whitespace: bool,
+    /// Output buffer
+    pub output: String,
+    /// Completed flag
+    pub completed: bool,
+    /// Error message
+    pub error: Option<String>,
+}
+
+impl Diff {
+    /// Create a new Diff instance
+    pub fn new(pid: ProcessId, file1: PathBuf, file2: PathBuf) -> Self {
+        Self {
+            pid,
+            file1,
+            file2,
+            unified: false,
+            context: 3,
+            brief: false,
+            ignore_whitespace: false,
+            output: String::new(),
+            completed: false,
+            error: None,
+        }
+    }
+
+    /// Set unified diff format
+    pub fn with_unified(mut self, context: usize) -> Self {
+        self.unified = true;
+        self.context = context;
+        self
+    }
+
+    /// Set brief mode
+    pub fn with_brief(mut self) -> Self {
+        self.brief = true;
+        self
+    }
+
+    /// Set ignore whitespace mode
+    pub fn with_ignore_whitespace(mut self) -> Self {
+        self.ignore_whitespace = true;
+        self
+    }
+
+    /// Process the diff
+    pub fn process(&mut self, state: &mut KernelState) -> Result<(), String> {
+        if self.completed {
+            return Ok(());
+        }
+
+        // Read both files
+        let content1 = state
+            .vfs
+            .read_file(&self.file1)
+            .map_err(|e| format!("cannot read '{}': {:?}", self.file1.display(), e))?;
+
+        let content2 = state
+            .vfs
+            .read_file(&self.file2)
+            .map_err(|e| format!("cannot read '{}': {:?}", self.file2.display(), e))?;
+
+        let text1 = String::from_utf8(content1)
+            .map_err(|e| format!("invalid UTF-8 in {}: {}", self.file1.display(), e))?;
+
+        let text2 = String::from_utf8(content2)
+            .map_err(|e| format!("invalid UTF-8 in {}: {}", self.file2.display(), e))?;
+
+        let lines1: Vec<&str> = text1.lines().collect();
+        let lines2: Vec<&str> = text2.lines().collect();
+
+        // Check if files are identical
+        let identical = if self.ignore_whitespace {
+            lines1
+                .iter()
+                .map(|l| l.trim())
+                .collect::<Vec<_>>()
+                == lines2
+                    .iter()
+                    .map(|l| l.trim())
+                    .collect::<Vec<_>>()
+        } else {
+            lines1 == lines2
+        };
+
+        if identical {
+            self.completed = true;
+            return Ok(());
+        }
+
+        if self.brief {
+            self.output = format!(
+                "Files {} and {} differ\n",
+                self.file1.display(),
+                self.file2.display()
+            );
+            self.completed = true;
+            return Ok(());
+        }
+
+        // Compute diff using Myers algorithm (simplified version)
+        let diff_result = self.compute_diff(&lines1, &lines2);
+
+        if self.unified {
+            self.output = self.format_unified(&diff_result, &lines1, &lines2);
+        } else {
+            self.output = self.format_normal(&diff_result, &lines1, &lines2);
+        }
+
+        self.completed = true;
+        Ok(())
+    }
+
+    /// Compute diff using a simple LCS-based algorithm
+    fn compute_diff<'a>(&self, lines1: &[&'a str], lines2: &[&'a str]) -> Vec<DiffOp> {
+        let mut ops = Vec::new();
+        let mut i = 0;
+        let mut j = 0;
+
+        while i < lines1.len() || j < lines2.len() {
+            if i < lines1.len() && j < lines2.len() {
+                let line1 = if self.ignore_whitespace {
+                    lines1[i].trim()
+                } else {
+                    lines1[i]
+                };
+                let line2 = if self.ignore_whitespace {
+                    lines2[j].trim()
+                } else {
+                    lines2[j]
+                };
+
+                if line1 == line2 {
+                    ops.push(DiffOp::Equal(i, j));
+                    i += 1;
+                    j += 1;
+                } else {
+                    // Look ahead to find matching lines
+                    let mut found_match = false;
+                    for k in 1..=5 {
+                        if i + k < lines1.len() && j < lines2.len() {
+                            let future1 = if self.ignore_whitespace {
+                                lines1[i + k].trim()
+                            } else {
+                                lines1[i + k]
+                            };
+                            if future1 == line2 {
+                                // Lines were deleted from file1
+                                for _ in 0..k {
+                                    ops.push(DiffOp::Delete(i));
+                                    i += 1;
+                                }
+                                found_match = true;
+                                break;
+                            }
+                        }
+                        if j + k < lines2.len() && i < lines1.len() {
+                            let future2 = if self.ignore_whitespace {
+                                lines2[j + k].trim()
+                            } else {
+                                lines2[j + k]
+                            };
+                            if line1 == future2 {
+                                // Lines were added to file2
+                                for _ in 0..k {
+                                    ops.push(DiffOp::Insert(j));
+                                    j += 1;
+                                }
+                                found_match = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if !found_match {
+                        // Assume it's a change
+                        ops.push(DiffOp::Change(i, j));
+                        i += 1;
+                        j += 1;
+                    }
+                }
+            } else if i < lines1.len() {
+                ops.push(DiffOp::Delete(i));
+                i += 1;
+            } else {
+                ops.push(DiffOp::Insert(j));
+                j += 1;
+            }
+        }
+
+        ops
+    }
+
+    /// Format diff in normal format
+    fn format_normal(&self, ops: &[DiffOp], lines1: &[&str], lines2: &[&str]) -> String {
+        let mut result = String::new();
+        let mut i = 0;
+
+        while i < ops.len() {
+            match ops[i] {
+                DiffOp::Equal(_, _) => {
+                    i += 1;
+                }
+                DiffOp::Delete(line_num) => {
+                    let mut del_count = 1;
+                    while i + del_count < ops.len() {
+                        if let DiffOp::Delete(_) = ops[i + del_count] {
+                            del_count += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    result.push_str(&format!("{}d{}\n", line_num + 1, line_num + del_count));
+                    for k in 0..del_count {
+                        result.push_str(&format!("< {}\n", lines1[line_num + k]));
+                    }
+                    i += del_count;
+                }
+                DiffOp::Insert(line_num) => {
+                    let mut ins_count = 1;
+                    while i + ins_count < ops.len() {
+                        if let DiffOp::Insert(_) = ops[i + ins_count] {
+                            ins_count += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    result.push_str(&format!("{}a{}\n", line_num, line_num + ins_count));
+                    for k in 0..ins_count {
+                        result.push_str(&format!("> {}\n", lines2[line_num + k]));
+                    }
+                    i += ins_count;
+                }
+                DiffOp::Change(line1, line2) => {
+                    result.push_str(&format!("{}c{}\n", line1 + 1, line2 + 1));
+                    result.push_str(&format!("< {}\n", lines1[line1]));
+                    result.push_str("---\n");
+                    result.push_str(&format!("> {}\n", lines2[line2]));
+                    i += 1;
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Format diff in unified format
+    fn format_unified(&self, ops: &[DiffOp], lines1: &[&str], lines2: &[&str]) -> String {
+        let mut result = String::new();
+
+        result.push_str(&format!("--- {}\n", self.file1.display()));
+        result.push_str(&format!("+++ {}\n", self.file2.display()));
+
+        // For simplicity, show all changes in one hunk
+        let mut hunk = String::new();
+        let mut hunk_line1 = 1;
+        let mut hunk_line2 = 1;
+
+        for op in ops {
+            match op {
+                DiffOp::Equal(i, _) => {
+                    hunk.push_str(&format!(" {}\n", lines1[*i]));
+                }
+                DiffOp::Delete(i) => {
+                    hunk.push_str(&format!("-{}\n", lines1[*i]));
+                }
+                DiffOp::Insert(j) => {
+                    hunk.push_str(&format!("+{}\n", lines2[*j]));
+                }
+                DiffOp::Change(i, j) => {
+                    hunk.push_str(&format!("-{}\n", lines1[*i]));
+                    hunk.push_str(&format!("+{}\n", lines2[*j]));
+                }
+            }
+        }
+
+        if !hunk.is_empty() {
+            result.push_str(&format!(
+                "@@ -{},{} +{},{} @@\n",
+                hunk_line1,
+                lines1.len(),
+                hunk_line2,
+                lines2.len()
+            ));
+            result.push_str(&hunk);
+        }
+
+        result
+    }
+}
+
+/// Diff operation types
+#[derive(Clone, Debug, PartialEq)]
+enum DiffOp {
+    Equal(usize, usize),
+    Delete(usize),
+    Insert(usize),
+    Change(usize, usize),
+}
+
+/// Main loop for diff command
+pub fn diff_main_loop(diff: &mut Diff, state: &mut KernelState) -> Option<SystemCall> {
+    if !diff.completed && diff.error.is_none() {
+        if let Err(e) = diff.process(state) {
+            diff.error = Some(e.clone());
+            return Some(SystemCall::Write {
+                fd: 2,
+                data: format!("diff: {}\n", e).as_bytes().to_vec(),
+            });
+        }
+    }
+
+    if diff.completed && !diff.output.is_empty() {
+        return Some(SystemCall::Write {
+            fd: 1,
+            data: diff.output.as_bytes().to_vec(),
+        });
+    }
+
+    let exit_code = if diff.error.is_some() {
+        2
+    } else if !diff.output.is_empty() {
+        1 // Files differ
+    } else {
+        0 // Files are identical
+    };
+
+    Some(SystemCall::Exit(exit_code))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2441,5 +2791,180 @@ mod tests {
         cut_main_loop(&mut cut, &mut state);
         assert!(cut.error.is_some());
         assert!(cut.error.as_ref().unwrap().contains("cannot read"));
+    }
+
+    // ============================================================================
+    // Diff Tests (WOS-PROG-012)
+    // ============================================================================
+
+    #[test]
+    fn test_diff_identical_files() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), b"line1\nline2\n".to_vec())
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file2.txt"), b"line1\nline2\n".to_vec())
+            .unwrap();
+
+        let mut diff = Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"));
+
+        let syscall = diff_main_loop(&mut diff, &mut state);
+        assert!(diff.completed);
+        assert_eq!(diff.output, "");
+        assert!(matches!(syscall, Some(SystemCall::Exit(0))));
+    }
+
+    #[test]
+    fn test_diff_different_files_normal() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), b"line1\nline2\n".to_vec())
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file2.txt"), b"line1\nline3\n".to_vec())
+            .unwrap();
+
+        let mut diff = Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"));
+
+        diff_main_loop(&mut diff, &mut state);
+        assert!(diff.completed);
+        assert!(!diff.output.is_empty());
+        assert!(diff.output.contains("2c2"));
+        assert!(diff.output.contains("< line2"));
+        assert!(diff.output.contains("> line3"));
+    }
+
+    #[test]
+    fn test_diff_unified_format() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), b"line1\nline2\nline3\n".to_vec())
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file2.txt"), b"line1\nmodified\nline3\n".to_vec())
+            .unwrap();
+
+        let mut diff = Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"))
+            .with_unified(3);
+
+        diff_main_loop(&mut diff, &mut state);
+        assert!(diff.completed);
+        assert!(diff.output.contains("---"));
+        assert!(diff.output.contains("+++"));
+        assert!(diff.output.contains("@@"));
+        assert!(diff.output.contains("-line2"));
+        assert!(diff.output.contains("+modified"));
+    }
+
+    #[test]
+    fn test_diff_brief_mode() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), b"line1\n".to_vec())
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file2.txt"), b"line2\n".to_vec())
+            .unwrap();
+
+        let mut diff = Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"))
+            .with_brief();
+
+        diff_main_loop(&mut diff, &mut state);
+        assert!(diff.completed);
+        assert_eq!(diff.output, "Files /file1.txt and /file2.txt differ\n");
+    }
+
+    #[test]
+    fn test_diff_ignore_whitespace() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), b"line1\n  line2  \n".to_vec())
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file2.txt"), b"line1\nline2\n".to_vec())
+            .unwrap();
+
+        let mut diff = Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"))
+            .with_ignore_whitespace();
+
+        diff_main_loop(&mut diff, &mut state);
+        assert!(diff.completed);
+        assert_eq!(diff.output, ""); // Should be identical when ignoring whitespace
+    }
+
+    #[test]
+    fn test_diff_added_lines() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), b"line1\n".to_vec())
+            .unwrap();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file2.txt"),
+                b"line1\nline2\nline3\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut diff = Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"));
+
+        diff_main_loop(&mut diff, &mut state);
+        assert!(diff.completed);
+        assert!(!diff.output.is_empty());
+        assert!(diff.output.contains(">"));
+    }
+
+    #[test]
+    fn test_diff_deleted_lines() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file1.txt"),
+                b"line1\nline2\nline3\n".to_vec(),
+            )
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file2.txt"), b"line1\n".to_vec())
+            .unwrap();
+
+        let mut diff = Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"));
+
+        diff_main_loop(&mut diff, &mut state);
+        assert!(diff.completed);
+        assert!(!diff.output.is_empty());
+        assert!(diff.output.contains("<"));
+    }
+
+    #[test]
+    fn test_diff_missing_file() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), b"line1\n".to_vec())
+            .unwrap();
+
+        let mut diff = Diff::new(
+            1,
+            PathBuf::from("/file1.txt"),
+            PathBuf::from("/missing.txt"),
+        );
+
+        diff_main_loop(&mut diff, &mut state);
+        assert!(diff.error.is_some());
+        assert!(diff.error.as_ref().unwrap().contains("cannot read"));
     }
 }
