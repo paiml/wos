@@ -11,6 +11,7 @@
 #![warn(missing_docs)]
 
 pub mod context;
+pub mod control_flow;
 pub mod parser;
 pub mod pipeline;
 pub mod script;
@@ -18,6 +19,7 @@ pub mod script_loader;
 pub mod vfs;
 
 pub use context::{ExecutionContext, SimulatedClock};
+pub use control_flow::{parse_if_statement, parse_until_statement, parse_while_statement, ControlFlow};
 pub use parser::parse_command;
 pub use pipeline::{parse_pipeline, Command, Operator, Pipeline, PipelineStage, Redirection};
 pub use script::{Script, ScriptError};
