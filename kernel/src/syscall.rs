@@ -183,6 +183,12 @@ pub enum SystemCall {
         /// Path to file or directory
         path: String,
     },
+
+    /// Get canonical absolute path (resolve ., .., //, etc.)
+    Realpath {
+        /// Path to canonicalize
+        path: String,
+    },
 }
 
 /// System call output
@@ -851,6 +857,28 @@ fn sys_lstat(
     }
 }
 
+/// Get canonical absolute path (realpath syscall)
+fn sys_realpath(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = Path::new(&path);
+
+    // Use VFS normalize_path to canonicalize the path
+    let normalized = wos_shared::vfs::VirtualFileSystem::normalize_path(path);
+
+    // Convert to string and return as Data
+    let canonical_str = normalized.to_str().ok_or(KernelError::InvalidParameters(
+        "Path contains invalid UTF-8".to_string(),
+    ))?;
+
+    Ok((
+        state,
+        SyscallOutput::Data(canonical_str.as_bytes().to_vec()),
+    ))
+}
+
 ///
 /// Pure functional dispatcher: takes kernel state and syscall, returns new state and output.
 /// Never panics - all errors are returned as Results.
@@ -886,6 +914,7 @@ pub fn dispatch_syscall(
         SystemCall::Getdents { fd } => sys_getdents(state, calling_pid, fd),
         SystemCall::Stat { path } => sys_stat(state, calling_pid, path),
         SystemCall::Lstat { path } => sys_lstat(state, calling_pid, path),
+        SystemCall::Realpath { path } => sys_realpath(state, calling_pid, path),
     }
 }
 
@@ -5171,6 +5200,639 @@ mod tests {
                                 serde_json::from_slice(&data)
                                     .map_err(|e| TestCaseError::fail(format!("JSON parse error: {}", e)))?;
                             prop_assert_eq!(file_stat.size, content_size as u64);
+                        }
+                        _ => return Err(TestCaseError::fail("Expected Data output")),
+                    }
+                }
+            }
+        }
+    }
+
+    // ============================================================================
+    // WOS-FS-006: Path normalization and resolution tests
+    // ============================================================================
+
+    #[cfg(test)]
+    mod path_resolution_tests {
+        use super::*;
+
+        #[test]
+        fn test_realpath_current_directory() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test resolving /./test -> /test
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/./test".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/test");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_parent_directory() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test resolving /a/b/../c -> /a/c
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/../c".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/c");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_multiple_slashes() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test resolving /a//b///c -> /a/b/c
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a//b///c".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/b/c");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_complex_path() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test complex path: /a/./b/../c/./d -> /a/c/d
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/./b/../c/./d".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/c/d");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_root() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test root path
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_root_parent() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test /.. -> / (parent of root is root)
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/..".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_trailing_slash() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test trailing slash removal: /a/b/ -> /a/b
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/b");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_multiple_dot_dot() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test /a/b/c/../../d -> /a/d
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/c/../../d".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/d");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_preserves_state() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            let state_before = state.clone();
+
+            // Realpath should not modify state
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/./b/../c".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state_after, _) = result.unwrap();
+
+            // State should be identical
+            assert_eq!(state_before.processes.len(), state_after.processes.len());
+        }
+
+        #[test]
+        fn test_realpath_empty_components() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test path with empty components from multiple slashes
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "///a///b///".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/b");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_single_dot_at_end() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test /a/b/. -> /a/b
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/.".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/b");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_double_dot_at_end() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test /a/b/.. -> /a
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/..".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_mixed_separators() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test path with mixed dot components
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/././b/../././c".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/c");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_deterministic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            let test_path = "/a/./b/../c".to_string();
+
+            // Call realpath twice
+            let result1 = dispatch_syscall(
+                state.clone(),
+                SystemCall::Realpath {
+                    path: test_path.clone(),
+                },
+                pid,
+            );
+            assert!(result1.is_ok());
+            let (state, output1) = result1.unwrap();
+
+            let result2 = dispatch_syscall(state, SystemCall::Realpath { path: test_path }, pid);
+            assert!(result2.is_ok());
+            let (_state, output2) = result2.unwrap();
+
+            // Both should return identical results
+            assert_eq!(output1, output2);
+        }
+
+        #[test]
+        fn test_realpath_long_path() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test long path with many components
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/c/d/e/f/g/../../h/../i/./j".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/b/c/d/e/i/j");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        // ========================================================================
+        // Property tests for path normalization
+        // ========================================================================
+
+        #[cfg(test)]
+        mod proptests {
+            use super::*;
+            use proptest::prelude::*;
+
+            proptest! {
+                #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+                /// Property: realpath is deterministic
+                #[test]
+                fn proptest_realpath_deterministic(
+                    components in prop::collection::vec("[a-z]{1,5}", 1..10),
+                    dots in prop::collection::vec(prop::bool::weighted(0.3), 0..5),
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Build a path with random components and dots
+                    let mut path_parts = vec![];
+                    for (i, comp) in components.iter().enumerate() {
+                        if i < dots.len() && dots[i] {
+                            path_parts.push(".".to_string());
+                        }
+                        path_parts.push(comp.clone());
+                    }
+                    let path = format!("/{}", path_parts.join("/"));
+
+                    // Call realpath twice
+                    let result1 = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Realpath { path: path.clone() },
+                        pid,
+                    );
+                    prop_assert!(result1.is_ok());
+                    let (state, output1) = result1.unwrap();
+
+                    let result2 = dispatch_syscall(
+                        state,
+                        SystemCall::Realpath { path },
+                        pid,
+                    );
+                    prop_assert!(result2.is_ok());
+                    let (_state, output2) = result2.unwrap();
+
+                    // Results should be identical
+                    prop_assert_eq!(output1, output2);
+                }
+
+                /// Property: realpath removes all . components
+                #[test]
+                fn proptest_realpath_removes_dots(
+                    components in prop::collection::vec("[a-z]{1,5}", 1..8),
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Build path with . components interspersed
+                    let mut path_parts = vec![];
+                    for comp in &components {
+                        path_parts.push(comp.clone());
+                        path_parts.push(".".to_string());
+                    }
+                    let path = format!("/{}", path_parts.join("/"));
+
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Realpath { path },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (_state, output) = result.unwrap();
+
+                    match output {
+                        SyscallOutput::Data(data) => {
+                            let canonical = String::from_utf8(data)
+                                .map_err(|e| TestCaseError::fail(format!("UTF-8 error: {}", e)))?;
+                            // Canonical path should not contain /./
+                            prop_assert!(!canonical.contains("/./ "));
+                            // Should not end with /.
+                            prop_assert!(!canonical.ends_with("/."));
+                        }
+                        _ => return Err(TestCaseError::fail("Expected Data output")),
+                    }
+                }
+
+                /// Property: realpath removes redundant slashes
+                #[test]
+                fn proptest_realpath_removes_redundant_slashes(
+                    components in prop::collection::vec("[a-z]{1,5}", 1..8),
+                    extra_slashes in prop::collection::vec(1usize..5, 1..8),
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Build path with extra slashes
+                    let mut path = String::from("/");
+                    for (i, comp) in components.iter().enumerate() {
+                        if i < extra_slashes.len() {
+                            for _ in 0..extra_slashes[i] {
+                                path.push('/');
+                            }
+                        }
+                        path.push_str(comp);
+                        path.push('/');
+                    }
+
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Realpath { path },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (_state, output) = result.unwrap();
+
+                    match output {
+                        SyscallOutput::Data(data) => {
+                            let canonical = String::from_utf8(data)
+                                .map_err(|e| TestCaseError::fail(format!("UTF-8 error: {}", e)))?;
+                            // Canonical path should not contain //
+                            prop_assert!(!canonical.contains("//"));
+                        }
+                        _ => return Err(TestCaseError::fail("Expected Data output")),
+                    }
+                }
+
+                /// Property: realpath handles .. correctly
+                #[test]
+                fn proptest_realpath_handles_parent(
+                    depth in 2usize..10,
+                    backtrack in 1usize..5,
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Build path: /a/b/c/d/e/../.. -> /a/b/c
+                    let mut path_parts = vec![];
+                    for i in 0..depth {
+                        path_parts.push(format!("dir{}", i));
+                    }
+                    let effective_backtrack = backtrack.min(depth - 1);
+                    for _ in 0..effective_backtrack {
+                        path_parts.push("..".to_string());
+                    }
+                    let path = format!("/{}", path_parts.join("/"));
+
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Realpath { path },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (_state, output) = result.unwrap();
+
+                    match output {
+                        SyscallOutput::Data(data) => {
+                            let canonical = String::from_utf8(data)
+                                .map_err(|e| TestCaseError::fail(format!("UTF-8 error: {}", e)))?;
+                            // Count components in canonical path
+                            let components: Vec<&str> = canonical
+                                .trim_matches('/')
+                                .split('/')
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                            // Should have (depth - backtrack) components
+                            prop_assert_eq!(components.len(), depth - effective_backtrack);
+                        }
+                        _ => return Err(TestCaseError::fail("Expected Data output")),
+                    }
+                }
+
+                /// Property: realpath always returns absolute paths
+                #[test]
+                fn proptest_realpath_always_absolute(
+                    components in prop::collection::vec("[a-z]{1,5}", 0..10),
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = if components.is_empty() {
+                        "/".to_string()
+                    } else {
+                        format!("/{}", components.join("/"))
+                    };
+
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Realpath { path },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (_state, output) = result.unwrap();
+
+                    match output {
+                        SyscallOutput::Data(data) => {
+                            let canonical = String::from_utf8(data)
+                                .map_err(|e| TestCaseError::fail(format!("UTF-8 error: {}", e)))?;
+                            // Must start with /
+                            prop_assert!(canonical.starts_with('/'));
+                            // Must not be empty
+                            prop_assert!(!canonical.is_empty());
                         }
                         _ => return Err(TestCaseError::fail("Expected Data output")),
                     }
