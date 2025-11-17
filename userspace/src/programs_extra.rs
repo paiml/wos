@@ -1829,6 +1829,340 @@ pub fn diff_main_loop(diff: &mut Diff, state: &mut KernelState) -> Option<System
     Some(SystemCall::Exit(exit_code))
 }
 
+// ============================================================================
+// Sed - Stream Editor (WOS-PROG-003)
+// ============================================================================
+
+/// Sed command for stream editing
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sed {
+    /// Process ID
+    pub pid: ProcessId,
+    /// Input file (None for stdin)
+    pub file: Option<PathBuf>,
+    /// Sed script (commands to execute)
+    pub script: String,
+    /// In-place editing
+    pub in_place: bool,
+    /// Suppress automatic printing (-n flag)
+    pub quiet: bool,
+    /// Output buffer
+    pub output: String,
+    /// Completed flag
+    pub completed: bool,
+    /// Error message
+    pub error: Option<String>,
+}
+
+impl Sed {
+    /// Create a new Sed instance
+    pub fn new(pid: ProcessId, script: String, file: Option<PathBuf>) -> Self {
+        Self {
+            pid,
+            file,
+            script,
+            in_place: false,
+            quiet: false,
+            output: String::new(),
+            completed: false,
+            error: None,
+        }
+    }
+
+    /// Set quiet mode (suppress automatic printing)
+    pub fn with_quiet(mut self) -> Self {
+        self.quiet = true;
+        self
+    }
+
+    /// Set in-place editing mode
+    pub fn with_in_place(mut self) -> Self {
+        self.in_place = true;
+        self
+    }
+
+    /// Process the input
+    pub fn process(&mut self, state: &mut KernelState) -> Result<(), String> {
+        if self.completed {
+            return Ok(());
+        }
+
+        // Read input
+        let content = if let Some(ref file_path) = self.file {
+            state
+                .vfs
+                .read_file(file_path)
+                .map_err(|e| format!("cannot read '{}': {:?}", file_path.display(), e))?
+        } else {
+            return Err("stdin not implemented".to_string());
+        };
+
+        let text = String::from_utf8(content)
+            .map_err(|e| format!("invalid UTF-8: {}", e))?;
+
+        let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+
+        // Parse sed command
+        let commands = self.parse_script(&self.script)?;
+
+        // Execute sed commands
+        let mut result_lines = Vec::new();
+        let mut line_num = 1;
+
+        for line in &lines {
+            let mut current_line = line.clone();
+            let mut should_print = !self.quiet;
+            let mut should_delete = false;
+
+            for cmd in &commands {
+                if !self.matches_address(line_num, lines.len(), &cmd.address) {
+                    continue;
+                }
+
+                match &cmd.command {
+                    SedCommand::Substitute {
+                        pattern,
+                        replacement,
+                        global,
+                    } => {
+                        current_line = self.substitute(&current_line, pattern, replacement, *global);
+                    }
+                    SedCommand::Delete => {
+                        should_delete = true;
+                        should_print = false;
+                        break;
+                    }
+                    SedCommand::Print => {
+                        result_lines.push(current_line.clone());
+                    }
+                }
+            }
+
+            if !should_delete && should_print {
+                result_lines.push(current_line);
+            }
+
+            line_num += 1;
+        }
+
+        self.output = result_lines.join("\n");
+        if !self.output.is_empty() && !text.is_empty() {
+            self.output.push('\n');
+        }
+
+        // Handle in-place editing
+        if self.in_place {
+            if let Some(ref file_path) = self.file {
+                // Delete old file and create new one with modified content
+                state
+                    .vfs
+                    .delete_file(file_path)
+                    .map_err(|e| format!("cannot delete '{}': {:?}", file_path.display(), e))?;
+                state
+                    .vfs
+                    .create_file(file_path.clone(), self.output.as_bytes().to_vec())
+                    .map_err(|e| format!("cannot write '{}': {:?}", file_path.display(), e))?;
+            }
+        }
+
+        self.completed = true;
+        Ok(())
+    }
+
+    /// Parse sed script into commands
+    fn parse_script(&self, script: &str) -> Result<Vec<SedCmd>, String> {
+        let mut commands = Vec::new();
+
+        // Simple parser for basic sed commands
+        // Format: [address]command
+        // Examples: s/foo/bar/, 2d, 1,3p, /pattern/d
+
+        let parts: Vec<&str> = script.split(';').collect();
+        for part in parts {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+
+            // Parse address (if any) and command
+            let (address, command_str) = self.parse_address_and_command(part)?;
+            let command = self.parse_command(command_str)?;
+
+            commands.push(SedCmd { address, command });
+        }
+
+        Ok(commands)
+    }
+
+    /// Parse address and command from a sed script line
+    fn parse_address_and_command<'a>(&self, line: &'a str) -> Result<(SedAddress, &'a str), String> {
+        // Check for line number addresses (e.g., "2d", "1,3p")
+        if let Some(first_char) = line.chars().next() {
+            if first_char.is_ascii_digit() {
+                // Parse line number or range
+                if let Some(comma_pos) = line.find(',') {
+                    // Range: "1,3p"
+                    let start_str = &line[..comma_pos];
+                    let start: usize = start_str
+                        .parse()
+                        .map_err(|_| format!("invalid line number: {}", start_str))?;
+
+                    let rest = &line[comma_pos + 1..];
+                    let mut i = 0;
+                    while i < rest.len() && rest.chars().nth(i).unwrap().is_ascii_digit() {
+                        i += 1;
+                    }
+
+                    let end: usize = rest[..i]
+                        .parse()
+                        .map_err(|_| format!("invalid line number: {}", &rest[..i]))?;
+
+                    return Ok((SedAddress::Range(start, end), &rest[i..]));
+                } else {
+                    // Single line number: "2d"
+                    let mut i = 0;
+                    while i < line.len() && line.chars().nth(i).unwrap().is_ascii_digit() {
+                        i += 1;
+                    }
+
+                    let line_num: usize = line[..i]
+                        .parse()
+                        .map_err(|_| format!("invalid line number: {}", &line[..i]))?;
+
+                    return Ok((SedAddress::Line(line_num), &line[i..]));
+                }
+            }
+        }
+
+        // No address, applies to all lines
+        Ok((SedAddress::All, line))
+    }
+
+    /// Parse a sed command
+    fn parse_command(&self, cmd_str: &str) -> Result<SedCommand, String> {
+        let cmd_str = cmd_str.trim();
+
+        if cmd_str.starts_with('s') {
+            // Substitute command: s/pattern/replacement/flags
+            self.parse_substitute(cmd_str)
+        } else if cmd_str == "d" {
+            Ok(SedCommand::Delete)
+        } else if cmd_str == "p" {
+            Ok(SedCommand::Print)
+        } else {
+            Err(format!("unknown command: {}", cmd_str))
+        }
+    }
+
+    /// Parse substitute command
+    fn parse_substitute(&self, cmd_str: &str) -> Result<SedCommand, String> {
+        if !cmd_str.starts_with('s') {
+            return Err("substitute command must start with 's'".to_string());
+        }
+
+        let rest = &cmd_str[1..];
+        if rest.is_empty() {
+            return Err("invalid substitute command".to_string());
+        }
+
+        let delimiter = rest.chars().next().unwrap();
+        let parts: Vec<&str> = rest[1..].split(delimiter).collect();
+
+        if parts.len() < 2 {
+            return Err("invalid substitute command format".to_string());
+        }
+
+        let pattern = parts[0].to_string();
+        let replacement = parts[1].to_string();
+        let flags = if parts.len() > 2 { parts[2] } else { "" };
+        let global = flags.contains('g');
+
+        Ok(SedCommand::Substitute {
+            pattern,
+            replacement,
+            global,
+        })
+    }
+
+    /// Check if an address matches the current line
+    fn matches_address(&self, line_num: usize, total_lines: usize, address: &SedAddress) -> bool {
+        match address {
+            SedAddress::All => true,
+            SedAddress::Line(n) => line_num == *n,
+            SedAddress::Range(start, end) => line_num >= *start && line_num <= *end,
+            SedAddress::Last => line_num == total_lines,
+        }
+    }
+
+    /// Perform substitution on a line
+    fn substitute(&self, line: &str, pattern: &str, replacement: &str, global: bool) -> String {
+        if global {
+            line.replace(pattern, replacement)
+        } else {
+            // Replace only first occurrence
+            if let Some(pos) = line.find(pattern) {
+                let mut result = String::new();
+                result.push_str(&line[..pos]);
+                result.push_str(replacement);
+                result.push_str(&line[pos + pattern.len()..]);
+                result
+            } else {
+                line.to_string()
+            }
+        }
+    }
+}
+
+/// Sed command types
+#[derive(Clone, Debug, PartialEq)]
+struct SedCmd {
+    address: SedAddress,
+    command: SedCommand,
+}
+
+/// Sed address types
+#[derive(Clone, Debug, PartialEq)]
+enum SedAddress {
+    All,
+    Line(usize),
+    Range(usize, usize),
+    Last,
+}
+
+/// Sed command types
+#[derive(Clone, Debug, PartialEq)]
+enum SedCommand {
+    Substitute {
+        pattern: String,
+        replacement: String,
+        global: bool,
+    },
+    Delete,
+    Print,
+}
+
+/// Main loop for sed command
+pub fn sed_main_loop(sed: &mut Sed, state: &mut KernelState) -> Option<SystemCall> {
+    if !sed.completed && sed.error.is_none() {
+        if let Err(e) = sed.process(state) {
+            sed.error = Some(e.clone());
+            return Some(SystemCall::Write {
+                fd: 2,
+                data: format!("sed: {}\n", e).as_bytes().to_vec(),
+            });
+        }
+    }
+
+    if sed.completed && !sed.output.is_empty() && !sed.in_place {
+        return Some(SystemCall::Write {
+            fd: 1,
+            data: sed.output.as_bytes().to_vec(),
+        });
+    }
+
+    Some(SystemCall::Exit(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2966,5 +3300,182 @@ mod tests {
         diff_main_loop(&mut diff, &mut state);
         assert!(diff.error.is_some());
         assert!(diff.error.as_ref().unwrap().contains("cannot read"));
+    }
+
+    // ============================================================================
+    // Sed Tests (WOS-PROG-003)
+    // ============================================================================
+
+    #[test]
+    fn test_sed_substitute_basic() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"hello world\nhello again\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut sed = Sed::new(1, "s/hello/hi/".to_string(), Some(PathBuf::from("/file.txt")));
+
+        sed_main_loop(&mut sed, &mut state);
+        assert!(sed.completed);
+        assert_eq!(sed.output, "hi world\nhi again\n");
+    }
+
+    #[test]
+    fn test_sed_substitute_global() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"foo bar foo baz\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut sed = Sed::new(1, "s/foo/FOO/g".to_string(), Some(PathBuf::from("/file.txt")));
+
+        sed_main_loop(&mut sed, &mut state);
+        assert!(sed.completed);
+        assert_eq!(sed.output, "FOO bar FOO baz\n");
+    }
+
+    #[test]
+    fn test_sed_delete_line() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"line1\nline2\nline3\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut sed = Sed::new(1, "2d".to_string(), Some(PathBuf::from("/file.txt")));
+
+        sed_main_loop(&mut sed, &mut state);
+        assert!(sed.completed);
+        assert_eq!(sed.output, "line1\nline3\n");
+    }
+
+    #[test]
+    fn test_sed_delete_range() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"line1\nline2\nline3\nline4\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut sed = Sed::new(1, "2,3d".to_string(), Some(PathBuf::from("/file.txt")));
+
+        sed_main_loop(&mut sed, &mut state);
+        assert!(sed.completed);
+        assert_eq!(sed.output, "line1\nline4\n");
+    }
+
+    #[test]
+    fn test_sed_print_command() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"line1\nline2\nline3\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut sed = Sed::new(1, "2p".to_string(), Some(PathBuf::from("/file.txt")));
+
+        sed_main_loop(&mut sed, &mut state);
+        assert!(sed.completed);
+        // Without -n, line 2 is printed twice (once by p, once automatically)
+        assert_eq!(sed.output, "line1\nline2\nline2\nline3\n");
+    }
+
+    #[test]
+    fn test_sed_quiet_mode_with_print() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"line1\nline2\nline3\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut sed = Sed::new(1, "2p".to_string(), Some(PathBuf::from("/file.txt")))
+            .with_quiet();
+
+        sed_main_loop(&mut sed, &mut state);
+        assert!(sed.completed);
+        // With -n, only explicit p command prints
+        assert_eq!(sed.output, "line2\n");
+    }
+
+    #[test]
+    fn test_sed_multiple_commands() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"foo bar\nbaz qux\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut sed = Sed::new(
+            1,
+            "s/foo/FOO/;s/bar/BAR/".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
+
+        sed_main_loop(&mut sed, &mut state);
+        assert!(sed.completed);
+        assert_eq!(sed.output, "FOO BAR\nbaz qux\n");
+    }
+
+    #[test]
+    fn test_sed_in_place_editing() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"hello world\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut sed = Sed::new(1, "s/hello/hi/".to_string(), Some(PathBuf::from("/file.txt")))
+            .with_in_place();
+
+        sed_main_loop(&mut sed, &mut state);
+        if let Some(ref err) = sed.error {
+            panic!("sed error: {}", err);
+        }
+        assert!(sed.completed);
+
+        // Check that file was modified in place
+        let content = state.vfs.read_file(&PathBuf::from("/file.txt")).unwrap();
+        assert_eq!(String::from_utf8(content).unwrap(), "hi world\n");
+    }
+
+    #[test]
+    fn test_sed_missing_file() {
+        let mut state = KernelState::new();
+
+        let mut sed = Sed::new(
+            1,
+            "s/foo/bar/".to_string(),
+            Some(PathBuf::from("/missing.txt")),
+        );
+
+        sed_main_loop(&mut sed, &mut state);
+        assert!(sed.error.is_some());
+        assert!(sed.error.as_ref().unwrap().contains("cannot read"));
     }
 }
