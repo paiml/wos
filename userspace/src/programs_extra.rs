@@ -12,6 +12,8 @@
 //! - rm: remove files and directories (WOS-PROG-019)
 //! - chmod: change file permissions (WOS-PROG-014)
 //! - find: search directory trees for files (WOS-PROG-005)
+//! - sort: sort lines of text (WOS-PROG-009)
+//! - uniq: remove duplicate lines (WOS-PROG-010)
 
 use std::path::PathBuf;
 use wos_kernel::{KernelState, ProcessId, SystemCall};
@@ -1081,6 +1083,402 @@ pub fn find_main_loop(find: &mut Find, state: &mut KernelState) -> Option<System
     Some(SystemCall::Exit(exit_code))
 }
 
+/// Sort program - sort lines of text
+/// WOS-PROG-009: sort command
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sort {
+    /// Process ID
+    pub pid: ProcessId,
+    /// File path to sort (empty = stdin)
+    pub file: Option<PathBuf>,
+    /// Numeric sort (-n flag)
+    pub numeric: bool,
+    /// Reverse order (-r flag)
+    pub reverse: bool,
+    /// Remove duplicates (-u flag)
+    pub unique: bool,
+    /// Sorted output
+    pub output: String,
+    /// Operation completed
+    pub completed: bool,
+}
+
+impl Sort {
+    /// Create a new sort program
+    pub fn new(
+        pid: ProcessId,
+        file: Option<PathBuf>,
+        numeric: bool,
+        reverse: bool,
+        unique: bool,
+    ) -> Self {
+        Self {
+            pid,
+            file,
+            numeric,
+            reverse,
+            unique,
+            completed: false,
+            output: String::new(),
+        }
+    }
+
+    /// Sort lines from file
+    pub fn sort_lines(&mut self, state: &mut KernelState) -> Result<(), String> {
+        // Read file content
+        let content = if let Some(ref file) = self.file {
+            state
+                .vfs
+                .read_file(file)
+                .map_err(|e| format!("cannot read '{}': {:?}", file.display(), e))?
+        } else {
+            return Err("stdin not yet supported".to_string());
+        };
+
+        let text = String::from_utf8(content)
+            .map_err(|_| "invalid UTF-8 in input".to_string())?;
+
+        // Split into lines
+        let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+
+        // Sort lines
+        if self.numeric {
+            // Numeric sort: try to parse as numbers
+            lines.sort_by(|a, b| {
+                let a_num: Result<i64, _> = a.trim().parse();
+                let b_num: Result<i64, _> = b.trim().parse();
+
+                match (a_num, b_num) {
+                    (Ok(a_val), Ok(b_val)) => a_val.cmp(&b_val),
+                    (Ok(_), Err(_)) => std::cmp::Ordering::Less,
+                    (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+                    (Err(_), Err(_)) => a.cmp(b),
+                }
+            });
+        } else {
+            // Alphabetic sort
+            lines.sort();
+        }
+
+        // Reverse if requested
+        if self.reverse {
+            lines.reverse();
+        }
+
+        // Remove duplicates if requested
+        if self.unique {
+            lines.dedup();
+        }
+
+        // Generate output
+        if !lines.is_empty() {
+            self.output = lines.join("\n");
+            self.output.push('\n');
+        }
+
+        self.completed = true;
+        Ok(())
+    }
+}
+
+/// Sort main loop - sorts lines
+pub fn sort_main_loop(sort: &mut Sort, state: &mut KernelState) -> Option<SystemCall> {
+    if !sort.completed {
+        if let Err(e) = sort.sort_lines(state) {
+            return Some(SystemCall::Write {
+                fd: 2, // stderr
+                data: format!("sort: {}\n", e).as_bytes().to_vec(),
+            });
+        }
+
+        if !sort.output.is_empty() {
+            return Some(SystemCall::Write {
+                fd: 1,
+                data: sort.output.as_bytes().to_vec(),
+            });
+        }
+    }
+
+    Some(SystemCall::Exit(0))
+}
+
+/// Uniq program - remove duplicate lines
+/// WOS-PROG-010: uniq command
+#[derive(Clone, Debug, PartialEq)]
+pub struct Uniq {
+    /// Process ID
+    pub pid: ProcessId,
+    /// File path (empty = stdin)
+    pub file: Option<PathBuf>,
+    /// Count occurrences (-c flag)
+    pub count: bool,
+    /// Show only duplicates (-d flag)
+    pub only_duplicates: bool,
+    /// Show only unique (-u flag)
+    pub only_unique: bool,
+    /// Output
+    pub output: String,
+    /// Operation completed
+    pub completed: bool,
+}
+
+impl Uniq {
+    /// Create a new uniq program
+    pub fn new(
+        pid: ProcessId,
+        file: Option<PathBuf>,
+        count: bool,
+        only_duplicates: bool,
+        only_unique: bool,
+    ) -> Self {
+        Self {
+            pid,
+            file,
+            count,
+            only_duplicates,
+            only_unique,
+            completed: false,
+            output: String::new(),
+        }
+    }
+
+    /// Remove duplicate lines
+    pub fn process(&mut self, state: &mut KernelState) -> Result<(), String> {
+        // Read file content
+        let content = if let Some(ref file) = self.file {
+            state
+                .vfs
+                .read_file(file)
+                .map_err(|e| format!("cannot read '{}': {:?}", file.display(), e))?
+        } else {
+            return Err("stdin not yet supported".to_string());
+        };
+
+        let text = String::from_utf8(content)
+            .map_err(|_| "invalid UTF-8 in input".to_string())?;
+
+        // Process lines
+        let lines: Vec<&str> = text.lines().collect();
+        let mut result = Vec::new();
+
+        let mut i = 0;
+        while i < lines.len() {
+            let current = lines[i];
+            let mut count_val = 1;
+
+            // Count consecutive duplicates
+            while i + count_val < lines.len() && lines[i + count_val] == current {
+                count_val += 1;
+            }
+
+            // Apply filters
+            let is_duplicate = count_val > 1;
+            let should_include = if self.only_duplicates {
+                is_duplicate
+            } else if self.only_unique {
+                !is_duplicate
+            } else {
+                true
+            };
+
+            if should_include {
+                if self.count {
+                    result.push(format!("{:7} {}", count_val, current));
+                } else {
+                    result.push(current.to_string());
+                }
+            }
+
+            i += count_val;
+        }
+
+        // Generate output
+        if !result.is_empty() {
+            self.output = result.join("\n");
+            self.output.push('\n');
+        }
+
+        self.completed = true;
+        Ok(())
+    }
+}
+
+/// Uniq main loop - removes duplicates
+pub fn uniq_main_loop(uniq: &mut Uniq, state: &mut KernelState) -> Option<SystemCall> {
+    if !uniq.completed {
+        if let Err(e) = uniq.process(state) {
+            return Some(SystemCall::Write {
+                fd: 2, // stderr
+                data: format!("uniq: {}\n", e).as_bytes().to_vec(),
+            });
+        }
+
+        if !uniq.output.is_empty() {
+            return Some(SystemCall::Write {
+                fd: 1,
+                data: uniq.output.as_bytes().to_vec(),
+            });
+        }
+    }
+
+    Some(SystemCall::Exit(0))
+}
+
+// ============================================================================
+// Cut - Extract Columns (WOS-PROG-011)
+// ============================================================================
+
+/// Cut command for extracting fields, characters, or bytes from lines
+#[derive(Clone, Debug, PartialEq)]
+pub struct Cut {
+    /// Process ID
+    pub pid: ProcessId,
+    /// Input file (None for stdin)
+    pub file: Option<PathBuf>,
+    /// Field numbers to extract (1-indexed)
+    pub fields: Option<Vec<usize>>,
+    /// Character positions to extract (1-indexed)
+    pub characters: Option<Vec<usize>>,
+    /// Byte positions to extract (1-indexed)
+    pub bytes: Option<Vec<usize>>,
+    /// Field delimiter (default: tab)
+    pub delimiter: char,
+    /// Output buffer
+    pub output: String,
+    /// Completed flag
+    pub completed: bool,
+    /// Error message
+    pub error: Option<String>,
+}
+
+impl Cut {
+    /// Create a new Cut instance
+    pub fn new(pid: ProcessId, file: Option<PathBuf>) -> Self {
+        Self {
+            pid,
+            file,
+            fields: None,
+            characters: None,
+            bytes: None,
+            delimiter: '\t',
+            output: String::new(),
+            completed: false,
+            error: None,
+        }
+    }
+
+    /// Set field extraction mode
+    pub fn with_fields(mut self, fields: Vec<usize>) -> Self {
+        self.fields = Some(fields);
+        self
+    }
+
+    /// Set character extraction mode
+    pub fn with_characters(mut self, characters: Vec<usize>) -> Self {
+        self.characters = Some(characters);
+        self
+    }
+
+    /// Set byte extraction mode
+    pub fn with_bytes(mut self, bytes: Vec<usize>) -> Self {
+        self.bytes = Some(bytes);
+        self
+    }
+
+    /// Set field delimiter
+    pub fn with_delimiter(mut self, delimiter: char) -> Self {
+        self.delimiter = delimiter;
+        self
+    }
+
+    /// Process the input
+    pub fn process(&mut self, state: &mut KernelState) -> Result<(), String> {
+        if self.completed {
+            return Ok(());
+        }
+
+        // Read input
+        let content = if let Some(ref file_path) = self.file {
+            state
+                .vfs
+                .read_file(file_path)
+                .map_err(|e| format!("cannot read '{}': {:?}", file_path.display(), e))?
+        } else {
+            return Err("stdin not implemented".to_string());
+        };
+
+        let text = String::from_utf8(content)
+            .map_err(|e| format!("invalid UTF-8: {}", e))?;
+
+        let mut result = Vec::new();
+
+        for line in text.lines() {
+            if let Some(ref field_nums) = self.fields {
+                // Field extraction mode
+                let fields: Vec<&str> = line.split(self.delimiter).collect();
+                let mut selected = Vec::new();
+                for &field_num in field_nums {
+                    if field_num > 0 && field_num <= fields.len() {
+                        selected.push(fields[field_num - 1]);
+                    }
+                }
+                result.push(selected.join(&self.delimiter.to_string()));
+            } else if let Some(ref char_nums) = self.characters {
+                // Character extraction mode
+                let chars: Vec<char> = line.chars().collect();
+                let mut selected = Vec::new();
+                for &char_num in char_nums {
+                    if char_num > 0 && char_num <= chars.len() {
+                        selected.push(chars[char_num - 1]);
+                    }
+                }
+                result.push(selected.into_iter().collect::<String>());
+            } else if let Some(ref byte_nums) = self.bytes {
+                // Byte extraction mode
+                let bytes = line.as_bytes();
+                let mut selected = Vec::new();
+                for &byte_num in byte_nums {
+                    if byte_num > 0 && byte_num <= bytes.len() {
+                        selected.push(bytes[byte_num - 1]);
+                    }
+                }
+                result.push(String::from_utf8_lossy(&selected).to_string());
+            } else {
+                return Err("must specify -f, -c, or -b".to_string());
+            }
+        }
+
+        self.output = result.join("\n");
+        if !self.output.is_empty() && !text.is_empty() {
+            self.output.push('\n');
+        }
+        self.completed = true;
+        Ok(())
+    }
+}
+
+/// Main loop for cut command
+pub fn cut_main_loop(cut: &mut Cut, state: &mut KernelState) -> Option<SystemCall> {
+    if !cut.completed && cut.error.is_none() {
+        if let Err(e) = cut.process(state) {
+            cut.error = Some(e.clone());
+            return Some(SystemCall::Write {
+                fd: 2,
+                data: format!("cut: {}\n", e).as_bytes().to_vec(),
+            });
+        }
+    }
+
+    if cut.completed && !cut.output.is_empty() {
+        return Some(SystemCall::Write {
+            fd: 1,
+            data: cut.output.as_bytes().to_vec(),
+        });
+    }
+
+    Some(SystemCall::Exit(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1782,5 +2180,266 @@ mod tests {
         assert_eq!(find.matches.len(), 1);
         assert!(find.matches.contains(&PathBuf::from("/test.txt")));
         assert!(!find.matches.contains(&PathBuf::from("/test")));
+    }
+
+    // ============================================================================
+    // Sort Tests (WOS-PROG-009)
+    // ============================================================================
+
+    #[test]
+    fn test_sort_alphabetic() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"zebra\napple\nbanana\n".to_vec())
+            .unwrap();
+
+        let mut sort = Sort::new(1, Some(PathBuf::from("/file.txt")), false, false, false);
+
+        sort_main_loop(&mut sort, &mut state);
+        assert!(sort.completed);
+        assert_eq!(sort.output, "apple\nbanana\nzebra\n");
+    }
+
+    #[test]
+    fn test_sort_numeric() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/numbers.txt"), b"100\n2\n30\n".to_vec())
+            .unwrap();
+
+        let mut sort = Sort::new(1, Some(PathBuf::from("/numbers.txt")), true, false, false);
+
+        sort_main_loop(&mut sort, &mut state);
+        assert!(sort.completed);
+        assert_eq!(sort.output, "2\n30\n100\n");
+    }
+
+    #[test]
+    fn test_sort_reverse() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"a\nb\nc\n".to_vec())
+            .unwrap();
+
+        let mut sort = Sort::new(1, Some(PathBuf::from("/file.txt")), false, true, false);
+
+        sort_main_loop(&mut sort, &mut state);
+        assert!(sort.completed);
+        assert_eq!(sort.output, "c\nb\na\n");
+    }
+
+    #[test]
+    fn test_sort_unique() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"a\nb\na\nc\nb\n".to_vec())
+            .unwrap();
+
+        let mut sort = Sort::new(1, Some(PathBuf::from("/file.txt")), false, false, true);
+
+        sort_main_loop(&mut sort, &mut state);
+        assert!(sort.completed);
+        assert_eq!(sort.output, "a\nb\nc\n");
+    }
+
+    // ============================================================================
+    // Uniq Tests (WOS-PROG-010)
+    // ============================================================================
+
+    #[test]
+    fn test_uniq_basic() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"a\na\nb\nc\nc\nc\n".to_vec())
+            .unwrap();
+
+        let mut uniq = Uniq::new(1, Some(PathBuf::from("/file.txt")), false, false, false);
+
+        uniq_main_loop(&mut uniq, &mut state);
+        assert!(uniq.completed);
+        assert_eq!(uniq.output, "a\nb\nc\n");
+    }
+
+    #[test]
+    fn test_uniq_count() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"a\na\nb\nc\nc\nc\n".to_vec())
+            .unwrap();
+
+        let mut uniq = Uniq::new(1, Some(PathBuf::from("/file.txt")), true, false, false);
+
+        uniq_main_loop(&mut uniq, &mut state);
+        assert!(uniq.completed);
+        assert!(uniq.output.contains("2 a"));
+        assert!(uniq.output.contains("1 b"));
+        assert!(uniq.output.contains("3 c"));
+    }
+
+    #[test]
+    fn test_uniq_only_duplicates() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"a\na\nb\nc\nc\n".to_vec())
+            .unwrap();
+
+        let mut uniq = Uniq::new(1, Some(PathBuf::from("/file.txt")), false, true, false);
+
+        uniq_main_loop(&mut uniq, &mut state);
+        assert!(uniq.completed);
+        assert_eq!(uniq.output, "a\nc\n");
+    }
+
+    #[test]
+    fn test_uniq_only_unique() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"a\na\nb\nc\nc\n".to_vec())
+            .unwrap();
+
+        let mut uniq = Uniq::new(1, Some(PathBuf::from("/file.txt")), false, false, true);
+
+        uniq_main_loop(&mut uniq, &mut state);
+        assert!(uniq.completed);
+        assert_eq!(uniq.output, "b\n");
+    }
+
+    // ============================================================================
+    // Cut Tests (WOS-PROG-011)
+    // ============================================================================
+
+    #[test]
+    fn test_cut_fields_basic() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"a\tb\tc\nd\te\tf\n".to_vec())
+            .unwrap();
+
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
+            .with_fields(vec![1, 3]);
+
+        cut_main_loop(&mut cut, &mut state);
+        assert!(cut.completed);
+        assert_eq!(cut.output, "a\tc\nd\tf\n");
+    }
+
+    #[test]
+    fn test_cut_fields_with_custom_delimiter() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"a,b,c,d\ne,f,g,h\n".to_vec())
+            .unwrap();
+
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
+            .with_fields(vec![2, 4])
+            .with_delimiter(',');
+
+        cut_main_loop(&mut cut, &mut state);
+        assert!(cut.completed);
+        assert_eq!(cut.output, "b,d\nf,h\n");
+    }
+
+    #[test]
+    fn test_cut_characters() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"abcdef\nghijkl\n".to_vec())
+            .unwrap();
+
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
+            .with_characters(vec![1, 3, 5]);
+
+        cut_main_loop(&mut cut, &mut state);
+        assert!(cut.completed);
+        assert_eq!(cut.output, "ace\ngik\n");
+    }
+
+    #[test]
+    fn test_cut_bytes() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"hello\nworld\n".to_vec())
+            .unwrap();
+
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
+            .with_bytes(vec![1, 2, 5]);
+
+        cut_main_loop(&mut cut, &mut state);
+        assert!(cut.completed);
+        assert_eq!(cut.output, "heo\nwod\n");
+    }
+
+    #[test]
+    fn test_cut_fields_out_of_range() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"a\tb\tc\n".to_vec())
+            .unwrap();
+
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
+            .with_fields(vec![1, 5, 10]);
+
+        cut_main_loop(&mut cut, &mut state);
+        assert!(cut.completed);
+        // Only field 1 exists, fields 5 and 10 are out of range
+        assert_eq!(cut.output, "a\n");
+    }
+
+    #[test]
+    fn test_cut_characters_partial() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"abc\n".to_vec())
+            .unwrap();
+
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
+            .with_characters(vec![2, 10]);
+
+        cut_main_loop(&mut cut, &mut state);
+        assert!(cut.completed);
+        // Only character 2 exists
+        assert_eq!(cut.output, "b\n");
+    }
+
+    #[test]
+    fn test_cut_empty_file() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"".to_vec())
+            .unwrap();
+
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
+            .with_fields(vec![1]);
+
+        cut_main_loop(&mut cut, &mut state);
+        assert!(cut.completed);
+        assert_eq!(cut.output, "");
+    }
+
+    #[test]
+    fn test_cut_missing_file() {
+        let mut state = KernelState::new();
+
+        let mut cut = Cut::new(1, Some(PathBuf::from("/missing.txt")))
+            .with_fields(vec![1]);
+
+        cut_main_loop(&mut cut, &mut state);
+        assert!(cut.error.is_some());
+        assert!(cut.error.as_ref().unwrap().contains("cannot read"));
     }
 }
