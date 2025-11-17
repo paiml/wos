@@ -1927,6 +1927,8 @@ impl WosWasm {
                 "ps" => self.cmd_ps(args.to_vec()),
                 "ls" => self.cmd_ls(args.to_vec()),
                 "cat" => self.cmd_cat(args.to_vec(), stdin),
+                "head" => self.cmd_head(args.to_vec(), stdin),
+                "tail" => self.cmd_tail(args.to_vec(), stdin),
                 "pwd" => self.cmd_pwd(),
                 "touch" => self.cmd_touch(args.to_vec()),
                 "mkdir" => self.cmd_mkdir(args.to_vec()),
@@ -1988,6 +1990,8 @@ impl WosWasm {
         output.push_str("  ps        - List processes\n");
         output.push_str("  ls        - List files\n");
         output.push_str("  cat       - Display file contents\n");
+        output.push_str("  head      - Display first lines of file\n");
+        output.push_str("  tail      - Display last lines of file\n");
         output.push_str("  pwd       - Print working directory\n");
         output.push_str("  touch     - Create file\n");
         output.push_str("  mkdir     - Create directory\n");
@@ -2188,6 +2192,130 @@ impl WosWasm {
         // Set exit code based on whether any errors occurred
         self.last_exit_code = if had_error { 1 } else { 0 };
         output
+    }
+
+    fn cmd_head(&mut self, args: Vec<String>, stdin: &str) -> String {
+        // Default: show first 10 lines
+        let mut num_lines = 10;
+        let mut file_args: Vec<String> = Vec::new();
+
+        // Parse arguments: head [-n NUM] [FILE]
+        let mut i = 0;
+        while i < args.len() {
+            if args[i] == "-n" && i + 1 < args.len() {
+                // Parse -n argument
+                if let Ok(n) = args[i + 1].parse::<usize>() {
+                    num_lines = n;
+                    i += 2;
+                } else {
+                    self.last_exit_code = 1;
+                    return format!("head: invalid number of lines: '{}'\n", args[i + 1]);
+                }
+            } else {
+                file_args.push(args[i].clone());
+                i += 1;
+            }
+        }
+
+        // If no file is provided, read from stdin
+        if file_args.is_empty() {
+            let lines: Vec<&str> = stdin.lines().take(num_lines).collect();
+            self.last_exit_code = 0;
+            if lines.is_empty() {
+                return String::new();
+            }
+            let mut output = lines.join("\n");
+            output.push('\n');
+            return output;
+        }
+
+        // Read from file
+        let path = std::path::PathBuf::from(&file_args[0]);
+        match self.state.vfs.read_file(&path) {
+            Ok(contents) => {
+                let text = String::from_utf8_lossy(&contents);
+                let lines: Vec<&str> = text.lines().take(num_lines).collect();
+                self.last_exit_code = 0;
+                if lines.is_empty() {
+                    return String::new();
+                }
+                let mut output = lines.join("\n");
+                output.push('\n');
+                output
+            }
+            Err(_) => {
+                self.last_exit_code = 1;
+                format!("head: {}: No such file or directory\n", file_args[0])
+            }
+        }
+    }
+
+    fn cmd_tail(&mut self, args: Vec<String>, stdin: &str) -> String {
+        // Default: show last 10 lines
+        let mut num_lines = 10;
+        let mut file_args: Vec<String> = Vec::new();
+
+        // Parse arguments: tail [-n NUM] [FILE]
+        let mut i = 0;
+        while i < args.len() {
+            if args[i] == "-n" && i + 1 < args.len() {
+                // Parse -n argument
+                if let Ok(n) = args[i + 1].parse::<usize>() {
+                    num_lines = n;
+                    i += 2;
+                } else {
+                    self.last_exit_code = 1;
+                    return format!("tail: invalid number of lines: '{}'\n", args[i + 1]);
+                }
+            } else {
+                file_args.push(args[i].clone());
+                i += 1;
+            }
+        }
+
+        // If no file is provided, read from stdin
+        if file_args.is_empty() {
+            let all_lines: Vec<&str> = stdin.lines().collect();
+            let start = if all_lines.len() > num_lines {
+                all_lines.len() - num_lines
+            } else {
+                0
+            };
+            let lines = &all_lines[start..];
+            self.last_exit_code = 0;
+            if lines.is_empty() {
+                return String::new();
+            }
+            let mut output = lines.join("\n");
+            output.push('\n');
+            return output;
+        }
+
+        // Read from file
+        let path = std::path::PathBuf::from(&file_args[0]);
+        match self.state.vfs.read_file(&path) {
+            Ok(contents) => {
+                let text = String::from_utf8_lossy(&contents);
+                let all_lines: Vec<&str> = text.lines().collect();
+                let start = if all_lines.len() > num_lines {
+                    all_lines.len() - num_lines
+                } else {
+                    0
+                };
+                let lines = &all_lines[start..];
+                self.last_exit_code = 0;
+                if lines.is_empty() {
+                    return String::new();
+                }
+                let mut output = lines.join("\n");
+                output.push('\n');
+                output
+            }
+            Err(_) => {
+                self.last_exit_code = 1;
+                format!("tail: {}: No such file or directory\n", file_args[0])
+            }
+        }
     }
 
     fn cmd_pwd(&self) -> String {
