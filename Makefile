@@ -132,6 +132,23 @@ wasm:
 	@echo "🔗 Generating JavaScript bindings..."
 	@which wasm-bindgen > /dev/null 2>&1 || (echo "❌ wasm-bindgen not found. Install with: cargo install wasm-bindgen-cli" && exit 1)
 	@wasm-bindgen $(WASM_TARGET) --out-dir dist/wos --target web
+	@echo "⚡ Optimizing WASM binary with wasm-opt..."
+	@if which wasm-opt > /dev/null 2>&1; then \
+		BEFORE=$$(stat -c%s dist/wos/wos_bg.wasm 2>/dev/null || stat -f%z dist/wos/wos_bg.wasm 2>/dev/null); \
+		wasm-opt -Oz --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int \
+			dist/wos/wos_bg.wasm -o dist/wos/wos_bg_optimized.wasm; \
+		mv dist/wos/wos_bg_optimized.wasm dist/wos/wos_bg.wasm; \
+		AFTER=$$(stat -c%s dist/wos/wos_bg.wasm 2>/dev/null || stat -f%z dist/wos/wos_bg.wasm 2>/dev/null); \
+		SAVED=$$((BEFORE - AFTER)); \
+		PERCENT=$$(awk "BEGIN {printf \"%.1f\", ($$SAVED/$$BEFORE)*100}"); \
+		echo "  ✓ Optimized: $$SAVED bytes saved ($$PERCENT%)"; \
+		GZIPPED=$$(gzip -c dist/wos/wos_bg.wasm | wc -c); \
+		GZIPPED_KB=$$((GZIPPED / 1024)); \
+		echo "  📦 Gzipped size: $${GZIPPED_KB} KB"; \
+	else \
+		echo "  ⚠️  wasm-opt not found - skipping optimization"; \
+		echo "  💡 Install binaryen for smaller WASM: apt-get install binaryen"; \
+	fi
 	@echo "✓ WASM build complete"
 	@echo "💡 Start development server: make serve (hot reload + WASM auto-compilation)"
 	@echo "💡 Open browser: http://localhost:8000/"
