@@ -919,6 +919,61 @@ fn sys_realpath(
     ))
 }
 
+/// Change file permissions (chmod syscall) - stub
+fn sys_chmod(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    _path: String,
+    _mode: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // TODO: Implement chmod functionality
+    Err(KernelError::NotImplemented)
+}
+
+/// Change file ownership (chown syscall) - stub
+fn sys_chown(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    _path: String,
+    _uid: Option<u32>,
+    _gid: Option<u32>,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // TODO: Implement chown functionality
+    Err(KernelError::NotImplemented)
+}
+
+/// Check file access permissions (access syscall) - stub
+fn sys_access(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    _path: String,
+    _mode: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // TODO: Implement access functionality
+    Err(KernelError::NotImplemented)
+}
+
+/// Create symbolic link (symlink syscall) - stub
+fn sys_symlink(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    _link_path: String,
+    _target: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // TODO: Implement symlink functionality
+    Err(KernelError::NotImplemented)
+}
+
+/// Read symbolic link target (readlink syscall) - stub
+fn sys_readlink(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    _path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // TODO: Implement readlink functionality
+    Err(KernelError::NotImplemented)
+}
+
 ///
 /// Pure functional dispatcher: takes kernel state and syscall, returns new state and output.
 /// Never panics - all errors are returned as Results.
@@ -955,6 +1010,13 @@ pub fn dispatch_syscall(
         SystemCall::Stat { path } => sys_stat(state, calling_pid, path),
         SystemCall::Lstat { path } => sys_lstat(state, calling_pid, path),
         SystemCall::Realpath { path } => sys_realpath(state, calling_pid, path),
+        SystemCall::Chmod { path, mode } => sys_chmod(state, calling_pid, path, mode),
+        SystemCall::Chown { path, uid, gid } => sys_chown(state, calling_pid, path, uid, gid),
+        SystemCall::Access { path, mode } => sys_access(state, calling_pid, path, mode),
+        SystemCall::Symlink { link_path, target } => {
+            sys_symlink(state, calling_pid, link_path, target)
+        }
+        SystemCall::Readlink { path } => sys_readlink(state, calling_pid, path),
     }
 }
 
