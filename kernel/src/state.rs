@@ -87,6 +87,8 @@ pub struct Process {
     pub priority: u8,
     /// Wait ticks for aging (prevents starvation)
     pub wait_ticks: u64,
+    /// Environment variables
+    pub env: im::HashMap<String, String>,
 }
 
 impl Process {
@@ -112,6 +114,7 @@ impl Process {
             signal_handlers: im::HashMap::new(),
             priority: 4, // Normal priority by default
             wait_ticks: 0,
+            env: im::HashMap::new(),
         }
     }
 

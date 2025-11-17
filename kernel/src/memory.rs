@@ -206,6 +206,10 @@ pub struct VirtualMemory {
     next_physical_page: PhysicalPage,
     /// Next virtual address for heap allocations
     next_heap_addr: VirtualAddress,
+    /// Path to currently loaded program (set by exec)
+    pub program_path: Option<String>,
+    /// Program arguments (set by exec)
+    pub program_args: Vec<String>,
 }
 
 impl VirtualMemory {
@@ -217,6 +221,8 @@ impl VirtualMemory {
             next_heap_addr: layout.heap_start,
             layout,
             next_physical_page: 0,
+            program_path: None,
+            program_args: Vec::new(),
         }
     }
 
@@ -228,6 +234,8 @@ impl VirtualMemory {
             next_heap_addr,
             layout,
             next_physical_page: 0,
+            program_path: None,
+            program_args: Vec::new(),
         }
     }
 
