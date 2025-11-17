@@ -7665,13 +7665,13 @@ mod coverage_red_tests {
     // MB9: 300 ultra-targeted micro-tests - final push to 95%
     #[test]
     fn mb9_001() {
-        let mut w = WosWasm::new();
+        let w = WosWasm::new();
         let _ = w.get_state();
     }
     #[test]
     fn mb9_002() {
         let mut w = WosWasm::new();
-        w.set_state("{}");
+        let _ = w.set_state("{}");
     }
     #[test]
     fn mb9_003() {

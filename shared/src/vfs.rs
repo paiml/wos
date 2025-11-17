@@ -2261,14 +2261,14 @@ mod tests {
 
     #[test]
     fn test_vfs_creation() {
-        let mut vfs = VirtualFileSystem::new();
+        let vfs = VirtualFileSystem::new();
         assert_eq!(vfs.cwd(), &PathBuf::from("/"));
         assert_eq!(vfs.file_count(), 0);
     }
 
     #[test]
     fn test_vfs_clone_cheap() {
-        let mut vfs = VirtualFileSystem::new();
+        let vfs = VirtualFileSystem::new();
         let _cloned = vfs.clone();
         // Clone should be O(1) due to persistent data structures
         assert_eq!(vfs, _cloned);
@@ -2544,7 +2544,7 @@ mod tests {
 
     #[test]
     fn test_list_directory_not_found() {
-        let mut vfs = VirtualFileSystem::new();
+        let vfs = VirtualFileSystem::new();
         let result = vfs.list_directory(&PathBuf::from("/nonexistent"));
         assert_eq!(result, Err(VfsError::NotFound));
     }
@@ -2644,7 +2644,7 @@ mod tests {
 
     #[test]
     fn test_root_directory_exists() {
-        let mut vfs = VirtualFileSystem::new();
+        let vfs = VirtualFileSystem::new();
         assert!(
             vfs.is_directory(&PathBuf::from("/")),
             "Root directory should always exist"
@@ -3791,7 +3791,7 @@ mod tests {
 
     #[test]
     fn test_stat_nonexistent_file() {
-        let mut vfs = VirtualFileSystem::new();
+        let vfs = VirtualFileSystem::new();
         let result = vfs.stat(&PathBuf::from("/nonexistent.txt"));
         assert_eq!(result, Err(VfsError::NotFound));
     }

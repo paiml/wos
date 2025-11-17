@@ -4786,7 +4786,7 @@ mod tests {
                 pid,
             );
             assert!(result.is_ok());
-            let (mut state, output) = result.unwrap();
+            let (state, output) = result.unwrap();
             let fd = match output {
                 SyscallOutput::FileDescriptor(fd) => fd,
                 _ => panic!("Expected FileDescriptor"),
