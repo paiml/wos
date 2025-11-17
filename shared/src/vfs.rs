@@ -1544,6 +1544,32 @@ impl VirtualFileSystem {
         }
     }
 
+    /// Check if file has read permission for current user
+    pub fn can_read(&self, path: &Path) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+
+        // Check read permission (mode_bit 4 = read)
+        if self.check_permission(inode, self.current_uid, self.current_gid, 4) {
+            Ok(())
+        } else {
+            Err(VfsError::PermissionDenied)
+        }
+    }
+
+    /// Check if file has write permission for current user
+    pub fn can_write(&self, path: &Path) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+
+        // Check write permission (mode_bit 2 = write)
+        if self.check_permission(inode, self.current_uid, self.current_gid, 2) {
+            Ok(())
+        } else {
+            Err(VfsError::PermissionDenied)
+        }
+    }
+
     /// Check if file has execute permission for current user
     pub fn can_execute(&self, path: &Path) -> Result<bool, VfsError> {
         let ino = self.resolve_path(path)?;
