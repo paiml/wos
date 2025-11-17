@@ -919,59 +919,190 @@ fn sys_realpath(
     ))
 }
 
-/// Change file permissions (chmod syscall) - stub
+/// Change file permissions (chmod syscall)
 fn sys_chmod(
-    state: KernelState,
+    mut state: KernelState,
     _calling_pid: ProcessId,
-    _path: String,
-    _mode: u32,
+    path: String,
+    mode: u32,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
-    // TODO: Implement chmod functionality
-    Err(KernelError::NotImplemented)
+    let path = Path::new(&path);
+
+    match state.vfs.chmod(path, mode) {
+        Ok(_) => Ok((state, SyscallOutput::Success)),
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to chmod: {:?}",
+            e
+        ))),
+    }
 }
 
-/// Change file ownership (chown syscall) - stub
+/// Change file ownership (chown syscall)
 fn sys_chown(
-    state: KernelState,
+    mut state: KernelState,
     _calling_pid: ProcessId,
-    _path: String,
-    _uid: Option<u32>,
-    _gid: Option<u32>,
+    path: String,
+    uid: Option<u32>,
+    gid: Option<u32>,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
-    // TODO: Implement chown functionality
-    Err(KernelError::NotImplemented)
+    let path = Path::new(&path);
+
+    match state.vfs.chown(path, uid, gid) {
+        Ok(_) => Ok((state, SyscallOutput::Success)),
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to chown: {:?}",
+            e
+        ))),
+    }
 }
 
-/// Check file access permissions (access syscall) - stub
+/// Check file access permissions (access syscall)
 fn sys_access(
     state: KernelState,
     _calling_pid: ProcessId,
-    _path: String,
-    _mode: u32,
+    path: String,
+    mode: u32,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
-    // TODO: Implement access functionality
-    Err(KernelError::NotImplemented)
+    let path = Path::new(&path);
+
+    // F_OK (0) = file exists, R_OK (4) = readable, W_OK (2) = writable, X_OK (1) = executable
+    const F_OK: u32 = 0;
+    const R_OK: u32 = 4;
+    const W_OK: u32 = 2;
+    const X_OK: u32 = 1;
+
+    // Check if file exists (required for all modes)
+    match state.vfs.stat(path) {
+        Ok(_) => {
+            // File exists - if mode is F_OK, we're done
+            if mode == F_OK {
+                return Ok((state, SyscallOutput::Success));
+            }
+
+            // Check read permission
+            if (mode & R_OK) != 0 {
+                if let Err(e) = state.vfs.can_read(path) {
+                    return Err(match e {
+                        wos_shared::vfs::VfsError::PermissionDenied => {
+                            KernelError::PermissionDenied
+                        }
+                        wos_shared::vfs::VfsError::NotFound => {
+                            KernelError::FileNotFound(path.display().to_string())
+                        }
+                        e => {
+                            KernelError::InvalidParameters(format!("Access check failed: {:?}", e))
+                        }
+                    });
+                }
+            }
+
+            // Check write permission
+            if (mode & W_OK) != 0 {
+                if let Err(e) = state.vfs.can_write(path) {
+                    return Err(match e {
+                        wos_shared::vfs::VfsError::PermissionDenied => {
+                            KernelError::PermissionDenied
+                        }
+                        wos_shared::vfs::VfsError::NotFound => {
+                            KernelError::FileNotFound(path.display().to_string())
+                        }
+                        e => {
+                            KernelError::InvalidParameters(format!("Access check failed: {:?}", e))
+                        }
+                    });
+                }
+            }
+
+            // Check execute permission
+            if (mode & X_OK) != 0 {
+                match state.vfs.can_execute(path) {
+                    Ok(true) => {}
+                    Ok(false) => return Err(KernelError::PermissionDenied),
+                    Err(wos_shared::vfs::VfsError::NotFound) => {
+                        return Err(KernelError::FileNotFound(path.display().to_string()));
+                    }
+                    Err(e) => {
+                        return Err(KernelError::InvalidParameters(format!(
+                            "Access check failed: {:?}",
+                            e
+                        )));
+                    }
+                }
+            }
+
+            Ok((state, SyscallOutput::Success))
+        }
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Access check failed: {:?}",
+            e
+        ))),
+    }
 }
 
-/// Create symbolic link (symlink syscall) - stub
+/// Create symbolic link (symlink syscall)
 fn sys_symlink(
-    state: KernelState,
+    mut state: KernelState,
     _calling_pid: ProcessId,
-    _link_path: String,
-    _target: String,
+    link_path: String,
+    target: String,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
-    // TODO: Implement symlink functionality
-    Err(KernelError::NotImplemented)
+    let link_path = PathBuf::from(link_path);
+    let target = PathBuf::from(target);
+
+    match state.vfs.create_symlink(link_path.clone(), target) {
+        Ok(_) => Ok((state, SyscallOutput::Success)),
+        Err(wos_shared::vfs::VfsError::AlreadyExists) => Err(KernelError::FileAlreadyExists(
+            link_path.display().to_string(),
+        )),
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(link_path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to create symlink: {:?}",
+            e
+        ))),
+    }
 }
 
-/// Read symbolic link target (readlink syscall) - stub
+/// Read symbolic link target (readlink syscall)
 fn sys_readlink(
     state: KernelState,
     _calling_pid: ProcessId,
-    _path: String,
+    path: String,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
-    // TODO: Implement readlink functionality
-    Err(KernelError::NotImplemented)
+    let path = Path::new(&path);
+
+    match state.vfs.readlink(path) {
+        Ok(target) => {
+            let target_str = target.to_str().ok_or(KernelError::InvalidParameters(
+                "Symlink target contains invalid UTF-8".to_string(),
+            ))?;
+            Ok((state, SyscallOutput::Data(target_str.as_bytes().to_vec())))
+        }
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::InvalidPath) => Err(KernelError::InvalidParameters(
+            "Not a symbolic link".to_string(),
+        )),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to read symlink: {:?}",
+            e
+        ))),
+    }
 }
 
 ///
