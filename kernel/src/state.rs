@@ -83,6 +83,10 @@ pub struct Process {
     pub blocked_signals: crate::signals::SignalSet,
     /// Signal handlers (signal number -> action)
     pub signal_handlers: im::HashMap<u32, crate::signals::SignalAction>,
+    /// Process priority (0 = highest, 7 = lowest, 4 = normal)
+    pub priority: u8,
+    /// Wait ticks for aging (prevents starvation)
+    pub wait_ticks: u64,
 }
 
 impl Process {
@@ -106,6 +110,8 @@ impl Process {
             pending_signals: crate::signals::SignalSet::new(),
             blocked_signals: crate::signals::SignalSet::new(),
             signal_handlers: im::HashMap::new(),
+            priority: 4, // Normal priority by default
+            wait_ticks: 0,
         }
     }
 
