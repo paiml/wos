@@ -34,6 +34,26 @@ pub enum ControlFlow {
         /// Commands to execute in loop body
         body: Vec<String>,
     },
+    /// For loop over list
+    For {
+        /// Variable name
+        var: String,
+        /// List items to iterate over
+        items: Vec<String>,
+        /// Commands to execute in loop body
+        body: Vec<String>,
+    },
+    /// C-style for loop
+    CFor {
+        /// Initialization expression
+        init: String,
+        /// Condition expression
+        condition: String,
+        /// Increment expression
+        increment: String,
+        /// Commands to execute in loop body
+        body: Vec<String>,
+    },
 }
 
 /// Parse if/then/elif/else/fi statement
@@ -192,13 +212,147 @@ pub fn parse_until_statement(lines: &[&str]) -> Result<ControlFlow, String> {
     Ok(ControlFlow::Until { condition, body })
 }
 
+/// Parse for/in/do/done statement
+///
+/// Syntax:
+/// ```bash
+/// for var in item1 item2 item3; do
+///     commands
+/// done
+/// ```
+pub fn parse_for_statement(lines: &[&str]) -> Result<ControlFlow, String> {
+    if lines.is_empty() {
+        return Err("Empty for statement".to_string());
+    }
+
+    let first_line = lines[0].trim();
+
+    // Check if it's C-style for loop: for ((init; condition; increment))
+    if first_line.contains("((") {
+        return parse_cfor_statement(lines);
+    }
+
+    if !first_line.starts_with("for ") {
+        return Err(format!("Expected 'for' but got: {}", first_line));
+    }
+
+    // Extract "var in items" part
+    // Example: "for i in 1 2 3; do" or "for file in *.txt; do"
+    let after_for = first_line
+        .strip_prefix("for ")
+        .map(|s| s.trim())
+        .ok_or("Missing variable after 'for'")?;
+
+    // Split on "in" keyword
+    let parts: Vec<&str> = after_for.splitn(2, " in ").collect();
+    if parts.len() != 2 {
+        return Err("Missing 'in' keyword in for loop".to_string());
+    }
+
+    let var = parts[0].trim().to_string();
+
+    // Extract items list (remove trailing "do" or ";")
+    let items_str = parts[1].trim();
+
+    // Remove "do" keyword if present
+    let items_str = if let Some(idx) = items_str.rfind("do") {
+        items_str[..idx].trim()
+    } else {
+        items_str
+    };
+
+    // Split on whitespace and clean each item (remove trailing semicolons)
+    let items: Vec<String> = items_str
+        .split_whitespace()
+        .map(|s| s.trim_end_matches(';').to_string())
+        .collect();
+
+    // Parse loop body
+    let mut body = Vec::new();
+    let mut i = 1;
+
+    while i < lines.len() {
+        let line = lines[i].trim();
+        if line == "done" {
+            break;
+        } else if !line.is_empty() {
+            body.push(line.to_string());
+        }
+        i += 1;
+    }
+
+    if i >= lines.len() {
+        return Err("Missing 'done' to close for loop".to_string());
+    }
+
+    Ok(ControlFlow::For { var, items, body })
+}
+
+/// Parse C-style for loop
+///
+/// Syntax:
+/// ```bash
+/// for ((i=0; i<10; i++)); do
+///     commands
+/// done
+/// ```
+pub fn parse_cfor_statement(lines: &[&str]) -> Result<ControlFlow, String> {
+    if lines.is_empty() {
+        return Err("Empty for statement".to_string());
+    }
+
+    let first_line = lines[0].trim();
+
+    // Extract the part between (( and ))
+    let start = first_line.find("((").ok_or("Missing '((' in C-style for")?;
+    let end = first_line.find("))").ok_or("Missing '))' in C-style for")?;
+
+    if end <= start {
+        return Err("Invalid C-style for syntax".to_string());
+    }
+
+    let expr = &first_line[start + 2..end];
+
+    // Split into init; condition; increment
+    let parts: Vec<&str> = expr.split(';').map(|s| s.trim()).collect();
+    if parts.len() != 3 {
+        return Err("C-style for must have three parts: init; condition; increment".to_string());
+    }
+
+    let init = parts[0].to_string();
+    let condition = parts[1].to_string();
+    let increment = parts[2].to_string();
+
+    // Parse loop body
+    let mut body = Vec::new();
+    let mut i = 1;
+
+    while i < lines.len() {
+        let line = lines[i].trim();
+        if line == "done" {
+            break;
+        } else if !line.is_empty() {
+            body.push(line.to_string());
+        }
+        i += 1;
+    }
+
+    if i >= lines.len() {
+        return Err("Missing 'done' to close for loop".to_string());
+    }
+
+    Ok(ControlFlow::CFor {
+        init,
+        condition,
+        increment,
+        body,
+    })
+}
+
 /// Helper: Extract condition from control flow keyword
 fn extract_condition(line: &str, keyword: &str) -> Result<String, String> {
     // Remove keyword prefix
-    let after_keyword = line
-        .strip_prefix(keyword)
-        .map(|s| s.trim())
-        .unwrap_or("");
+    let after_keyword = line.strip_prefix(keyword).map(|s| s.trim()).unwrap_or("");
 
     let mut condition = after_keyword.to_string();
 
@@ -383,5 +537,105 @@ mod tests {
         let deserialized: ControlFlow =
             serde_json::from_str(&json).expect("deserialization should succeed");
         assert_eq!(if_stmt, deserialized);
+    }
+
+    // ========================================================================
+    // WOS-SHELL-003: For Loop Tests
+    // ========================================================================
+
+    #[test]
+    fn test_for_in_do_done() {
+        let lines = vec!["for i in 1 2 3; do", "echo $i", "done"];
+
+        let result = parse_for_statement(&lines);
+        assert!(result.is_ok());
+
+        if let ControlFlow::For { var, items, body } = result.unwrap() {
+            assert_eq!(var, "i");
+            assert_eq!(items, vec!["1", "2", "3"]);
+            assert_eq!(body, vec!["echo $i"]);
+        } else {
+            panic!("Expected For variant");
+        }
+    }
+
+    #[test]
+    fn test_for_multiple_items() {
+        let lines = vec!["for file in a.txt b.txt c.txt; do", "cat $file", "done"];
+
+        let result = parse_for_statement(&lines);
+        assert!(result.is_ok());
+
+        if let ControlFlow::For { var, items, body } = result.unwrap() {
+            assert_eq!(var, "file");
+            assert_eq!(items, vec!["a.txt", "b.txt", "c.txt"]);
+            assert_eq!(body, vec!["cat $file"]);
+        } else {
+            panic!("Expected For variant");
+        }
+    }
+
+    #[test]
+    fn test_for_missing_in_error() {
+        let lines = vec!["for i 1 2 3; do", "echo $i", "done"];
+
+        let result = parse_for_statement(&lines);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Missing 'in'"));
+    }
+
+    #[test]
+    fn test_for_missing_done_error() {
+        let lines = vec!["for i in 1 2 3; do", "echo $i"];
+
+        let result = parse_for_statement(&lines);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Missing 'done'"));
+    }
+
+    #[test]
+    fn test_cfor_loop() {
+        let lines = vec!["for ((i=0; i<10; i++)); do", "echo $i", "done"];
+
+        let result = parse_for_statement(&lines);
+        assert!(result.is_ok());
+
+        if let ControlFlow::CFor {
+            init,
+            condition,
+            increment,
+            body,
+        } = result.unwrap()
+        {
+            assert_eq!(init, "i=0");
+            assert_eq!(condition, "i<10");
+            assert_eq!(increment, "i++");
+            assert_eq!(body, vec!["echo $i"]);
+        } else {
+            panic!("Expected CFor variant");
+        }
+    }
+
+    #[test]
+    fn test_cfor_missing_parts_error() {
+        let lines = vec!["for ((i=0; i<10)); do", "echo $i", "done"];
+
+        let result = parse_for_statement(&lines);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must have three parts"));
+    }
+
+    #[test]
+    fn test_for_serialization() {
+        let for_stmt = ControlFlow::For {
+            var: "i".to_string(),
+            items: vec!["1".to_string(), "2".to_string(), "3".to_string()],
+            body: vec!["echo $i".to_string()],
+        };
+
+        let json = serde_json::to_string(&for_stmt).expect("serialization should succeed");
+        let deserialized: ControlFlow =
+            serde_json::from_str(&json).expect("deserialization should succeed");
+        assert_eq!(for_stmt, deserialized);
     }
 }

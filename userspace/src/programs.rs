@@ -5,6 +5,11 @@
 //! - ls: list files in a directory
 //! - ps: list running processes
 //! - vim: modal text editor
+//! - cat: concatenate and display files
+//! - grep: search for patterns in text
+//! - wc: count lines, words, and bytes
+//! - head: display first lines of a file
+//! - tail: display last lines of a file
 
 use crate::vim::state::VisualMode;
 use crate::vim::{VimCommand, VimMode, VimState};

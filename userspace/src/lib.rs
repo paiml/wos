@@ -11,12 +11,17 @@
 
 pub mod init;
 pub mod programs;
+pub mod programs_extra;
 pub mod shell;
 /// Vim modal text editor implementation
 pub mod vim;
 
 pub use init::{init_main_loop, InitProcess};
 pub use programs::{echo_main_loop, ls_main_loop, ps_main_loop, vim_main_loop, Echo, Ls, Ps, Vim};
+pub use programs_extra::{
+    cat_main_loop, grep_main_loop, head_main_loop, tail_main_loop, wc_main_loop, Cat, Grep, Head,
+    Tail, Wc,
+};
 pub use shell::{shell_main_loop, Command, Shell};
 pub use vim::{VimBuffer, VimCommand, VimError, VimMode, VimState};
 
