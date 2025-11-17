@@ -9,6 +9,7 @@
 //! - cp: copy files and directories (WOS-PROG-017)
 //! - mv: move or rename files (WOS-PROG-018)
 //! - mkdir: create directories (WOS-PROG-020)
+//! - rm: remove files and directories (WOS-PROG-019)
 
 use std::path::PathBuf;
 use wos_kernel::{KernelState, ProcessId, SystemCall};
@@ -666,6 +667,144 @@ pub fn mkdir_main_loop(mkdir: &mut Mkdir, state: &mut KernelState) -> Option<Sys
     Some(SystemCall::Exit(exit_code))
 }
 
+/// Rm program - remove files and directories
+/// WOS-PROG-019: rm command
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rm {
+    /// Process ID
+    pub pid: ProcessId,
+    /// Paths to remove
+    pub paths: Vec<PathBuf>,
+    /// Recursive removal (-r flag)
+    pub recursive: bool,
+    /// Force removal, ignore errors (-f flag)
+    pub force: bool,
+    /// Interactive confirmation (-i flag)
+    pub interactive: bool,
+    /// Operation completed
+    pub completed: bool,
+    /// Error message if any
+    pub error: Option<String>,
+}
+
+impl Rm {
+    /// Create a new rm program
+    pub fn new(
+        pid: ProcessId,
+        paths: Vec<PathBuf>,
+        recursive: bool,
+        force: bool,
+        interactive: bool,
+    ) -> Self {
+        Self {
+            pid,
+            paths,
+            recursive,
+            force,
+            interactive,
+            completed: false,
+            error: None,
+        }
+    }
+
+    /// Remove files and directories
+    pub fn remove(&mut self, state: &mut KernelState) {
+        let paths = self.paths.clone();
+        for path in &paths {
+            if !state.vfs.exists(path) {
+                if !self.force {
+                    self.error = Some(format!(
+                        "cannot remove '{}': No such file or directory",
+                        path.display()
+                    ));
+                    return;
+                }
+                continue;
+            }
+
+            if state.vfs.is_directory(path) {
+                if !self.recursive {
+                    self.error = Some(format!(
+                        "cannot remove '{}': Is a directory",
+                        path.display()
+                    ));
+                    return;
+                }
+
+                // Remove directory recursively
+                if let Err(e) = self.remove_recursive(state, path) {
+                    if !self.force {
+                        self.error = Some(e);
+                        return;
+                    }
+                }
+            } else {
+                // Remove file
+                if let Err(e) = state.vfs.delete_file(path) {
+                    if !self.force {
+                        self.error = Some(format!("cannot remove '{}': {:?}", path.display(), e));
+                        return;
+                    }
+                }
+            }
+        }
+
+        self.completed = true;
+    }
+
+    /// Remove directory recursively
+    fn remove_recursive(&mut self, state: &mut KernelState, path: &PathBuf) -> Result<(), String> {
+        // List directory contents
+        let entries = state
+            .vfs
+            .list_directory(path)
+            .map_err(|e| format!("cannot list directory '{}': {:?}", path.display(), e))?;
+
+        // Remove all entries first
+        for entry in &entries {
+            let entry_path = path.join(&entry.name);
+
+            if entry.is_directory() {
+                // Recursively remove subdirectory
+                self.remove_recursive(state, &entry_path)?;
+            } else {
+                // Remove file
+                state
+                    .vfs
+                    .delete_file(&entry_path)
+                    .map_err(|e| format!("cannot remove '{}': {:?}", entry_path.display(), e))?;
+            }
+        }
+
+        // Now remove the empty directory
+        state
+            .vfs
+            .remove_directory(path)
+            .map_err(|e| format!("cannot remove directory '{}': {:?}", path.display(), e))?;
+
+        Ok(())
+    }
+}
+
+/// Rm main loop - removes files and directories
+pub fn rm_main_loop(rm: &mut Rm, state: &mut KernelState) -> Option<SystemCall> {
+    if !rm.completed && rm.error.is_none() {
+        // First iteration: remove files/directories
+        rm.remove(state);
+
+        if let Some(ref error) = rm.error {
+            return Some(SystemCall::Write {
+                fd: 2, // stderr
+                data: format!("rm: {}\n", error).as_bytes().to_vec(),
+            });
+        }
+    }
+
+    // Done - exit with appropriate code
+    let exit_code = if rm.error.is_some() { 1 } else { 0 };
+    Some(SystemCall::Exit(exit_code))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -927,5 +1066,160 @@ mod tests {
         assert!(!mkdir.completed);
         assert!(mkdir.error.is_some());
         assert!(mkdir.error.as_ref().unwrap().contains("not a directory"));
+    }
+
+    // ============================================================================
+    // Rm Tests (WOS-PROG-019)
+    // ============================================================================
+
+    #[test]
+    fn test_rm_basic_file() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let mut rm = Rm::new(1, vec![PathBuf::from("/file.txt")], false, false, false);
+
+        let syscall = rm_main_loop(&mut rm, &mut state);
+        assert!(rm.completed);
+        assert!(rm.error.is_none());
+        assert!(matches!(syscall, Some(SystemCall::Exit(0))));
+
+        // Verify file was removed
+        assert!(!state.vfs.exists(&PathBuf::from("/file.txt")));
+    }
+
+    #[test]
+    fn test_rm_nonexistent_file() {
+        let mut state = KernelState::new();
+
+        let mut rm = Rm::new(
+            1,
+            vec![PathBuf::from("/nonexistent.txt")],
+            false,
+            false,
+            false,
+        );
+
+        let syscall = rm_main_loop(&mut rm, &mut state);
+        assert!(!rm.completed);
+        assert!(rm.error.is_some());
+        assert!(rm
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("No such file or directory"));
+        assert!(matches!(syscall, Some(SystemCall::Write { fd: 2, .. })));
+    }
+
+    #[test]
+    fn test_rm_directory_without_recursive() {
+        let mut state = KernelState::new();
+        state.vfs.create_directory(PathBuf::from("/dir")).unwrap();
+
+        let mut rm = Rm::new(1, vec![PathBuf::from("/dir")], false, false, false);
+
+        let syscall = rm_main_loop(&mut rm, &mut state);
+        assert!(!rm.completed);
+        assert!(rm.error.is_some());
+        assert!(rm.error.as_ref().unwrap().contains("Is a directory"));
+        assert!(matches!(syscall, Some(SystemCall::Write { fd: 2, .. })));
+    }
+
+    #[test]
+    fn test_rm_directory_recursive() {
+        let mut state = KernelState::new();
+        state.vfs.create_directory(PathBuf::from("/dir")).unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/dir/file.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let mut rm = Rm::new(
+            1,
+            vec![PathBuf::from("/dir")],
+            true, // recursive
+            false,
+            false,
+        );
+
+        rm_main_loop(&mut rm, &mut state);
+        assert!(rm.completed);
+        assert!(rm.error.is_none());
+
+        // Verify directory and contents removed
+        assert!(!state.vfs.exists(&PathBuf::from("/dir")));
+        assert!(!state.vfs.exists(&PathBuf::from("/dir/file.txt")));
+    }
+
+    #[test]
+    fn test_rm_force_nonexistent() {
+        let mut state = KernelState::new();
+
+        let mut rm = Rm::new(
+            1,
+            vec![PathBuf::from("/nonexistent.txt")],
+            false,
+            true, // force
+            false,
+        );
+
+        let syscall = rm_main_loop(&mut rm, &mut state);
+        assert!(rm.completed);
+        assert!(rm.error.is_none());
+        assert!(matches!(syscall, Some(SystemCall::Exit(0))));
+    }
+
+    #[test]
+    fn test_rm_multiple_files() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), b"hello".to_vec())
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file2.txt"), b"world".to_vec())
+            .unwrap();
+
+        let mut rm = Rm::new(
+            1,
+            vec![PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt")],
+            false,
+            false,
+            false,
+        );
+
+        rm_main_loop(&mut rm, &mut state);
+        assert!(rm.completed);
+        assert!(rm.error.is_none());
+
+        // Verify both files removed
+        assert!(!state.vfs.exists(&PathBuf::from("/file1.txt")));
+        assert!(!state.vfs.exists(&PathBuf::from("/file2.txt")));
+    }
+
+    #[test]
+    fn test_rm_nested_directories() {
+        let mut state = KernelState::new();
+        state.vfs.create_directory(PathBuf::from("/a")).unwrap();
+        state.vfs.create_directory(PathBuf::from("/a/b")).unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/a/b/file.txt"), b"test".to_vec())
+            .unwrap();
+
+        let mut rm = Rm::new(1, vec![PathBuf::from("/a")], true, false, false);
+
+        rm_main_loop(&mut rm, &mut state);
+        assert!(rm.completed);
+        assert!(rm.error.is_none());
+
+        // Verify entire tree removed
+        assert!(!state.vfs.exists(&PathBuf::from("/a")));
+        assert!(!state.vfs.exists(&PathBuf::from("/a/b")));
+        assert!(!state.vfs.exists(&PathBuf::from("/a/b/file.txt")));
     }
 }
