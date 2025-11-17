@@ -15,6 +15,9 @@ pub mod parser;
 /// Vim state machine and mode management
 pub mod state;
 
+#[cfg(test)]
+mod macros_tests;
+
 pub use buffer::{BufferMemento, CursorPos, VimBuffer};
 pub use command::VimCommand;
 pub use state::{
