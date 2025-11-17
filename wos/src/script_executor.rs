@@ -2045,7 +2045,8 @@ mod coverage_red_tests {
         // While loop might not be fully implemented, so check for error or success
         if result.is_ok() {
             let exec_result = result.unwrap();
-            assert!(exec_result.output.len() >= 0);
+            // Output length is always valid (usize is unsigned)
+            let _ = exec_result.output.len();
         }
         // Test passes if it doesn't panic
     }
