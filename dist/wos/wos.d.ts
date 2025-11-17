@@ -5,6 +5,16 @@
  */
 export function wos_version(): string;
 /**
+ * Get the default UX layout configuration as JSON string
+ */
+export function getDefaultConfig(): string;
+/**
+ * Validate a UX layout configuration YAML string
+ *
+ * Returns Ok(()) if valid, Err(message) if invalid
+ */
+export function validateConfig(yaml: string): void;
+/**
  * Load UX layout configuration from YAML string
  *
  * Returns the config as JSON string on success, or error message on failure
@@ -18,31 +28,15 @@ export function loadConfigFromYaml(yaml: string): string;
  */
 export function loadConfigFromYamlWithFallback(yaml: string): string;
 /**
- * Get the default UX layout configuration as JSON string
- */
-export function getDefaultConfig(): string;
-/**
- * Validate a UX layout configuration YAML string
- *
- * Returns Ok(()) if valid, Err(message) if invalid
- */
-export function validateConfig(yaml: string): void;
-/**
  * WASM-bindgen wrapper for WOS kernel
  */
 export class WosWasm {
   free(): void;
   [Symbol.dispose](): void;
   /**
-   * Create a new WOS instance
+   * Get number of processes
    */
-  constructor();
-  /**
-   * Execute a syscall and return the output as JSON
-   *
-   * Takes a syscall as JSON string, executes it, and returns the output as JSON
-   */
-  executeSyscall(syscall_json: string, calling_pid: number): string;
+  processCount(): number;
   /**
    * Execute a command string (shell-like interface)
    *
@@ -52,51 +46,21 @@ export class WosWasm {
    */
   executeCommand(command: string): string;
   /**
-   * Get current kernel state as JSON
+   * Execute a syscall and return the output as JSON
+   *
+   * Takes a syscall as JSON string, executes it, and returns the output as JSON
    */
-  getState(): string;
-  /**
-   * Set kernel state from JSON
-   */
-  setState(state_json: string): void;
-  /**
-   * Get number of processes
-   */
-  processCount(): number;
-  /**
-   * Reset to initial state
-   */
-  reset(): void;
-  /**
-   * Get current working directory
-   */
-  getCurrentWorkingDirectory(): string;
+  executeSyscall(syscall_json: string, calling_pid: number): string;
   /**
    * Get current user
    */
   getCurrentUser(): string;
   /**
-   * Get quality metrics as JSON
-   */
-  getQualityMetrics(): string;
-  /**
-   * Export quality report as HTML
-   */
-  exportQualityHtml(): string;
-  /**
-   * Export quality report as Markdown
-   */
-  exportQualityMarkdown(): string;
-  /**
-   * Export quality report as SARIF
-   */
-  exportQualitySarif(): string;
-  /**
-   * WOS-302: Get kernel history as JSON for time-travel debugger
+   * WOS-302: Jump to specific position in kernel history
    *
-   * Returns array of SystemCallTrace entries with timestamps
+   * Restores kernel state to the specified history position
    */
-  getKernelHistory(): string;
+  jumpToPosition(position: number): void;
   /**
    * WOS-302: Get current kernel state as JSON for state inspector
    *
@@ -104,39 +68,75 @@ export class WosWasm {
    */
   getCurrentState(): string;
   /**
-   * WOS-302: Jump to specific position in kernel history
+   * WOS-302: Get kernel history as JSON for time-travel debugger
    *
-   * Restores kernel state to the specified history position
+   * Returns array of SystemCallTrace entries with timestamps
    */
-  jumpToPosition(position: number): void;
+  getKernelHistory(): string;
+  /**
+   * Export quality report as HTML
+   */
+  exportQualityHtml(): string;
+  /**
+   * Get quality metrics as JSON
+   */
+  getQualityMetrics(): string;
+  /**
+   * Export quality report as SARIF
+   */
+  exportQualitySarif(): string;
+  /**
+   * Export quality report as Markdown
+   */
+  exportQualityMarkdown(): string;
+  /**
+   * Get current working directory
+   */
+  getCurrentWorkingDirectory(): string;
+  /**
+   * Create a new WOS instance
+   */
+  constructor();
+  /**
+   * Reset to initial state
+   */
+  reset(): void;
+  /**
+   * Get current kernel state as JSON
+   */
+  getState(): string;
+  /**
+   * Set kernel state from JSON
+   */
+  setState(state_json: string): void;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly wos_version: (a: number) => void;
+  readonly __wbg_woswasm_free: (a: number, b: number) => void;
+  readonly getDefaultConfig: (a: number) => void;
   readonly loadConfigFromYaml: (a: number, b: number, c: number) => void;
   readonly loadConfigFromYamlWithFallback: (a: number, b: number, c: number) => void;
-  readonly getDefaultConfig: (a: number) => void;
   readonly validateConfig: (a: number, b: number, c: number) => void;
-  readonly __wbg_woswasm_free: (a: number, b: number) => void;
-  readonly woswasm_new: () => number;
-  readonly woswasm_executeSyscall: (a: number, b: number, c: number, d: number, e: number) => void;
+  readonly wos_version: (a: number) => void;
   readonly woswasm_executeCommand: (a: number, b: number, c: number, d: number) => void;
-  readonly woswasm_getState: (a: number, b: number) => void;
-  readonly woswasm_setState: (a: number, b: number, c: number, d: number) => void;
-  readonly woswasm_processCount: (a: number) => number;
-  readonly woswasm_reset: (a: number) => void;
-  readonly woswasm_getCurrentWorkingDirectory: (a: number, b: number) => void;
-  readonly woswasm_getCurrentUser: (a: number, b: number) => void;
-  readonly woswasm_getQualityMetrics: (a: number, b: number) => void;
+  readonly woswasm_executeSyscall: (a: number, b: number, c: number, d: number, e: number) => void;
   readonly woswasm_exportQualityHtml: (a: number, b: number) => void;
   readonly woswasm_exportQualityMarkdown: (a: number, b: number) => void;
   readonly woswasm_exportQualitySarif: (a: number, b: number) => void;
-  readonly woswasm_getKernelHistory: (a: number, b: number) => void;
   readonly woswasm_getCurrentState: (a: number, b: number) => void;
+  readonly woswasm_getCurrentUser: (a: number, b: number) => void;
+  readonly woswasm_getCurrentWorkingDirectory: (a: number, b: number) => void;
+  readonly woswasm_getKernelHistory: (a: number, b: number) => void;
+  readonly woswasm_getQualityMetrics: (a: number, b: number) => void;
+  readonly woswasm_getState: (a: number, b: number) => void;
   readonly woswasm_jumpToPosition: (a: number, b: number, c: number) => void;
+  readonly woswasm_new: () => number;
+  readonly woswasm_processCount: (a: number) => number;
+  readonly woswasm_reset: (a: number) => void;
+  readonly woswasm_setState: (a: number, b: number, c: number, d: number) => void;
   readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
   readonly __wbindgen_export_0: (a: number, b: number, c: number) => void;
   readonly __wbindgen_export_1: (a: number, b: number) => number;
