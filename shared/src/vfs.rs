@@ -1478,6 +1478,35 @@ impl VirtualFileSystem {
         Ok(inode.permissions.gid)
     }
 
+    /// Check file access permissions
+    /// mode bits: F_OK=0 (file exists), R_OK=4 (readable), W_OK=2 (writable), X_OK=1 (executable)
+    pub fn access(&self, path: &Path, mode: u32) -> Result<(), VfsError> {
+        let ino = self.resolve_path(path)?;
+        let inode = self.inodes.get(&ino).ok_or(VfsError::NotFound)?;
+
+        // F_OK (0): Just check if file exists - already done by resolve_path
+        if mode == 0 {
+            return Ok(());
+        }
+
+        // Check read permission (R_OK = 4)
+        if (mode & 4) != 0 && !self.check_permission(inode, self.current_uid, self.current_gid, 4) {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        // Check write permission (W_OK = 2)
+        if (mode & 2) != 0 && !self.check_permission(inode, self.current_uid, self.current_gid, 2) {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        // Check execute permission (X_OK = 1)
+        if (mode & 1) != 0 && !self.check_permission(inode, self.current_uid, self.current_gid, 1) {
+            return Err(VfsError::PermissionDenied);
+        }
+
+        Ok(())
+    }
+
     /// Read file as specific user (permission check)
     pub fn read_file_as(&mut self, path: &Path, uid: u32, gid: u32) -> Result<Vec<u8>, VfsError> {
         let ino = self.resolve_path(path)?;
