@@ -15,7 +15,7 @@
 //! - sort: sort lines of text (WOS-PROG-009)
 //! - uniq: remove duplicate lines (WOS-PROG-010)
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use wos_kernel::{KernelState, ProcessId, SystemCall};
 
 // ============================================================================
@@ -497,10 +497,7 @@ impl Mv {
         };
 
         // Get permissions to preserve them
-        let perms = match state.vfs.get_permissions(&self.src) {
-            Ok(p) => Some(p),
-            Err(_) => None,
-        };
+        let perms = state.vfs.get_permissions(&self.src).ok();
 
         // Write to destination
         if let Err(e) = state.vfs.create_file(self.dst.clone(), content) {
@@ -757,7 +754,8 @@ impl Rm {
     }
 
     /// Remove directory recursively
-    fn remove_recursive(&mut self, state: &mut KernelState, path: &PathBuf) -> Result<(), String> {
+    #[allow(clippy::only_used_in_recursion)]
+    fn remove_recursive(&mut self, state: &mut KernelState, path: &Path) -> Result<(), String> {
         // List directory contents
         let entries = state
             .vfs
@@ -871,7 +869,7 @@ impl Chmod {
     }
 
     /// Recursively change permissions for directory and contents
-    fn chmod_recursive(&mut self, state: &mut KernelState, path: &PathBuf) -> Result<(), String> {
+    fn chmod_recursive(&mut self, state: &mut KernelState, path: &Path) -> Result<(), String> {
         // Change permissions for the directory itself
         state
             .vfs
@@ -996,10 +994,10 @@ impl Find {
     }
 
     /// Recursively search directory
-    fn search_recursive(&mut self, state: &mut KernelState, path: &PathBuf) -> Result<(), String> {
+    fn search_recursive(&mut self, state: &mut KernelState, path: &Path) -> Result<(), String> {
         // Check if current path matches criteria
         if self.matches_criteria(state, path) {
-            self.matches.push(path.clone());
+            self.matches.push(path.to_path_buf());
         }
 
         // If path is a directory, recurse into it
@@ -1019,7 +1017,7 @@ impl Find {
     }
 
     /// Check if path matches search criteria
-    fn matches_criteria(&self, state: &KernelState, path: &PathBuf) -> bool {
+    fn matches_criteria(&self, state: &KernelState, path: &Path) -> bool {
         // Type filter
         if let Some(type_filter) = self.type_filter {
             let is_dir = state.vfs.is_directory(path);
@@ -1135,8 +1133,7 @@ impl Sort {
             return Err("stdin not yet supported".to_string());
         };
 
-        let text = String::from_utf8(content)
-            .map_err(|_| "invalid UTF-8 in input".to_string())?;
+        let text = String::from_utf8(content).map_err(|_| "invalid UTF-8 in input".to_string())?;
 
         // Split into lines
         let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
@@ -1254,8 +1251,7 @@ impl Uniq {
             return Err("stdin not yet supported".to_string());
         };
 
-        let text = String::from_utf8(content)
-            .map_err(|_| "invalid UTF-8 in input".to_string())?;
+        let text = String::from_utf8(content).map_err(|_| "invalid UTF-8 in input".to_string())?;
 
         // Process lines
         let lines: Vec<&str> = text.lines().collect();
@@ -1407,8 +1403,7 @@ impl Cut {
             return Err("stdin not implemented".to_string());
         };
 
-        let text = String::from_utf8(content)
-            .map_err(|e| format!("invalid UTF-8: {}", e))?;
+        let text = String::from_utf8(content).map_err(|e| format!("invalid UTF-8: {}", e))?;
 
         let mut result = Vec::new();
 
@@ -1572,14 +1567,8 @@ impl Diff {
 
         // Check if files are identical
         let identical = if self.ignore_whitespace {
-            lines1
-                .iter()
-                .map(|l| l.trim())
-                .collect::<Vec<_>>()
-                == lines2
-                    .iter()
-                    .map(|l| l.trim())
-                    .collect::<Vec<_>>()
+            lines1.iter().map(|l| l.trim()).collect::<Vec<_>>()
+                == lines2.iter().map(|l| l.trim()).collect::<Vec<_>>()
         } else {
             lines1 == lines2
         };
@@ -1754,8 +1743,8 @@ impl Diff {
 
         // For simplicity, show all changes in one hunk
         let mut hunk = String::new();
-        let mut hunk_line1 = 1;
-        let mut hunk_line2 = 1;
+        let hunk_line1 = 1;
+        let hunk_line2 = 1;
 
         for op in ops {
             match op {
@@ -1897,8 +1886,7 @@ impl Sed {
             return Err("stdin not implemented".to_string());
         };
 
-        let text = String::from_utf8(content)
-            .map_err(|e| format!("invalid UTF-8: {}", e))?;
+        let text = String::from_utf8(content).map_err(|e| format!("invalid UTF-8: {}", e))?;
 
         let lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
 
@@ -1925,7 +1913,8 @@ impl Sed {
                         replacement,
                         global,
                     } => {
-                        current_line = self.substitute(&current_line, pattern, replacement, *global);
+                        current_line =
+                            self.substitute(&current_line, pattern, replacement, *global);
                     }
                     SedCommand::Delete => {
                         should_delete = true;
@@ -1995,7 +1984,10 @@ impl Sed {
     }
 
     /// Parse address and command from a sed script line
-    fn parse_address_and_command<'a>(&self, line: &'a str) -> Result<(SedAddress, &'a str), String> {
+    fn parse_address_and_command<'a>(
+        &self,
+        line: &'a str,
+    ) -> Result<(SedAddress, &'a str), String> {
         // Check for line number addresses (e.g., "2d", "1,3p")
         if let Some(first_char) = line.chars().next() {
             if first_char.is_ascii_digit() {
@@ -2126,6 +2118,7 @@ enum SedAddress {
     All,
     Line(usize),
     Range(usize, usize),
+    #[allow(dead_code)]
     Last,
 }
 
@@ -2222,8 +2215,7 @@ impl Awk {
             return Err("stdin not implemented".to_string());
         };
 
-        let text = String::from_utf8(content)
-            .map_err(|e| format!("invalid UTF-8: {}", e))?;
+        let text = String::from_utf8(content).map_err(|e| format!("invalid UTF-8: {}", e))?;
 
         let lines: Vec<&str> = text.lines().collect();
 
@@ -2278,7 +2270,9 @@ impl Awk {
             // Default whitespace separator
             line.split_whitespace().map(|s| s.to_string()).collect()
         } else {
-            line.split(&self.field_separator).map(|s| s.to_string()).collect()
+            line.split(&self.field_separator)
+                .map(|s| s.to_string())
+                .collect()
         }
     }
 
@@ -2297,8 +2291,8 @@ impl Awk {
         let program = program.trim();
 
         // Handle BEGIN block
-        if program.starts_with("BEGIN") {
-            let rest = &program[5..].trim();
+        if let Some(stripped) = program.strip_prefix("BEGIN") {
+            let rest = &stripped.trim();
             if let Some(action_str) = self.extract_braces(rest) {
                 let statements = self.parse_action(action_str)?;
                 actions.push(AwkAction {
@@ -2310,8 +2304,8 @@ impl Awk {
         }
 
         // Handle END block
-        if program.starts_with("END") {
-            let rest = &program[3..].trim();
+        if let Some(stripped) = program.strip_prefix("END") {
+            let rest = &stripped.trim();
             if let Some(action_str) = self.extract_braces(rest) {
                 let statements = self.parse_action(action_str)?;
                 actions.push(AwkAction {
@@ -2332,7 +2326,7 @@ impl Awk {
                     AwkPattern::All
                 } else if pattern_str.starts_with('/') && pattern_str.ends_with('/') {
                     // Pattern matching: /regex/
-                    let pattern_text = pattern_str[1..pattern_str.len()-1].to_string();
+                    let pattern_text = pattern_str[1..pattern_str.len() - 1].to_string();
                     AwkPattern::Regex(pattern_text)
                 } else if pattern_str.contains("==") {
                     // Condition: NR==5
@@ -2342,7 +2336,10 @@ impl Awk {
                 };
 
                 let statements = self.parse_action(action_content)?;
-                actions.push(AwkAction { pattern, statements });
+                actions.push(AwkAction {
+                    pattern,
+                    statements,
+                });
             }
         } else {
             // No braces, assume it's a simple action for all lines
@@ -2377,12 +2374,11 @@ impl Awk {
                 continue;
             }
 
-            if stmt.starts_with("print") {
-                let rest = stmt[5..].trim();
+            if let Some(stripped) = stmt.strip_prefix("print") {
+                let rest = stripped.trim();
                 if rest.is_empty() || rest == "$0" {
                     statements.push(AwkStatement::Print(AwkExpr::Field(0)));
-                } else if rest.starts_with('$') {
-                    let field_num_str = &rest[1..];
+                } else if let Some(field_num_str) = rest.strip_prefix('$') {
                     let field_num: usize = field_num_str
                         .parse()
                         .map_err(|_| format!("invalid field number: {}", field_num_str))?;
@@ -2408,15 +2404,20 @@ impl Awk {
     }
 
     /// Check if pattern matches
-    fn matches_pattern(&self, pattern: &AwkPattern, line: &str, nr: usize, _lines: &[&str]) -> bool {
+    fn matches_pattern(
+        &self,
+        pattern: &AwkPattern,
+        line: &str,
+        nr: usize,
+        _lines: &[&str],
+    ) -> bool {
         match pattern {
             AwkPattern::All => true,
             AwkPattern::Begin | AwkPattern::End => false,
             AwkPattern::Regex(regex) => line.contains(regex.as_str()),
             AwkPattern::Condition(cond) => {
                 // Simple condition parsing: NR==5, NF>3, etc.
-                if cond.starts_with("NR==") {
-                    let num_str = &cond[4..];
+                if let Some(num_str) = cond.strip_prefix("NR==") {
                     if let Ok(num) = num_str.parse::<usize>() {
                         return nr == num;
                     }
@@ -2445,7 +2446,12 @@ impl Awk {
     }
 
     /// Evaluate an expression
-    fn evaluate_expr(&self, expr: &AwkExpr, fields: &[String], nr: usize) -> Result<String, String> {
+    fn evaluate_expr(
+        &self,
+        expr: &AwkExpr,
+        fields: &[String],
+        nr: usize,
+    ) -> Result<String, String> {
         match expr {
             AwkExpr::Field(0) => {
                 // $0 is the entire line
@@ -3231,7 +3237,10 @@ mod tests {
         let mut state = KernelState::new();
         state
             .vfs
-            .create_file(PathBuf::from("/file.txt"), b"zebra\napple\nbanana\n".to_vec())
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"zebra\napple\nbanana\n".to_vec(),
+            )
             .unwrap();
 
         let mut sort = Sort::new(1, Some(PathBuf::from("/file.txt")), false, false, false);
@@ -3364,8 +3373,7 @@ mod tests {
             .create_file(PathBuf::from("/file.txt"), b"a\tb\tc\nd\te\tf\n".to_vec())
             .unwrap();
 
-        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
-            .with_fields(vec![1, 3]);
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt"))).with_fields(vec![1, 3]);
 
         cut_main_loop(&mut cut, &mut state);
         assert!(cut.completed);
@@ -3397,8 +3405,7 @@ mod tests {
             .create_file(PathBuf::from("/file.txt"), b"abcdef\nghijkl\n".to_vec())
             .unwrap();
 
-        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
-            .with_characters(vec![1, 3, 5]);
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt"))).with_characters(vec![1, 3, 5]);
 
         cut_main_loop(&mut cut, &mut state);
         assert!(cut.completed);
@@ -3413,8 +3420,7 @@ mod tests {
             .create_file(PathBuf::from("/file.txt"), b"hello\nworld\n".to_vec())
             .unwrap();
 
-        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
-            .with_bytes(vec![1, 2, 5]);
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt"))).with_bytes(vec![1, 2, 5]);
 
         cut_main_loop(&mut cut, &mut state);
         assert!(cut.completed);
@@ -3429,8 +3435,7 @@ mod tests {
             .create_file(PathBuf::from("/file.txt"), b"a\tb\tc\n".to_vec())
             .unwrap();
 
-        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
-            .with_fields(vec![1, 5, 10]);
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt"))).with_fields(vec![1, 5, 10]);
 
         cut_main_loop(&mut cut, &mut state);
         assert!(cut.completed);
@@ -3446,8 +3451,7 @@ mod tests {
             .create_file(PathBuf::from("/file.txt"), b"abc\n".to_vec())
             .unwrap();
 
-        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
-            .with_characters(vec![2, 10]);
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt"))).with_characters(vec![2, 10]);
 
         cut_main_loop(&mut cut, &mut state);
         assert!(cut.completed);
@@ -3463,8 +3467,7 @@ mod tests {
             .create_file(PathBuf::from("/file.txt"), b"".to_vec())
             .unwrap();
 
-        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt")))
-            .with_fields(vec![1]);
+        let mut cut = Cut::new(1, Some(PathBuf::from("/file.txt"))).with_fields(vec![1]);
 
         cut_main_loop(&mut cut, &mut state);
         assert!(cut.completed);
@@ -3475,8 +3478,7 @@ mod tests {
     fn test_cut_missing_file() {
         let mut state = KernelState::new();
 
-        let mut cut = Cut::new(1, Some(PathBuf::from("/missing.txt")))
-            .with_fields(vec![1]);
+        let mut cut = Cut::new(1, Some(PathBuf::from("/missing.txt"))).with_fields(vec![1]);
 
         cut_main_loop(&mut cut, &mut state);
         assert!(cut.error.is_some());
@@ -3534,15 +3536,21 @@ mod tests {
         let mut state = KernelState::new();
         state
             .vfs
-            .create_file(PathBuf::from("/file1.txt"), b"line1\nline2\nline3\n".to_vec())
+            .create_file(
+                PathBuf::from("/file1.txt"),
+                b"line1\nline2\nline3\n".to_vec(),
+            )
             .unwrap();
         state
             .vfs
-            .create_file(PathBuf::from("/file2.txt"), b"line1\nmodified\nline3\n".to_vec())
+            .create_file(
+                PathBuf::from("/file2.txt"),
+                b"line1\nmodified\nline3\n".to_vec(),
+            )
             .unwrap();
 
-        let mut diff = Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"))
-            .with_unified(3);
+        let mut diff =
+            Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt")).with_unified(3);
 
         diff_main_loop(&mut diff, &mut state);
         assert!(diff.completed);
@@ -3565,8 +3573,8 @@ mod tests {
             .create_file(PathBuf::from("/file2.txt"), b"line2\n".to_vec())
             .unwrap();
 
-        let mut diff = Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt"))
-            .with_brief();
+        let mut diff =
+            Diff::new(1, PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt")).with_brief();
 
         diff_main_loop(&mut diff, &mut state);
         assert!(diff.completed);
@@ -3673,7 +3681,11 @@ mod tests {
             )
             .unwrap();
 
-        let mut sed = Sed::new(1, "s/hello/hi/".to_string(), Some(PathBuf::from("/file.txt")));
+        let mut sed = Sed::new(
+            1,
+            "s/hello/hi/".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
 
         sed_main_loop(&mut sed, &mut state);
         assert!(sed.completed);
@@ -3685,13 +3697,14 @@ mod tests {
         let mut state = KernelState::new();
         state
             .vfs
-            .create_file(
-                PathBuf::from("/file.txt"),
-                b"foo bar foo baz\n".to_vec(),
-            )
+            .create_file(PathBuf::from("/file.txt"), b"foo bar foo baz\n".to_vec())
             .unwrap();
 
-        let mut sed = Sed::new(1, "s/foo/FOO/g".to_string(), Some(PathBuf::from("/file.txt")));
+        let mut sed = Sed::new(
+            1,
+            "s/foo/FOO/g".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
 
         sed_main_loop(&mut sed, &mut state);
         assert!(sed.completed);
@@ -3764,8 +3777,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut sed = Sed::new(1, "2p".to_string(), Some(PathBuf::from("/file.txt")))
-            .with_quiet();
+        let mut sed = Sed::new(1, "2p".to_string(), Some(PathBuf::from("/file.txt"))).with_quiet();
 
         sed_main_loop(&mut sed, &mut state);
         assert!(sed.completed);
@@ -3778,10 +3790,7 @@ mod tests {
         let mut state = KernelState::new();
         state
             .vfs
-            .create_file(
-                PathBuf::from("/file.txt"),
-                b"foo bar\nbaz qux\n".to_vec(),
-            )
+            .create_file(PathBuf::from("/file.txt"), b"foo bar\nbaz qux\n".to_vec())
             .unwrap();
 
         let mut sed = Sed::new(
@@ -3800,14 +3809,15 @@ mod tests {
         let mut state = KernelState::new();
         state
             .vfs
-            .create_file(
-                PathBuf::from("/file.txt"),
-                b"hello world\n".to_vec(),
-            )
+            .create_file(PathBuf::from("/file.txt"), b"hello world\n".to_vec())
             .unwrap();
 
-        let mut sed = Sed::new(1, "s/hello/hi/".to_string(), Some(PathBuf::from("/file.txt")))
-            .with_in_place();
+        let mut sed = Sed::new(
+            1,
+            "s/hello/hi/".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        )
+        .with_in_place();
 
         sed_main_loop(&mut sed, &mut state);
         if let Some(ref err) = sed.error {
@@ -3844,13 +3854,14 @@ mod tests {
         let mut state = KernelState::new();
         state
             .vfs
-            .create_file(
-                PathBuf::from("/file.txt"),
-                b"alice 25\nbob 30\n".to_vec(),
-            )
+            .create_file(PathBuf::from("/file.txt"), b"alice 25\nbob 30\n".to_vec())
             .unwrap();
 
-        let mut awk = Awk::new(1, "{print $1}".to_string(), Some(PathBuf::from("/file.txt")));
+        let mut awk = Awk::new(
+            1,
+            "{print $1}".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
 
         awk_main_loop(&mut awk, &mut state);
         assert!(awk.completed);
@@ -3868,7 +3879,11 @@ mod tests {
             )
             .unwrap();
 
-        let mut awk = Awk::new(1, "{print $2}".to_string(), Some(PathBuf::from("/file.txt")));
+        let mut awk = Awk::new(
+            1,
+            "{print $2}".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
 
         awk_main_loop(&mut awk, &mut state);
         assert!(awk.completed);
@@ -3886,7 +3901,11 @@ mod tests {
             )
             .unwrap();
 
-        let mut awk = Awk::new(1, "{print NR}".to_string(), Some(PathBuf::from("/file.txt")));
+        let mut awk = Awk::new(
+            1,
+            "{print NR}".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
 
         awk_main_loop(&mut awk, &mut state);
         assert!(awk.completed);
@@ -3898,13 +3917,14 @@ mod tests {
         let mut state = KernelState::new();
         state
             .vfs
-            .create_file(
-                PathBuf::from("/file.txt"),
-                b"a b c\nd e\n".to_vec(),
-            )
+            .create_file(PathBuf::from("/file.txt"), b"a b c\nd e\n".to_vec())
             .unwrap();
 
-        let mut awk = Awk::new(1, "{print NF}".to_string(), Some(PathBuf::from("/file.txt")));
+        let mut awk = Awk::new(
+            1,
+            "{print NF}".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
 
         awk_main_loop(&mut awk, &mut state);
         assert!(awk.completed);
@@ -3960,10 +3980,7 @@ mod tests {
         let mut state = KernelState::new();
         state
             .vfs
-            .create_file(
-                PathBuf::from("/file.txt"),
-                b"line1\nline2\n".to_vec(),
-            )
+            .create_file(PathBuf::from("/file.txt"), b"line1\nline2\n".to_vec())
             .unwrap();
 
         let mut awk = Awk::new(
@@ -3982,10 +3999,7 @@ mod tests {
         let mut state = KernelState::new();
         state
             .vfs
-            .create_file(
-                PathBuf::from("/file.txt"),
-                b"line1\nline2\n".to_vec(),
-            )
+            .create_file(PathBuf::from("/file.txt"), b"line1\nline2\n".to_vec())
             .unwrap();
 
         let mut awk = Awk::new(
@@ -4004,14 +4018,15 @@ mod tests {
         let mut state = KernelState::new();
         state
             .vfs
-            .create_file(
-                PathBuf::from("/file.txt"),
-                b"a,b,c\nd,e,f\n".to_vec(),
-            )
+            .create_file(PathBuf::from("/file.txt"), b"a,b,c\nd,e,f\n".to_vec())
             .unwrap();
 
-        let mut awk = Awk::new(1, "{print $2}".to_string(), Some(PathBuf::from("/file.txt")))
-            .with_field_separator(",".to_string());
+        let mut awk = Awk::new(
+            1,
+            "{print $2}".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        )
+        .with_field_separator(",".to_string());
 
         awk_main_loop(&mut awk, &mut state);
         assert!(awk.completed);
