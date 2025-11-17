@@ -2163,6 +2163,362 @@ pub fn sed_main_loop(sed: &mut Sed, state: &mut KernelState) -> Option<SystemCal
     Some(SystemCall::Exit(0))
 }
 
+// ============================================================================
+// Awk - Pattern Processing Language (WOS-PROG-004)
+// ============================================================================
+
+/// Awk command for pattern processing
+#[derive(Clone, Debug, PartialEq)]
+pub struct Awk {
+    /// Process ID
+    pub pid: ProcessId,
+    /// Input file (None for stdin)
+    pub file: Option<PathBuf>,
+    /// Awk program script
+    pub program: String,
+    /// Field separator (default: whitespace)
+    pub field_separator: String,
+    /// Output buffer
+    pub output: String,
+    /// Completed flag
+    pub completed: bool,
+    /// Error message
+    pub error: Option<String>,
+}
+
+impl Awk {
+    /// Create a new Awk instance
+    pub fn new(pid: ProcessId, program: String, file: Option<PathBuf>) -> Self {
+        Self {
+            pid,
+            file,
+            program,
+            field_separator: " \t".to_string(),
+            output: String::new(),
+            completed: false,
+            error: None,
+        }
+    }
+
+    /// Set field separator
+    pub fn with_field_separator(mut self, separator: String) -> Self {
+        self.field_separator = separator;
+        self
+    }
+
+    /// Process the input
+    pub fn process(&mut self, state: &mut KernelState) -> Result<(), String> {
+        if self.completed {
+            return Ok(());
+        }
+
+        // Read input
+        let content = if let Some(ref file_path) = self.file {
+            state
+                .vfs
+                .read_file(file_path)
+                .map_err(|e| format!("cannot read '{}': {:?}", file_path.display(), e))?
+        } else {
+            return Err("stdin not implemented".to_string());
+        };
+
+        let text = String::from_utf8(content)
+            .map_err(|e| format!("invalid UTF-8: {}", e))?;
+
+        let lines: Vec<&str> = text.lines().collect();
+
+        // Parse awk program
+        let actions = self.parse_program(&self.program)?;
+
+        // Execute BEGIN actions
+        let mut result_lines = Vec::new();
+        for action in &actions {
+            if let AwkPattern::Begin = action.pattern {
+                for statement in &action.statements {
+                    self.execute_statement(statement, &[], 0, &lines, &mut result_lines)?;
+                }
+            }
+        }
+
+        // Process each line
+        for (line_num, line) in lines.iter().enumerate() {
+            let fields = self.split_fields(line);
+            let nr = line_num + 1;
+
+            for action in &actions {
+                if self.matches_pattern(&action.pattern, line, nr, &lines) {
+                    for statement in &action.statements {
+                        self.execute_statement(statement, &fields, nr, &lines, &mut result_lines)?;
+                    }
+                }
+            }
+        }
+
+        // Execute END actions
+        for action in &actions {
+            if let AwkPattern::End = action.pattern {
+                for statement in &action.statements {
+                    self.execute_statement(statement, &[], lines.len(), &lines, &mut result_lines)?;
+                }
+            }
+        }
+
+        self.output = result_lines.join("\n");
+        if !self.output.is_empty() {
+            self.output.push('\n');
+        }
+
+        self.completed = true;
+        Ok(())
+    }
+
+    /// Split line into fields
+    fn split_fields(&self, line: &str) -> Vec<String> {
+        if self.field_separator == " \t" {
+            // Default whitespace separator
+            line.split_whitespace().map(|s| s.to_string()).collect()
+        } else {
+            line.split(&self.field_separator).map(|s| s.to_string()).collect()
+        }
+    }
+
+    /// Parse awk program
+    fn parse_program(&self, program: &str) -> Result<Vec<AwkAction>, String> {
+        let mut actions = Vec::new();
+
+        // Simple parser for basic awk programs
+        // Formats supported:
+        // - BEGIN { action }
+        // - END { action }
+        // - { action } (all lines)
+        // - /pattern/ { action }
+        // - NR==N { action }
+
+        let program = program.trim();
+
+        // Handle BEGIN block
+        if program.starts_with("BEGIN") {
+            let rest = &program[5..].trim();
+            if let Some(action_str) = self.extract_braces(rest) {
+                let statements = self.parse_action(action_str)?;
+                actions.push(AwkAction {
+                    pattern: AwkPattern::Begin,
+                    statements,
+                });
+                return Ok(actions);
+            }
+        }
+
+        // Handle END block
+        if program.starts_with("END") {
+            let rest = &program[3..].trim();
+            if let Some(action_str) = self.extract_braces(rest) {
+                let statements = self.parse_action(action_str)?;
+                actions.push(AwkAction {
+                    pattern: AwkPattern::End,
+                    statements,
+                });
+                return Ok(actions);
+            }
+        }
+
+        // Handle pattern { action } format
+        if let Some(brace_start) = program.find('{') {
+            let pattern_str = program[..brace_start].trim();
+            let action_str = &program[brace_start..];
+
+            if let Some(action_content) = self.extract_braces(action_str) {
+                let pattern = if pattern_str.is_empty() {
+                    AwkPattern::All
+                } else if pattern_str.starts_with('/') && pattern_str.ends_with('/') {
+                    // Pattern matching: /regex/
+                    let pattern_text = pattern_str[1..pattern_str.len()-1].to_string();
+                    AwkPattern::Regex(pattern_text)
+                } else if pattern_str.contains("==") {
+                    // Condition: NR==5
+                    AwkPattern::Condition(pattern_str.to_string())
+                } else {
+                    AwkPattern::All
+                };
+
+                let statements = self.parse_action(action_content)?;
+                actions.push(AwkAction { pattern, statements });
+            }
+        } else {
+            // No braces, assume it's a simple action for all lines
+            let statements = self.parse_action(program)?;
+            actions.push(AwkAction {
+                pattern: AwkPattern::All,
+                statements,
+            });
+        }
+
+        Ok(actions)
+    }
+
+    /// Extract content between braces
+    fn extract_braces<'a>(&self, s: &'a str) -> Option<&'a str> {
+        let s = s.trim();
+        if !s.starts_with('{') {
+            return None;
+        }
+        let end = s.rfind('}')?;
+        Some(s[1..end].trim())
+    }
+
+    /// Parse action into statements
+    fn parse_action(&self, action: &str) -> Result<Vec<AwkStatement>, String> {
+        let mut statements = Vec::new();
+
+        // Split by semicolons for multiple statements
+        for stmt in action.split(';') {
+            let stmt = stmt.trim();
+            if stmt.is_empty() {
+                continue;
+            }
+
+            if stmt.starts_with("print") {
+                let rest = stmt[5..].trim();
+                if rest.is_empty() || rest == "$0" {
+                    statements.push(AwkStatement::Print(AwkExpr::Field(0)));
+                } else if rest.starts_with('$') {
+                    let field_num_str = &rest[1..];
+                    let field_num: usize = field_num_str
+                        .parse()
+                        .map_err(|_| format!("invalid field number: {}", field_num_str))?;
+                    statements.push(AwkStatement::Print(AwkExpr::Field(field_num)));
+                } else if rest == "NF" {
+                    statements.push(AwkStatement::Print(AwkExpr::NF));
+                } else if rest == "NR" {
+                    statements.push(AwkStatement::Print(AwkExpr::NR));
+                } else {
+                    statements.push(AwkStatement::Print(AwkExpr::String(rest.to_string())));
+                }
+            } else {
+                // Default: treat as print statement
+                statements.push(AwkStatement::Print(AwkExpr::Field(0)));
+            }
+        }
+
+        if statements.is_empty() {
+            statements.push(AwkStatement::Print(AwkExpr::Field(0)));
+        }
+
+        Ok(statements)
+    }
+
+    /// Check if pattern matches
+    fn matches_pattern(&self, pattern: &AwkPattern, line: &str, nr: usize, _lines: &[&str]) -> bool {
+        match pattern {
+            AwkPattern::All => true,
+            AwkPattern::Begin | AwkPattern::End => false,
+            AwkPattern::Regex(regex) => line.contains(regex.as_str()),
+            AwkPattern::Condition(cond) => {
+                // Simple condition parsing: NR==5, NF>3, etc.
+                if cond.starts_with("NR==") {
+                    let num_str = &cond[4..];
+                    if let Ok(num) = num_str.parse::<usize>() {
+                        return nr == num;
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    /// Execute a statement
+    fn execute_statement(
+        &self,
+        statement: &AwkStatement,
+        fields: &[String],
+        nr: usize,
+        _lines: &[&str],
+        output: &mut Vec<String>,
+    ) -> Result<(), String> {
+        match statement {
+            AwkStatement::Print(expr) => {
+                let value = self.evaluate_expr(expr, fields, nr)?;
+                output.push(value);
+            }
+        }
+        Ok(())
+    }
+
+    /// Evaluate an expression
+    fn evaluate_expr(&self, expr: &AwkExpr, fields: &[String], nr: usize) -> Result<String, String> {
+        match expr {
+            AwkExpr::Field(0) => {
+                // $0 is the entire line
+                Ok(fields.join(" "))
+            }
+            AwkExpr::Field(n) => {
+                if *n > 0 && *n <= fields.len() {
+                    Ok(fields[*n - 1].clone())
+                } else {
+                    Ok(String::new())
+                }
+            }
+            AwkExpr::NR => Ok(nr.to_string()),
+            AwkExpr::NF => Ok(fields.len().to_string()),
+            AwkExpr::String(s) => Ok(s.clone()),
+        }
+    }
+}
+
+/// Awk pattern types
+#[derive(Clone, Debug, PartialEq)]
+enum AwkPattern {
+    All,
+    Begin,
+    End,
+    Regex(String),
+    Condition(String),
+}
+
+/// Awk action (pattern-statement pair)
+#[derive(Clone, Debug, PartialEq)]
+struct AwkAction {
+    pattern: AwkPattern,
+    statements: Vec<AwkStatement>,
+}
+
+/// Awk statements
+#[derive(Clone, Debug, PartialEq)]
+enum AwkStatement {
+    Print(AwkExpr),
+}
+
+/// Awk expressions
+#[derive(Clone, Debug, PartialEq)]
+enum AwkExpr {
+    Field(usize),
+    NR,
+    NF,
+    String(String),
+}
+
+/// Main loop for awk command
+pub fn awk_main_loop(awk: &mut Awk, state: &mut KernelState) -> Option<SystemCall> {
+    if !awk.completed && awk.error.is_none() {
+        if let Err(e) = awk.process(state) {
+            awk.error = Some(e.clone());
+            return Some(SystemCall::Write {
+                fd: 2,
+                data: format!("awk: {}\n", e).as_bytes().to_vec(),
+            });
+        }
+    }
+
+    if awk.completed && !awk.output.is_empty() {
+        return Some(SystemCall::Write {
+            fd: 1,
+            data: awk.output.as_bytes().to_vec(),
+        });
+    }
+
+    Some(SystemCall::Exit(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3477,5 +3833,203 @@ mod tests {
         sed_main_loop(&mut sed, &mut state);
         assert!(sed.error.is_some());
         assert!(sed.error.as_ref().unwrap().contains("cannot read"));
+    }
+
+    // ============================================================================
+    // Awk Tests (WOS-PROG-004)
+    // ============================================================================
+
+    #[test]
+    fn test_awk_print_field() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"alice 25\nbob 30\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut awk = Awk::new(1, "{print $1}".to_string(), Some(PathBuf::from("/file.txt")));
+
+        awk_main_loop(&mut awk, &mut state);
+        assert!(awk.completed);
+        assert_eq!(awk.output, "alice\nbob\n");
+    }
+
+    #[test]
+    fn test_awk_print_multiple_fields() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"alice 25 engineer\nbob 30 doctor\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut awk = Awk::new(1, "{print $2}".to_string(), Some(PathBuf::from("/file.txt")));
+
+        awk_main_loop(&mut awk, &mut state);
+        assert!(awk.completed);
+        assert_eq!(awk.output, "25\n30\n");
+    }
+
+    #[test]
+    fn test_awk_print_nr() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"line1\nline2\nline3\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut awk = Awk::new(1, "{print NR}".to_string(), Some(PathBuf::from("/file.txt")));
+
+        awk_main_loop(&mut awk, &mut state);
+        assert!(awk.completed);
+        assert_eq!(awk.output, "1\n2\n3\n");
+    }
+
+    #[test]
+    fn test_awk_print_nf() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"a b c\nd e\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut awk = Awk::new(1, "{print NF}".to_string(), Some(PathBuf::from("/file.txt")));
+
+        awk_main_loop(&mut awk, &mut state);
+        assert!(awk.completed);
+        assert_eq!(awk.output, "3\n2\n");
+    }
+
+    #[test]
+    fn test_awk_pattern_match() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"apple\nbanana\napricot\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut awk = Awk::new(
+            1,
+            "/ap/ {print $0}".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
+
+        awk_main_loop(&mut awk, &mut state);
+        assert!(awk.completed);
+        assert_eq!(awk.output, "apple\napricot\n");
+    }
+
+    #[test]
+    fn test_awk_nr_condition() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"line1\nline2\nline3\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut awk = Awk::new(
+            1,
+            "NR==2 {print $0}".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
+
+        awk_main_loop(&mut awk, &mut state);
+        assert!(awk.completed);
+        assert_eq!(awk.output, "line2\n");
+    }
+
+    #[test]
+    fn test_awk_begin_block() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"line1\nline2\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut awk = Awk::new(
+            1,
+            "BEGIN {print START}".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
+
+        awk_main_loop(&mut awk, &mut state);
+        assert!(awk.completed);
+        assert_eq!(awk.output, "START\n");
+    }
+
+    #[test]
+    fn test_awk_end_block() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"line1\nline2\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut awk = Awk::new(
+            1,
+            "END {print DONE}".to_string(),
+            Some(PathBuf::from("/file.txt")),
+        );
+
+        awk_main_loop(&mut awk, &mut state);
+        assert!(awk.completed);
+        assert_eq!(awk.output, "DONE\n");
+    }
+
+    #[test]
+    fn test_awk_field_separator() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(
+                PathBuf::from("/file.txt"),
+                b"a,b,c\nd,e,f\n".to_vec(),
+            )
+            .unwrap();
+
+        let mut awk = Awk::new(1, "{print $2}".to_string(), Some(PathBuf::from("/file.txt")))
+            .with_field_separator(",".to_string());
+
+        awk_main_loop(&mut awk, &mut state);
+        assert!(awk.completed);
+        assert_eq!(awk.output, "b\ne\n");
+    }
+
+    #[test]
+    fn test_awk_missing_file() {
+        let mut state = KernelState::new();
+
+        let mut awk = Awk::new(
+            1,
+            "{print $1}".to_string(),
+            Some(PathBuf::from("/missing.txt")),
+        );
+
+        awk_main_loop(&mut awk, &mut state);
+        assert!(awk.error.is_some());
+        assert!(awk.error.as_ref().unwrap().contains("cannot read"));
     }
 }
