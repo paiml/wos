@@ -6,6 +6,9 @@
 //! - wc: count lines, words, and bytes (WOS-PROG-006)
 //! - head: display first lines of a file (WOS-PROG-007)
 //! - tail: display last lines of a file (WOS-PROG-008)
+//! - cp: copy files and directories (WOS-PROG-017)
+//! - mv: move or rename files (WOS-PROG-018)
+//! - mkdir: create directories (WOS-PROG-020)
 
 use std::path::PathBuf;
 use wos_kernel::{KernelState, ProcessId, SystemCall};
@@ -353,4 +356,576 @@ pub fn tail_main_loop(tail: &mut Tail, state: &mut KernelState) -> Option<System
 
     // Done - exit
     Some(SystemCall::Exit(0))
+}
+
+/// Cp program - copy files and directories
+/// WOS-PROG-017: cp command
+#[derive(Clone, Debug, PartialEq)]
+pub struct Cp {
+    /// Process ID
+    pub pid: ProcessId,
+    /// Source path
+    pub src: PathBuf,
+    /// Destination path
+    pub dst: PathBuf,
+    /// Recursive copy (-r flag)
+    pub recursive: bool,
+    /// Preserve permissions/timestamps (-p flag)
+    pub preserve: bool,
+    /// Interactive mode (-i flag)
+    pub interactive: bool,
+    /// Operation completed
+    pub completed: bool,
+    /// Error message if any
+    pub error: Option<String>,
+}
+
+impl Cp {
+    /// Create a new cp program
+    pub fn new(
+        pid: ProcessId,
+        src: PathBuf,
+        dst: PathBuf,
+        recursive: bool,
+        preserve: bool,
+        interactive: bool,
+    ) -> Self {
+        Self {
+            pid,
+            src,
+            dst,
+            recursive,
+            preserve,
+            interactive,
+            completed: false,
+            error: None,
+        }
+    }
+
+    /// Copy a file from src to dst
+    pub fn copy_file(&mut self, state: &mut KernelState) {
+        // Read source file
+        let content = match state.vfs.read_file(&self.src) {
+            Ok(data) => data,
+            Err(e) => {
+                self.error = Some(format!("cannot read '{}': {:?}", self.src.display(), e));
+                return;
+            }
+        };
+
+        // Write to destination
+        if let Err(e) = state.vfs.create_file(self.dst.clone(), content) {
+            self.error = Some(format!("cannot create '{}': {:?}", self.dst.display(), e));
+            return;
+        }
+
+        // Preserve permissions if -p flag
+        if self.preserve {
+            if let Ok(perms) = state.vfs.get_permissions(&self.src) {
+                let _ = state.vfs.set_permissions(&self.dst, perms);
+            }
+        }
+
+        self.completed = true;
+    }
+}
+
+/// Cp main loop - copies files
+pub fn cp_main_loop(cp: &mut Cp, state: &mut KernelState) -> Option<SystemCall> {
+    if !cp.completed && cp.error.is_none() {
+        // First iteration: copy file
+        cp.copy_file(state);
+
+        if let Some(ref error) = cp.error {
+            return Some(SystemCall::Write {
+                fd: 2, // stderr
+                data: format!("cp: {}\n", error).as_bytes().to_vec(),
+            });
+        }
+    }
+
+    // Done - exit with appropriate code
+    let exit_code = if cp.error.is_some() { 1 } else { 0 };
+    Some(SystemCall::Exit(exit_code))
+}
+
+/// Mv program - move or rename files
+/// WOS-PROG-018: mv command
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mv {
+    /// Process ID
+    pub pid: ProcessId,
+    /// Source path
+    pub src: PathBuf,
+    /// Destination path
+    pub dst: PathBuf,
+    /// Interactive mode (-i flag)
+    pub interactive: bool,
+    /// Operation completed
+    pub completed: bool,
+    /// Error message if any
+    pub error: Option<String>,
+}
+
+impl Mv {
+    /// Create a new mv program
+    pub fn new(pid: ProcessId, src: PathBuf, dst: PathBuf, interactive: bool) -> Self {
+        Self {
+            pid,
+            src,
+            dst,
+            interactive,
+            completed: false,
+            error: None,
+        }
+    }
+
+    /// Move a file from src to dst
+    pub fn move_file(&mut self, state: &mut KernelState) {
+        // Read source file
+        let content = match state.vfs.read_file(&self.src) {
+            Ok(data) => data,
+            Err(e) => {
+                self.error = Some(format!("cannot read '{}': {:?}", self.src.display(), e));
+                return;
+            }
+        };
+
+        // Get permissions to preserve them
+        let perms = match state.vfs.get_permissions(&self.src) {
+            Ok(p) => Some(p),
+            Err(_) => None,
+        };
+
+        // Write to destination
+        if let Err(e) = state.vfs.create_file(self.dst.clone(), content) {
+            self.error = Some(format!("cannot create '{}': {:?}", self.dst.display(), e));
+            return;
+        }
+
+        // Restore permissions
+        if let Some(perms) = perms {
+            let _ = state.vfs.set_permissions(&self.dst, perms);
+        }
+
+        // Delete source file
+        if let Err(e) = state.vfs.delete_file(&self.src) {
+            self.error = Some(format!("cannot remove '{}': {:?}", self.src.display(), e));
+            return;
+        }
+
+        self.completed = true;
+    }
+}
+
+/// Mv main loop - moves/renames files
+pub fn mv_main_loop(mv: &mut Mv, state: &mut KernelState) -> Option<SystemCall> {
+    if !mv.completed && mv.error.is_none() {
+        // First iteration: move file
+        mv.move_file(state);
+
+        if let Some(ref error) = mv.error {
+            return Some(SystemCall::Write {
+                fd: 2, // stderr
+                data: format!("mv: {}\n", error).as_bytes().to_vec(),
+            });
+        }
+    }
+
+    // Done - exit with appropriate code
+    let exit_code = if mv.error.is_some() { 1 } else { 0 };
+    Some(SystemCall::Exit(exit_code))
+}
+
+/// Mkdir program - create directories
+/// WOS-PROG-020: mkdir command
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mkdir {
+    /// Process ID
+    pub pid: ProcessId,
+    /// Directory path to create
+    pub path: PathBuf,
+    /// Create parent directories (-p flag)
+    pub parents: bool,
+    /// Set permissions (-m flag)
+    pub mode: Option<u32>,
+    /// Operation completed
+    pub completed: bool,
+    /// Error message if any
+    pub error: Option<String>,
+}
+
+impl Mkdir {
+    /// Create a new mkdir program
+    pub fn new(pid: ProcessId, path: PathBuf, parents: bool, mode: Option<u32>) -> Self {
+        Self {
+            pid,
+            path,
+            parents,
+            mode,
+            completed: false,
+            error: None,
+        }
+    }
+
+    /// Create the directory
+    pub fn create_dir(&mut self, state: &mut KernelState) {
+        if self.parents {
+            // Create parent directories recursively
+            self.create_parents(state);
+            // Return early if there was an error
+            if self.error.is_some() {
+                return;
+            }
+        } else {
+            // Create single directory
+            if let Err(e) = state.vfs.create_directory(self.path.clone()) {
+                self.error = Some(format!(
+                    "cannot create directory '{}': {:?}",
+                    self.path.display(),
+                    e
+                ));
+                return;
+            }
+        }
+
+        // Set permissions if -m flag provided
+        if let Some(mode) = self.mode {
+            if let Err(e) = state.vfs.chmod(&self.path, mode) {
+                self.error = Some(format!("cannot set permissions: {:?}", e));
+                return;
+            }
+        }
+
+        self.completed = true;
+    }
+
+    /// Create parent directories recursively for -p flag
+    fn create_parents(&mut self, state: &mut KernelState) {
+        let path_str = match self.path.to_str() {
+            Some(s) => s,
+            None => {
+                self.error = Some("invalid path".to_string());
+                return;
+            }
+        };
+
+        // Split path into components
+        let components: Vec<&str> = path_str
+            .trim_start_matches('/')
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        // Create each directory in sequence
+        let mut current_path = PathBuf::from("/");
+        for component in components {
+            current_path.push(component);
+
+            // Skip if already exists
+            if state.vfs.exists(&current_path) {
+                if !state.vfs.is_directory(&current_path) {
+                    self.error = Some(format!(
+                        "'{}' exists but is not a directory",
+                        current_path.display()
+                    ));
+                    return;
+                }
+                continue;
+            }
+
+            // Create directory
+            if let Err(e) = state.vfs.create_directory(current_path.clone()) {
+                self.error = Some(format!(
+                    "cannot create directory '{}': {:?}",
+                    current_path.display(),
+                    e
+                ));
+                return;
+            }
+        }
+    }
+}
+
+/// Mkdir main loop - creates directories
+pub fn mkdir_main_loop(mkdir: &mut Mkdir, state: &mut KernelState) -> Option<SystemCall> {
+    if !mkdir.completed && mkdir.error.is_none() {
+        // First iteration: create directory
+        mkdir.create_dir(state);
+
+        if let Some(ref error) = mkdir.error {
+            return Some(SystemCall::Write {
+                fd: 2, // stderr
+                data: format!("mkdir: {}\n", error).as_bytes().to_vec(),
+            });
+        }
+    }
+
+    // Done - exit with appropriate code
+    let exit_code = if mkdir.error.is_some() { 1 } else { 0 };
+    Some(SystemCall::Exit(exit_code))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wos_kernel::KernelState;
+
+    // ============================================================================
+    // Cp Tests (WOS-PROG-017)
+    // ============================================================================
+
+    #[test]
+    fn test_cp_basic_copy() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/src.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let mut cp = Cp::new(
+            1, // ProcessId
+            PathBuf::from("/src.txt"),
+            PathBuf::from("/dst.txt"),
+            false,
+            false,
+            false,
+        );
+
+        let syscall = cp_main_loop(&mut cp, &mut state);
+        assert!(cp.completed);
+        assert!(cp.error.is_none());
+        assert!(matches!(syscall, Some(SystemCall::Exit(0))));
+
+        // Verify destination file exists
+        let content = state.vfs.read_file(&PathBuf::from("/dst.txt")).unwrap();
+        assert_eq!(content, b"hello");
+    }
+
+    #[test]
+    fn test_cp_preserve_permissions() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/src.txt"), b"hello".to_vec())
+            .unwrap();
+        state.vfs.chmod(&PathBuf::from("/src.txt"), 0o755).unwrap();
+
+        let mut cp = Cp::new(
+            1, // ProcessId
+            PathBuf::from("/src.txt"),
+            PathBuf::from("/dst.txt"),
+            false,
+            true, // preserve
+            false,
+        );
+
+        cp_main_loop(&mut cp, &mut state);
+        assert!(cp.completed);
+
+        // Verify permissions preserved
+        let src_perms = state
+            .vfs
+            .get_permissions(&PathBuf::from("/src.txt"))
+            .unwrap();
+        let dst_perms = state
+            .vfs
+            .get_permissions(&PathBuf::from("/dst.txt"))
+            .unwrap();
+        assert_eq!(src_perms.mode, dst_perms.mode);
+    }
+
+    #[test]
+    fn test_cp_source_not_found() {
+        let mut state = KernelState::new();
+
+        let mut cp = Cp::new(
+            1, // ProcessId
+            PathBuf::from("/nonexistent.txt"),
+            PathBuf::from("/dst.txt"),
+            false,
+            false,
+            false,
+        );
+
+        let syscall = cp_main_loop(&mut cp, &mut state);
+        assert!(!cp.completed);
+        assert!(cp.error.is_some());
+        assert!(matches!(syscall, Some(SystemCall::Write { fd: 2, .. })));
+    }
+
+    // ============================================================================
+    // Mv Tests (WOS-PROG-018)
+    // ============================================================================
+
+    #[test]
+    fn test_mv_basic_move() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/src.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let mut mv = Mv::new(
+            1, // ProcessId
+            PathBuf::from("/src.txt"),
+            PathBuf::from("/dst.txt"),
+            false,
+        );
+
+        let syscall = mv_main_loop(&mut mv, &mut state);
+        assert!(mv.completed);
+        assert!(mv.error.is_none());
+        assert!(matches!(syscall, Some(SystemCall::Exit(0))));
+
+        // Verify destination exists and source does not
+        assert!(state.vfs.exists(&PathBuf::from("/dst.txt")));
+        assert!(!state.vfs.exists(&PathBuf::from("/src.txt")));
+
+        let content = state.vfs.read_file(&PathBuf::from("/dst.txt")).unwrap();
+        assert_eq!(content, b"hello");
+    }
+
+    #[test]
+    fn test_mv_preserves_permissions() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/src.txt"), b"hello".to_vec())
+            .unwrap();
+        state.vfs.chmod(&PathBuf::from("/src.txt"), 0o755).unwrap();
+
+        let src_perms = state
+            .vfs
+            .get_permissions(&PathBuf::from("/src.txt"))
+            .unwrap();
+
+        let mut mv = Mv::new(
+            1, // ProcessId
+            PathBuf::from("/src.txt"),
+            PathBuf::from("/dst.txt"),
+            false,
+        );
+
+        mv_main_loop(&mut mv, &mut state);
+        assert!(mv.completed);
+
+        // Verify permissions preserved
+        let dst_perms = state
+            .vfs
+            .get_permissions(&PathBuf::from("/dst.txt"))
+            .unwrap();
+        assert_eq!(src_perms.mode, dst_perms.mode);
+    }
+
+    #[test]
+    fn test_mv_source_not_found() {
+        let mut state = KernelState::new();
+
+        let mut mv = Mv::new(
+            1, // ProcessId
+            PathBuf::from("/nonexistent.txt"),
+            PathBuf::from("/dst.txt"),
+            false,
+        );
+
+        let syscall = mv_main_loop(&mut mv, &mut state);
+        assert!(!mv.completed);
+        assert!(mv.error.is_some());
+        assert!(matches!(syscall, Some(SystemCall::Write { fd: 2, .. })));
+    }
+
+    // ============================================================================
+    // Mkdir Tests (WOS-PROG-020)
+    // ============================================================================
+
+    #[test]
+    fn test_mkdir_basic() {
+        let mut state = KernelState::new();
+
+        let mut mkdir = Mkdir::new(1, PathBuf::from("/testdir"), false, None);
+
+        let syscall = mkdir_main_loop(&mut mkdir, &mut state);
+        assert!(mkdir.completed);
+        assert!(mkdir.error.is_none());
+        assert!(matches!(syscall, Some(SystemCall::Exit(0))));
+
+        // Verify directory exists
+        assert!(state.vfs.exists(&PathBuf::from("/testdir")));
+        assert!(state.vfs.is_directory(&PathBuf::from("/testdir")));
+    }
+
+    #[test]
+    fn test_mkdir_with_parents() {
+        let mut state = KernelState::new();
+
+        let mut mkdir = Mkdir::new(
+            1, // ProcessId
+            PathBuf::from("/a/b/c"),
+            true, // parents flag
+            None,
+        );
+
+        mkdir_main_loop(&mut mkdir, &mut state);
+        assert!(mkdir.completed);
+        assert!(mkdir.error.is_none());
+
+        // Verify all directories exist
+        assert!(state.vfs.exists(&PathBuf::from("/a")));
+        assert!(state.vfs.exists(&PathBuf::from("/a/b")));
+        assert!(state.vfs.exists(&PathBuf::from("/a/b/c")));
+        assert!(state.vfs.is_directory(&PathBuf::from("/a/b/c")));
+    }
+
+    #[test]
+    fn test_mkdir_with_mode() {
+        let mut state = KernelState::new();
+
+        let mut mkdir = Mkdir::new(
+            1, // ProcessId
+            PathBuf::from("/testdir"),
+            false,
+            Some(0o755),
+        );
+
+        mkdir_main_loop(&mut mkdir, &mut state);
+        assert!(mkdir.completed);
+
+        // Verify permissions
+        let perms = state
+            .vfs
+            .get_permissions(&PathBuf::from("/testdir"))
+            .unwrap();
+        assert_eq!(perms.mode, 0o755);
+    }
+
+    #[test]
+    fn test_mkdir_parents_already_exists() {
+        let mut state = KernelState::new();
+        state.vfs.create_directory(PathBuf::from("/a")).unwrap();
+
+        let mut mkdir = Mkdir::new(1, PathBuf::from("/a/b"), true, None);
+
+        mkdir_main_loop(&mut mkdir, &mut state);
+        assert!(mkdir.completed);
+        assert!(mkdir.error.is_none());
+
+        assert!(state.vfs.exists(&PathBuf::from("/a/b")));
+    }
+
+    #[test]
+    fn test_mkdir_parent_is_file() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let mut mkdir = Mkdir::new(1, PathBuf::from("/file.txt/dir"), true, None);
+
+        mkdir_main_loop(&mut mkdir, &mut state);
+        assert!(!mkdir.completed);
+        assert!(mkdir.error.is_some());
+        assert!(mkdir.error.as_ref().unwrap().contains("not a directory"));
+    }
 }
