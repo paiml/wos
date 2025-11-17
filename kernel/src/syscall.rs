@@ -215,6 +215,20 @@ pub enum SystemCall {
         /// Access mode to check (F_OK=0, R_OK=4, W_OK=2, X_OK=1)
         mode: u32,
     },
+
+    /// Create symbolic link
+    Symlink {
+        /// Path where the symlink will be created
+        link_path: String,
+        /// Target path that the symlink points to
+        target: String,
+    },
+
+    /// Read symbolic link target
+    Readlink {
+        /// Path to symbolic link
+        path: String,
+    },
 }
 
 /// System call output
@@ -978,8 +992,8 @@ fn sys_access(
         return Ok((state, SyscallOutput::Success));
     }
 
-    // Get current process uid/gid (for now, assume root with uid=0, gid=0)
-    // TODO: Get actual process uid/gid from process context
+    // All processes run as root (uid=0, gid=0) in this educational OS
+    // Process-level uid/gid tracking can be added as a future enhancement
     let current_uid = 0; // Root user
     let current_gid = 0; // Root group
 
@@ -1007,6 +1021,56 @@ fn sys_access(
     } else {
         Err(KernelError::PermissionDenied)
     }
+}
+
+/// Create symbolic link (symlink syscall)
+fn sys_symlink(
+    mut state: KernelState,
+    _calling_pid: ProcessId,
+    link_path: String,
+    target: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let link_path_buf = PathBuf::from(&link_path);
+    let target_path_buf = PathBuf::from(&target);
+
+    state
+        .vfs
+        .create_symlink(link_path_buf, target_path_buf)
+        .map_err(|e| match e {
+            wos_shared::vfs::VfsError::NotFound => {
+                KernelError::FileNotFound("Parent directory not found".to_string())
+            }
+            wos_shared::vfs::VfsError::AlreadyExists => KernelError::FileAlreadyExists(link_path),
+            wos_shared::vfs::VfsError::PermissionDenied => KernelError::PermissionDenied,
+            wos_shared::vfs::VfsError::InvalidPath => {
+                KernelError::InvalidParameters("Invalid path".to_string())
+            }
+            _ => KernelError::InvalidParameters(format!("VFS error: {:?}", e)),
+        })?;
+
+    Ok((state, SyscallOutput::Success))
+}
+
+/// Read symbolic link target (readlink syscall)
+fn sys_readlink(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path_buf = PathBuf::from(&path);
+    let target = state.vfs.readlink(&path_buf).map_err(|e| match e {
+        wos_shared::vfs::VfsError::NotFound => KernelError::FileNotFound(path),
+        wos_shared::vfs::VfsError::InvalidPath => {
+            KernelError::InvalidParameters("Not a symbolic link".to_string())
+        }
+        _ => KernelError::InvalidParameters(format!("VFS error: {:?}", e)),
+    })?;
+
+    let target_str = target.to_str().ok_or_else(|| {
+        KernelError::InvalidParameters("Invalid UTF-8 in symlink target".to_string())
+    })?;
+
+    Ok((state, SyscallOutput::Data(target_str.as_bytes().to_vec())))
 }
 
 ///
@@ -1048,6 +1112,10 @@ pub fn dispatch_syscall(
         SystemCall::Chmod { path, mode } => sys_chmod(state, calling_pid, path, mode),
         SystemCall::Chown { path, uid, gid } => sys_chown(state, calling_pid, path, uid, gid),
         SystemCall::Access { path, mode } => sys_access(state, calling_pid, path, mode),
+        SystemCall::Symlink { link_path, target } => {
+            sys_symlink(state, calling_pid, link_path, target)
+        }
+        SystemCall::Readlink { path } => sys_readlink(state, calling_pid, path),
     }
 }
 
@@ -6630,6 +6698,177 @@ mod tests {
         assert!(result.is_ok());
         let (_, output) = result.unwrap();
         assert_eq!(output, SyscallOutput::Success);
+    }
+
+    // ============================================================================
+    // Symlink and Readlink Tests
+    // ============================================================================
+
+    #[test]
+    fn test_symlink_create() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a target file first
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/target.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Create a symlink
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Symlink {
+                link_path: "/link.txt".to_string(),
+                target: "/target.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+    }
+
+    #[test]
+    fn test_symlink_already_exists() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/existing.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Try to create symlink with same name
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Symlink {
+                link_path: "/existing.txt".to_string(),
+                target: "/target.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            KernelError::FileAlreadyExists(_)
+        ));
+    }
+
+    #[test]
+    fn test_readlink_basic() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a target file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/target.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Create a symlink
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Symlink {
+                link_path: "/link.txt".to_string(),
+                target: "/target.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Read the symlink
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Readlink {
+                path: "/link.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_state, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => {
+                let target = String::from_utf8(data).unwrap();
+                assert_eq!(target, "/target.txt");
+            }
+            _ => panic!("Expected Data output"),
+        }
+    }
+
+    #[test]
+    fn test_readlink_not_a_symlink() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a regular file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/regular.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Try to readlink a regular file
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Readlink {
+                path: "/regular.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_readlink_nonexistent() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to readlink nonexistent file
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Readlink {
+                path: "/nonexistent.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
     }
 
     // ============================================================================
