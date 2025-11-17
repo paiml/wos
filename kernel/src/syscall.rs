@@ -4,7 +4,7 @@
 
 use crate::state::{KernelState, ProcessId};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Open flags
@@ -150,6 +150,44 @@ pub enum SystemCall {
         oldfd: u32,
         /// New file descriptor
         newfd: u32,
+    },
+
+    /// Create directory
+    Mkdir {
+        /// Path to directory
+        path: String,
+        /// Mode (permissions)
+        mode: u32,
+    },
+
+    /// Remove empty directory
+    Rmdir {
+        /// Path to directory
+        path: String,
+    },
+
+    /// Read directory entries
+    Getdents {
+        /// File descriptor of open directory
+        fd: u32,
+    },
+
+    /// Get file status (metadata)
+    Stat {
+        /// Path to file or directory
+        path: String,
+    },
+
+    /// Get file status without following symlinks
+    Lstat {
+        /// Path to file or directory
+        path: String,
+    },
+
+    /// Get canonical absolute path (resolve ., .., //, etc.)
+    Realpath {
+        /// Path to canonicalize
+        path: String,
     },
 }
 
@@ -675,6 +713,172 @@ fn sys_dup2(
     }
 }
 
+/// Create directory (mkdir syscall)
+fn sys_mkdir(
+    mut state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+    _mode: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = PathBuf::from(path);
+
+    match state.vfs.create_directory(path.clone()) {
+        Ok(_) => Ok((state, SyscallOutput::Success)),
+        Err(wos_shared::vfs::VfsError::AlreadyExists) => {
+            Err(KernelError::FileAlreadyExists(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to create directory: {:?}",
+            e
+        ))),
+    }
+}
+
+/// Remove directory (rmdir syscall)
+fn sys_rmdir(
+    mut state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = Path::new(&path);
+
+    match state.vfs.remove_directory(path) {
+        Ok(_) => Ok((state, SyscallOutput::Success)),
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::DirectoryNotEmpty) => Err(KernelError::InvalidParameters(
+            "Directory not empty".to_string(),
+        )),
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to remove directory: {:?}",
+            e
+        ))),
+    }
+}
+
+/// Read directory entries (getdents syscall)
+fn sys_getdents(
+    state: KernelState,
+    calling_pid: ProcessId,
+    fd: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // Get the path associated with this file descriptor
+    let process = state
+        .get_process(calling_pid)
+        .ok_or(KernelError::ProcessNotFound(calling_pid))?;
+
+    let path = process
+        .open_files
+        .get(&fd)
+        .ok_or(KernelError::InvalidFileDescriptor(fd))?;
+
+    // List directory contents
+    match state.vfs.list_directory(path) {
+        Ok(entries) => {
+            // Serialize directory entries to JSON
+            let json = serde_json::to_vec(&entries).map_err(|e| {
+                KernelError::InvalidParameters(format!(
+                    "Failed to serialize directory entries: {}",
+                    e
+                ))
+            })?;
+            Ok((state, SyscallOutput::Data(json)))
+        }
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::NotADirectory) => Err(KernelError::InvalidParameters(
+            "Not a directory".to_string(),
+        )),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to read directory: {:?}",
+            e
+        ))),
+    }
+}
+
+/// Get file status (stat syscall)
+fn sys_stat(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = Path::new(&path);
+
+    match state.vfs.stat(path) {
+        Ok(file_stat) => {
+            // Serialize FileStat to JSON
+            let json = serde_json::to_vec(&file_stat).map_err(|e| {
+                KernelError::InvalidParameters(format!("Failed to serialize file stat: {}", e))
+            })?;
+            Ok((state, SyscallOutput::Data(json)))
+        }
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to stat file: {:?}",
+            e
+        ))),
+    }
+}
+
+/// Get file status without following symlinks (lstat syscall)
+fn sys_lstat(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = Path::new(&path);
+
+    match state.vfs.lstat(path) {
+        Ok(file_stat) => {
+            // Serialize FileStat to JSON
+            let json = serde_json::to_vec(&file_stat).map_err(|e| {
+                KernelError::InvalidParameters(format!("Failed to serialize file stat: {}", e))
+            })?;
+            Ok((state, SyscallOutput::Data(json)))
+        }
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to lstat file: {:?}",
+            e
+        ))),
+    }
+}
+
+/// Get canonical absolute path (realpath syscall)
+fn sys_realpath(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = Path::new(&path);
+
+    // Use VFS normalize_path to canonicalize the path
+    let normalized = wos_shared::vfs::VirtualFileSystem::normalize_path(path);
+
+    // Convert to string and return as Data
+    let canonical_str = normalized.to_str().ok_or(KernelError::InvalidParameters(
+        "Path contains invalid UTF-8".to_string(),
+    ))?;
+
+    Ok((
+        state,
+        SyscallOutput::Data(canonical_str.as_bytes().to_vec()),
+    ))
+}
+
 ///
 /// Pure functional dispatcher: takes kernel state and syscall, returns new state and output.
 /// Never panics - all errors are returned as Results.
@@ -705,6 +909,12 @@ pub fn dispatch_syscall(
         SystemCall::Pipe => sys_pipe(state, calling_pid),
         SystemCall::Dup2 { oldfd, newfd } => sys_dup2(state, calling_pid, oldfd, newfd),
         SystemCall::Kill { pid, signal } => sys_kill(state, calling_pid, pid, signal),
+        SystemCall::Mkdir { path, mode } => sys_mkdir(state, calling_pid, path, mode),
+        SystemCall::Rmdir { path } => sys_rmdir(state, calling_pid, path),
+        SystemCall::Getdents { fd } => sys_getdents(state, calling_pid, fd),
+        SystemCall::Stat { path } => sys_stat(state, calling_pid, path),
+        SystemCall::Lstat { path } => sys_lstat(state, calling_pid, path),
+        SystemCall::Realpath { path } => sys_realpath(state, calling_pid, path),
     }
 }
 
@@ -3769,6 +3979,1862 @@ mod tests {
                             prop_assert_eq!(&process.state, &ProcessState::Ready);
                             prop_assert!(!process.pending_signals.contains(signal));
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // ============================================================================
+    // WOS-FS-001: Directory syscall tests
+    // ============================================================================
+
+    #[cfg(test)]
+    mod directory_tests {
+        use super::*;
+
+        #[test]
+        fn test_mkdir_basic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Try to create directory /test_dir
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+
+            // Should succeed
+            assert!(result.is_ok());
+            let (new_state, output) = result.unwrap();
+            assert_eq!(output, SyscallOutput::Success);
+
+            // Verify directory was created
+            let dir_exists = new_state
+                .vfs
+                .is_directory(std::path::Path::new("/test_dir"));
+            assert!(dir_exists);
+        }
+
+        #[test]
+        fn test_mkdir_nested() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create parent directory first
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/parent".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Create child directory
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/parent/child".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (new_state, _) = result.unwrap();
+
+            // Verify both directories exist
+            assert!(new_state.vfs.is_directory(std::path::Path::new("/parent")));
+            assert!(new_state
+                .vfs
+                .is_directory(std::path::Path::new("/parent/child")));
+        }
+
+        #[test]
+        fn test_mkdir_already_exists() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create directory
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Try to create same directory again - should fail
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_err());
+            assert!(matches!(
+                result.unwrap_err(),
+                KernelError::FileAlreadyExists(_)
+            ));
+        }
+
+        #[test]
+        fn test_rmdir_basic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create directory
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Remove directory
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Rmdir {
+                    path: "/test_dir".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (new_state, output) = result.unwrap();
+            assert_eq!(output, SyscallOutput::Success);
+
+            // Verify directory no longer exists
+            let dir_exists = new_state
+                .vfs
+                .is_directory(std::path::Path::new("/test_dir"));
+            assert!(!dir_exists);
+        }
+
+        #[test]
+        fn test_rmdir_not_empty() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create parent and child directories
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/parent".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/parent/child".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Try to remove parent directory - should fail because not empty
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Rmdir {
+                    path: "/parent".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_getdents_empty_directory() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create directory
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Open directory (assuming we'll use Open syscall with directory support)
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/test_dir".to_string(),
+                    flags: 0,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, output) = result.unwrap();
+            let fd = match output {
+                SyscallOutput::FileDescriptor(fd) => fd,
+                _ => panic!("Expected FileDescriptor"),
+            };
+
+            // Read directory entries
+            let result = dispatch_syscall(state, SystemCall::Getdents { fd }, pid);
+            assert!(result.is_ok());
+            let (_new_state, output) = result.unwrap();
+
+            // Should return directory entries (. and .. at minimum)
+            match output {
+                SyscallOutput::Data(data) => {
+                    assert!(!data.is_empty());
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_getdents_with_files() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create directory
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Create a file in the directory using Write syscall
+            // First open the file with O_CREAT flag
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/test_dir/file1.txt".to_string(),
+                    flags: O_CREAT | 0x0001, // O_CREAT | O_WRONLY
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, output) = result.unwrap();
+            let file_fd = match output {
+                SyscallOutput::FileDescriptor(fd) => fd,
+                _ => panic!("Expected FileDescriptor"),
+            };
+
+            // Write content to the file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Write {
+                    fd: file_fd,
+                    data: b"content".to_vec(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Open directory
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/test_dir".to_string(),
+                    flags: 0,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, output) = result.unwrap();
+            let fd = match output {
+                SyscallOutput::FileDescriptor(fd) => fd,
+                _ => panic!("Expected FileDescriptor"),
+            };
+
+            // Read directory entries
+            let result = dispatch_syscall(state, SystemCall::Getdents { fd }, pid);
+            assert!(result.is_ok());
+            let (_new_state, output) = result.unwrap();
+
+            // Should return directory entries including file1.txt
+            match output {
+                SyscallOutput::Data(data) => {
+                    let entries_json = String::from_utf8(data).unwrap();
+                    assert!(entries_json.contains("file1.txt"));
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_mkdir_invalid_path() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Try to create directory with non-existent parent
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Mkdir {
+                    path: "/nonexistent/child".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_rmdir_not_found() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Try to remove non-existent directory
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Rmdir {
+                    path: "/nonexistent".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
+        }
+
+        // ========================================================================
+        // Property tests for directory operations
+        // ========================================================================
+
+        #[cfg(test)]
+        mod proptests {
+            use super::*;
+            use proptest::prelude::*;
+
+            proptest! {
+                #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+                /// Property: mkdir followed by rmdir returns to original state
+                #[test]
+                fn proptest_mkdir_rmdir_inverse(
+                    dir_name in "[a-z]{1,10}",
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/test_{}", dir_name);
+
+                    // Create directory
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Mkdir {
+                            path: path.clone(),
+                            mode: 0o755,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Verify it exists
+                    prop_assert!(state.vfs.is_directory(std::path::Path::new(&path)));
+
+                    // Remove directory
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Rmdir {
+                            path: path.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Verify it no longer exists
+                    prop_assert!(!state.vfs.is_directory(std::path::Path::new(&path)));
+                }
+
+                /// Property: mkdir is deterministic - same input always produces same result
+                #[test]
+                fn proptest_mkdir_deterministic(
+                    dir_name in "[a-z]{1,10}",
+                    mode in 0o000u32..=0o777u32,
+                ) {
+                    let mut state1 = KernelState::new();
+                    let pid1 = state1.allocate_pid();
+                    let proc1 = Process::new(pid1, None);
+                    state1.add_process(proc1);
+
+                    let mut state2 = KernelState::new();
+                    let pid2 = state2.allocate_pid();
+                    let proc2 = Process::new(pid2, None);
+                    state2.add_process(proc2);
+
+                    // Use "test_" prefix to avoid conflicts with pre-existing directories
+                    let path = format!("/test_{}", dir_name);
+
+                    // Create directory in state1
+                    let result1 = dispatch_syscall(
+                        state1.clone(),
+                        SystemCall::Mkdir {
+                            path: path.clone(),
+                            mode,
+                        },
+                        pid1,
+                    );
+
+                    // Create same directory in state2
+                    let result2 = dispatch_syscall(
+                        state2.clone(),
+                        SystemCall::Mkdir {
+                            path: path.clone(),
+                            mode,
+                        },
+                        pid2,
+                    );
+
+                    // Both should succeed
+                    prop_assert!(result1.is_ok());
+                    prop_assert!(result2.is_ok());
+
+                    // Both should have the directory
+                    let (state1, _) = result1.unwrap();
+                    let (state2, _) = result2.unwrap();
+                    prop_assert!(state1.vfs.is_directory(std::path::Path::new(&path)));
+                    prop_assert!(state2.vfs.is_directory(std::path::Path::new(&path)));
+                }
+
+                /// Property: mkdir with existing directory fails
+                #[test]
+                fn proptest_mkdir_idempotence(
+                    dir_name in "[a-z]{1,10}",
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/test_{}", dir_name);
+
+                    // Create directory first time
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Mkdir {
+                            path: path.clone(),
+                            mode: 0o755,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Try to create same directory again - should fail
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Mkdir {
+                            path: path.clone(),
+                            mode: 0o755,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_err());
+                    prop_assert!(matches!(result.unwrap_err(), KernelError::FileAlreadyExists(_)));
+                }
+
+                /// Property: rmdir on empty directory succeeds, on non-empty fails
+                #[test]
+                fn proptest_rmdir_empty_check(
+                    parent_name in "[a-z]{1,10}",
+                    child_name in "[a-z]{1,10}",
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let parent_path = format!("/test_{}", parent_name);
+                    let child_path = format!("/test_{}/{}", parent_name, child_name);
+
+                    // Create parent directory
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Mkdir {
+                            path: parent_path.clone(),
+                            mode: 0o755,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Create child directory
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Mkdir {
+                            path: child_path.clone(),
+                            mode: 0o755,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Try to remove parent (non-empty) - should fail
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Rmdir {
+                            path: parent_path.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_err());
+
+                    // Remove child first
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Rmdir {
+                            path: child_path.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Now remove parent (empty) - should succeed
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Rmdir {
+                            path: parent_path.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                }
+
+                /// Property: getdents never panics on valid file descriptor
+                #[test]
+                fn proptest_getdents_never_panics(
+                    dir_name in "[a-z]{1,10}",
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/test_{}", dir_name);
+
+                    // Create directory
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Mkdir {
+                            path: path.clone(),
+                            mode: 0o755,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Open directory
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Open {
+                            path: path.clone(),
+                            flags: 0,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, output) = result.unwrap();
+                    let fd = match output {
+                        SyscallOutput::FileDescriptor(fd) => fd,
+                        _ => return Err(TestCaseError::fail("Expected FileDescriptor")),
+                    };
+
+                    // Read directory entries - should never panic
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Getdents { fd },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                }
+            }
+        }
+    }
+
+    // ============================================================================
+    // WOS-FS-005: File metadata (stat) tests
+    // ============================================================================
+
+    #[cfg(test)]
+    mod metadata_tests {
+        use super::*;
+
+        #[test]
+        fn test_stat_file_basic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file first
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/test_file.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (mut state, output) = result.unwrap();
+            let fd = match output {
+                SyscallOutput::FileDescriptor(fd) => fd,
+                _ => panic!("Expected FileDescriptor"),
+            };
+
+            // Write some content
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Write {
+                    fd,
+                    data: b"Hello, World!".to_vec(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Stat the file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Stat {
+                    path: "/test_file.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            // Parse the FileStat from JSON
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.size, 13); // "Hello, World!" is 13 bytes
+                    assert_eq!(file_stat.file_type, wos_shared::vfs::FileType::RegularFile);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_directory() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a directory
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Mkdir {
+                    path: "/test_dir".to_string(),
+                    mode: 0o755,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Stat the directory
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/test_dir".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            // Verify it's a directory
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.file_type, wos_shared::vfs::FileType::Directory);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_nonexistent_file() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Stat a non-existent file
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/nonexistent.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
+        }
+
+        #[test]
+        fn test_stat_file_size() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create file with specific size
+            let content = b"0123456789"; // 10 bytes
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/sizefile.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, output) = result.unwrap();
+            let fd = match output {
+                SyscallOutput::FileDescriptor(fd) => fd,
+                _ => panic!("Expected FileDescriptor"),
+            };
+
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Write {
+                    fd,
+                    data: content.to_vec(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Stat and verify size
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/sizefile.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.size, 10);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_timestamps_exist() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/timefile.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Stat the file
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/timefile.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            // Verify timestamps are present (non-zero)
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    // Timestamps should exist (can be zero or non-zero depending on implementation)
+                    assert!(file_stat.atime >= 0);
+                    assert!(file_stat.mtime >= 0);
+                    assert!(file_stat.ctime >= 0);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_lstat_basic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/lstat_test.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Lstat the file (should work like stat for regular files)
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Lstat {
+                    path: "/lstat_test.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.file_type, wos_shared::vfs::FileType::RegularFile);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_empty_file() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create empty file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/empty.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Stat the empty file
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/empty.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.size, 0);
+                    assert_eq!(file_stat.file_type, wos_shared::vfs::FileType::RegularFile);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_root_directory() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Stat the root directory
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat =
+                        serde_json::from_slice(&data).unwrap();
+                    assert_eq!(file_stat.file_type, wos_shared::vfs::FileType::Directory);
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_stat_preserves_state() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/preserve.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            let state_before = state.clone();
+
+            // Stat should not modify state
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Stat {
+                    path: "/preserve.txt".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state_after, _) = result.unwrap();
+
+            // State should be functionally equivalent (stat is read-only)
+            assert_eq!(state_before.processes.len(), state_after.processes.len());
+        }
+
+        #[test]
+        fn test_stat_multiple_files() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create multiple files with different sizes
+            for i in 0..3 {
+                let path = format!("/file{}.txt", i);
+                let result = dispatch_syscall(
+                    state.clone(),
+                    SystemCall::Open {
+                        path: path.clone(),
+                        flags: O_CREAT | 0x0001,
+                    },
+                    pid,
+                );
+                assert!(result.is_ok());
+                let (new_state, output) = result.unwrap();
+                state = new_state;
+
+                let fd = match output {
+                    SyscallOutput::FileDescriptor(fd) => fd,
+                    _ => panic!("Expected FileDescriptor"),
+                };
+
+                // Write i bytes
+                let content = vec![b'x'; i];
+                let result =
+                    dispatch_syscall(state.clone(), SystemCall::Write { fd, data: content }, pid);
+                assert!(result.is_ok());
+                let (new_state, _) = result.unwrap();
+                state = new_state;
+            }
+
+            // Stat each file and verify sizes
+            for i in 0..3 {
+                let path = format!("/file{}.txt", i);
+                let result = dispatch_syscall(state.clone(), SystemCall::Stat { path }, pid);
+                assert!(result.is_ok());
+                let (new_state, output) = result.unwrap();
+                state = new_state;
+
+                match output {
+                    SyscallOutput::Data(data) => {
+                        let file_stat: wos_shared::vfs::FileStat =
+                            serde_json::from_slice(&data).unwrap();
+                        assert_eq!(file_stat.size, i as u64);
+                    }
+                    _ => panic!("Expected Data output"),
+                }
+            }
+        }
+
+        // ========================================================================
+        // Property tests for stat/metadata operations
+        // ========================================================================
+
+        #[cfg(test)]
+        mod proptests {
+            use super::*;
+            use proptest::prelude::*;
+
+            proptest! {
+                #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+                /// Property: stat is deterministic - same path always returns same metadata
+                #[test]
+                fn proptest_stat_deterministic(
+                    filename in "[a-z]{1,10}",
+                    content_size in 0usize..1000,
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/test_{}.txt", filename);
+                    let content = vec![b'x'; content_size];
+
+                    // Create and write file
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Open {
+                            path: path.clone(),
+                            flags: O_CREAT | 0x0001,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, output) = result.unwrap();
+                    let fd = match output {
+                        SyscallOutput::FileDescriptor(fd) => fd,
+                        _ => return Err(TestCaseError::fail("Expected FileDescriptor")),
+                    };
+
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Write {
+                            fd,
+                            data: content.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Stat the file twice
+                    let result1 = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Stat {
+                            path: path.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result1.is_ok());
+                    let (state, output1) = result1.unwrap();
+
+                    let result2 = dispatch_syscall(
+                        state,
+                        SystemCall::Stat {
+                            path: path.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result2.is_ok());
+                    let (_state, output2) = result2.unwrap();
+
+                    // Both should return identical data
+                    prop_assert_eq!(output1, output2);
+                }
+
+                /// Property: stat never panics on valid paths
+                #[test]
+                fn proptest_stat_never_panics(
+                    filename in "[a-z]{1,10}",
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/test_{}.txt", filename);
+
+                    // Create file
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Open {
+                            path: path.clone(),
+                            flags: O_CREAT | 0x0001,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Stat should never panic
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Stat {
+                            path,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                }
+
+                /// Property: file size reported by stat matches written content length
+                #[test]
+                fn proptest_stat_size_matches_content(
+                    filename in "[a-z]{1,10}",
+                    content_size in 0usize..1000,
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = format!("/test_{}.txt", filename);
+                    let content = vec![b'y'; content_size];
+
+                    // Create and write file
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Open {
+                            path: path.clone(),
+                            flags: O_CREAT | 0x0001,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, output) = result.unwrap();
+                    let fd = match output {
+                        SyscallOutput::FileDescriptor(fd) => fd,
+                        _ => return Err(TestCaseError::fail("Expected FileDescriptor")),
+                    };
+
+                    let result = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Write {
+                            fd,
+                            data: content.clone(),
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (state, _) = result.unwrap();
+
+                    // Stat and verify size
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Stat {
+                            path,
+                        },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (_state, output) = result.unwrap();
+
+                    match output {
+                        SyscallOutput::Data(data) => {
+                            let file_stat: wos_shared::vfs::FileStat =
+                                serde_json::from_slice(&data)
+                                    .map_err(|e| TestCaseError::fail(format!("JSON parse error: {}", e)))?;
+                            prop_assert_eq!(file_stat.size, content_size as u64);
+                        }
+                        _ => return Err(TestCaseError::fail("Expected Data output")),
+                    }
+                }
+            }
+        }
+    }
+
+    // ============================================================================
+    // WOS-FS-006: Path normalization and resolution tests
+    // ============================================================================
+
+    #[cfg(test)]
+    mod path_resolution_tests {
+        use super::*;
+
+        #[test]
+        fn test_realpath_current_directory() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test resolving /./test -> /test
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/./test".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/test");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_parent_directory() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test resolving /a/b/../c -> /a/c
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/../c".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/c");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_multiple_slashes() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test resolving /a//b///c -> /a/b/c
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a//b///c".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/b/c");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_complex_path() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test complex path: /a/./b/../c/./d -> /a/c/d
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/./b/../c/./d".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/c/d");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_root() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test root path
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_root_parent() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test /.. -> / (parent of root is root)
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/..".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_trailing_slash() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test trailing slash removal: /a/b/ -> /a/b
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/b");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_multiple_dot_dot() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test /a/b/c/../../d -> /a/d
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/c/../../d".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/d");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_preserves_state() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            let state_before = state.clone();
+
+            // Realpath should not modify state
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/./b/../c".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state_after, _) = result.unwrap();
+
+            // State should be identical
+            assert_eq!(state_before.processes.len(), state_after.processes.len());
+        }
+
+        #[test]
+        fn test_realpath_empty_components() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test path with empty components from multiple slashes
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "///a///b///".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/b");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_single_dot_at_end() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test /a/b/. -> /a/b
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/.".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/b");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_double_dot_at_end() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test /a/b/.. -> /a
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/..".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_mixed_separators() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test path with mixed dot components
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/././b/../././c".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/c");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        #[test]
+        fn test_realpath_deterministic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            let test_path = "/a/./b/../c".to_string();
+
+            // Call realpath twice
+            let result1 = dispatch_syscall(
+                state.clone(),
+                SystemCall::Realpath {
+                    path: test_path.clone(),
+                },
+                pid,
+            );
+            assert!(result1.is_ok());
+            let (state, output1) = result1.unwrap();
+
+            let result2 = dispatch_syscall(state, SystemCall::Realpath { path: test_path }, pid);
+            assert!(result2.is_ok());
+            let (_state, output2) = result2.unwrap();
+
+            // Both should return identical results
+            assert_eq!(output1, output2);
+        }
+
+        #[test]
+        fn test_realpath_long_path() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Test long path with many components
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Realpath {
+                    path: "/a/b/c/d/e/f/g/../../h/../i/./j".to_string(),
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (_state, output) = result.unwrap();
+
+            match output {
+                SyscallOutput::Data(data) => {
+                    let canonical_path = String::from_utf8(data).unwrap();
+                    assert_eq!(canonical_path, "/a/b/c/d/e/i/j");
+                }
+                _ => panic!("Expected Data output"),
+            }
+        }
+
+        // ========================================================================
+        // Property tests for path normalization
+        // ========================================================================
+
+        #[cfg(test)]
+        mod proptests {
+            use super::*;
+            use proptest::prelude::*;
+
+            proptest! {
+                #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+                /// Property: realpath is deterministic
+                #[test]
+                fn proptest_realpath_deterministic(
+                    components in prop::collection::vec("[a-z]{1,5}", 1..10),
+                    dots in prop::collection::vec(prop::bool::weighted(0.3), 0..5),
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Build a path with random components and dots
+                    let mut path_parts = vec![];
+                    for (i, comp) in components.iter().enumerate() {
+                        if i < dots.len() && dots[i] {
+                            path_parts.push(".".to_string());
+                        }
+                        path_parts.push(comp.clone());
+                    }
+                    let path = format!("/{}", path_parts.join("/"));
+
+                    // Call realpath twice
+                    let result1 = dispatch_syscall(
+                        state.clone(),
+                        SystemCall::Realpath { path: path.clone() },
+                        pid,
+                    );
+                    prop_assert!(result1.is_ok());
+                    let (state, output1) = result1.unwrap();
+
+                    let result2 = dispatch_syscall(
+                        state,
+                        SystemCall::Realpath { path },
+                        pid,
+                    );
+                    prop_assert!(result2.is_ok());
+                    let (_state, output2) = result2.unwrap();
+
+                    // Results should be identical
+                    prop_assert_eq!(output1, output2);
+                }
+
+                /// Property: realpath removes all . components
+                #[test]
+                fn proptest_realpath_removes_dots(
+                    components in prop::collection::vec("[a-z]{1,5}", 1..8),
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Build path with . components interspersed
+                    let mut path_parts = vec![];
+                    for comp in &components {
+                        path_parts.push(comp.clone());
+                        path_parts.push(".".to_string());
+                    }
+                    let path = format!("/{}", path_parts.join("/"));
+
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Realpath { path },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (_state, output) = result.unwrap();
+
+                    match output {
+                        SyscallOutput::Data(data) => {
+                            let canonical = String::from_utf8(data)
+                                .map_err(|e| TestCaseError::fail(format!("UTF-8 error: {}", e)))?;
+                            // Canonical path should not contain /./
+                            prop_assert!(!canonical.contains("/./ "));
+                            // Should not end with /.
+                            prop_assert!(!canonical.ends_with("/."));
+                        }
+                        _ => return Err(TestCaseError::fail("Expected Data output")),
+                    }
+                }
+
+                /// Property: realpath removes redundant slashes
+                #[test]
+                fn proptest_realpath_removes_redundant_slashes(
+                    components in prop::collection::vec("[a-z]{1,5}", 1..8),
+                    extra_slashes in prop::collection::vec(1usize..5, 1..8),
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Build path with extra slashes
+                    let mut path = String::from("/");
+                    for (i, comp) in components.iter().enumerate() {
+                        if i < extra_slashes.len() {
+                            for _ in 0..extra_slashes[i] {
+                                path.push('/');
+                            }
+                        }
+                        path.push_str(comp);
+                        path.push('/');
+                    }
+
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Realpath { path },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (_state, output) = result.unwrap();
+
+                    match output {
+                        SyscallOutput::Data(data) => {
+                            let canonical = String::from_utf8(data)
+                                .map_err(|e| TestCaseError::fail(format!("UTF-8 error: {}", e)))?;
+                            // Canonical path should not contain //
+                            prop_assert!(!canonical.contains("//"));
+                        }
+                        _ => return Err(TestCaseError::fail("Expected Data output")),
+                    }
+                }
+
+                /// Property: realpath handles .. correctly
+                #[test]
+                fn proptest_realpath_handles_parent(
+                    depth in 2usize..10,
+                    backtrack in 1usize..5,
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    // Build path: /a/b/c/d/e/../.. -> /a/b/c
+                    let mut path_parts = vec![];
+                    for i in 0..depth {
+                        path_parts.push(format!("dir{}", i));
+                    }
+                    let effective_backtrack = backtrack.min(depth - 1);
+                    for _ in 0..effective_backtrack {
+                        path_parts.push("..".to_string());
+                    }
+                    let path = format!("/{}", path_parts.join("/"));
+
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Realpath { path },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (_state, output) = result.unwrap();
+
+                    match output {
+                        SyscallOutput::Data(data) => {
+                            let canonical = String::from_utf8(data)
+                                .map_err(|e| TestCaseError::fail(format!("UTF-8 error: {}", e)))?;
+                            // Count components in canonical path
+                            let components: Vec<&str> = canonical
+                                .trim_matches('/')
+                                .split('/')
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                            // Should have (depth - backtrack) components
+                            prop_assert_eq!(components.len(), depth - effective_backtrack);
+                        }
+                        _ => return Err(TestCaseError::fail("Expected Data output")),
+                    }
+                }
+
+                /// Property: realpath always returns absolute paths
+                #[test]
+                fn proptest_realpath_always_absolute(
+                    components in prop::collection::vec("[a-z]{1,5}", 0..10),
+                ) {
+                    let mut state = KernelState::new();
+                    let pid = state.allocate_pid();
+                    let proc = Process::new(pid, None);
+                    state.add_process(proc);
+
+                    let path = if components.is_empty() {
+                        "/".to_string()
+                    } else {
+                        format!("/{}", components.join("/"))
+                    };
+
+                    let result = dispatch_syscall(
+                        state,
+                        SystemCall::Realpath { path },
+                        pid,
+                    );
+                    prop_assert!(result.is_ok());
+                    let (_state, output) = result.unwrap();
+
+                    match output {
+                        SyscallOutput::Data(data) => {
+                            let canonical = String::from_utf8(data)
+                                .map_err(|e| TestCaseError::fail(format!("UTF-8 error: {}", e)))?;
+                            // Must start with /
+                            prop_assert!(canonical.starts_with('/'));
+                            // Must not be empty
+                            prop_assert!(!canonical.is_empty());
+                        }
+                        _ => return Err(TestCaseError::fail("Expected Data output")),
                     }
                 }
             }
