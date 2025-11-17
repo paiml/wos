@@ -19,8 +19,9 @@ pub mod vim;
 pub use init::{init_main_loop, InitProcess};
 pub use programs::{echo_main_loop, ls_main_loop, ps_main_loop, vim_main_loop, Echo, Ls, Ps, Vim};
 pub use programs_extra::{
-    cat_main_loop, cp_main_loop, grep_main_loop, head_main_loop, mkdir_main_loop, mv_main_loop,
-    rm_main_loop, tail_main_loop, wc_main_loop, Cat, Cp, Grep, Head, Mkdir, Mv, Rm, Tail, Wc,
+    cat_main_loop, chmod_main_loop, cp_main_loop, grep_main_loop, head_main_loop, mkdir_main_loop,
+    mv_main_loop, rm_main_loop, tail_main_loop, wc_main_loop, Cat, Chmod, Cp, Grep, Head, Mkdir,
+    Mv, Rm, Tail, Wc,
 };
 pub use shell::{shell_main_loop, Command, Shell};
 pub use vim::{VimBuffer, VimCommand, VimError, VimMode, VimState};

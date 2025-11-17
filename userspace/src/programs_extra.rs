@@ -10,6 +10,7 @@
 //! - mv: move or rename files (WOS-PROG-018)
 //! - mkdir: create directories (WOS-PROG-020)
 //! - rm: remove files and directories (WOS-PROG-019)
+//! - chmod: change file permissions (WOS-PROG-014)
 
 use std::path::PathBuf;
 use wos_kernel::{KernelState, ProcessId, SystemCall};
@@ -805,6 +806,120 @@ pub fn rm_main_loop(rm: &mut Rm, state: &mut KernelState) -> Option<SystemCall> 
     Some(SystemCall::Exit(exit_code))
 }
 
+/// Chmod program - change file permissions
+/// WOS-PROG-014: chmod command
+#[derive(Clone, Debug, PartialEq)]
+pub struct Chmod {
+    /// Process ID
+    pub pid: ProcessId,
+    /// Permission mode (numeric, e.g., 0o755)
+    pub mode: u32,
+    /// Files to change permissions
+    pub paths: Vec<PathBuf>,
+    /// Recursive (-R flag)
+    pub recursive: bool,
+    /// Operation completed
+    pub completed: bool,
+    /// Error message if any
+    pub error: Option<String>,
+}
+
+impl Chmod {
+    /// Create a new chmod program with numeric mode
+    pub fn new(pid: ProcessId, mode: u32, paths: Vec<PathBuf>, recursive: bool) -> Self {
+        Self {
+            pid,
+            mode,
+            paths,
+            recursive,
+            completed: false,
+            error: None,
+        }
+    }
+
+    /// Change permissions for files
+    pub fn chmod(&mut self, state: &mut KernelState) {
+        let paths = self.paths.clone();
+        for path in &paths {
+            if !state.vfs.exists(path) {
+                self.error = Some(format!(
+                    "cannot access '{}': No such file or directory",
+                    path.display()
+                ));
+                return;
+            }
+
+            if self.recursive && state.vfs.is_directory(path) {
+                // Recursively chmod directory
+                if let Err(e) = self.chmod_recursive(state, path) {
+                    self.error = Some(e);
+                    return;
+                }
+            } else {
+                // Change permissions for single file/directory
+                if let Err(e) = state.vfs.chmod(path, self.mode) {
+                    self.error = Some(format!("cannot chmod '{}': {:?}", path.display(), e));
+                    return;
+                }
+            }
+        }
+
+        self.completed = true;
+    }
+
+    /// Recursively change permissions for directory and contents
+    fn chmod_recursive(&mut self, state: &mut KernelState, path: &PathBuf) -> Result<(), String> {
+        // Change permissions for the directory itself
+        state
+            .vfs
+            .chmod(path, self.mode)
+            .map_err(|e| format!("cannot chmod '{}': {:?}", path.display(), e))?;
+
+        // List directory contents
+        let entries = state
+            .vfs
+            .list_directory(path)
+            .map_err(|e| format!("cannot list directory '{}': {:?}", path.display(), e))?;
+
+        // Recursively chmod all entries
+        for entry in &entries {
+            let entry_path = path.join(&entry.name);
+
+            if entry.is_directory() {
+                // Recursively chmod subdirectory
+                self.chmod_recursive(state, &entry_path)?;
+            } else {
+                // Change permissions for file
+                state
+                    .vfs
+                    .chmod(&entry_path, self.mode)
+                    .map_err(|e| format!("cannot chmod '{}': {:?}", entry_path.display(), e))?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Chmod main loop - changes file permissions
+pub fn chmod_main_loop(chmod: &mut Chmod, state: &mut KernelState) -> Option<SystemCall> {
+    if !chmod.completed && chmod.error.is_none() {
+        // First iteration: change permissions
+        chmod.chmod(state);
+
+        if let Some(ref error) = chmod.error {
+            return Some(SystemCall::Write {
+                fd: 2, // stderr
+                data: format!("chmod: {}\n", error).as_bytes().to_vec(),
+            });
+        }
+    }
+
+    // Done - exit with appropriate code
+    let exit_code = if chmod.error.is_some() { 1 } else { 0 };
+    Some(SystemCall::Exit(exit_code))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1221,5 +1336,141 @@ mod tests {
         assert!(!state.vfs.exists(&PathBuf::from("/a")));
         assert!(!state.vfs.exists(&PathBuf::from("/a/b")));
         assert!(!state.vfs.exists(&PathBuf::from("/a/b/file.txt")));
+    }
+
+    // ============================================================================
+    // Chmod Tests (WOS-PROG-014)
+    // ============================================================================
+
+    #[test]
+    fn test_chmod_basic() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file.txt"), b"hello".to_vec())
+            .unwrap();
+
+        let mut chmod = Chmod::new(1, 0o755, vec![PathBuf::from("/file.txt")], false);
+
+        let syscall = chmod_main_loop(&mut chmod, &mut state);
+        assert!(chmod.completed);
+        assert!(chmod.error.is_none());
+        assert!(matches!(syscall, Some(SystemCall::Exit(0))));
+
+        // Verify permissions changed
+        let perms = state
+            .vfs
+            .get_permissions(&PathBuf::from("/file.txt"))
+            .unwrap();
+        assert_eq!(perms.mode, 0o755);
+    }
+
+    #[test]
+    fn test_chmod_nonexistent_file() {
+        let mut state = KernelState::new();
+
+        let mut chmod = Chmod::new(1, 0o755, vec![PathBuf::from("/nonexistent.txt")], false);
+
+        let syscall = chmod_main_loop(&mut chmod, &mut state);
+        assert!(!chmod.completed);
+        assert!(chmod.error.is_some());
+        assert!(chmod
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("No such file or directory"));
+        assert!(matches!(syscall, Some(SystemCall::Write { fd: 2, .. })));
+    }
+
+    #[test]
+    fn test_chmod_multiple_files() {
+        let mut state = KernelState::new();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file1.txt"), b"hello".to_vec())
+            .unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/file2.txt"), b"world".to_vec())
+            .unwrap();
+
+        let mut chmod = Chmod::new(
+            1,
+            0o644,
+            vec![PathBuf::from("/file1.txt"), PathBuf::from("/file2.txt")],
+            false,
+        );
+
+        chmod_main_loop(&mut chmod, &mut state);
+        assert!(chmod.completed);
+        assert!(chmod.error.is_none());
+
+        // Verify both files changed
+        let perms1 = state
+            .vfs
+            .get_permissions(&PathBuf::from("/file1.txt"))
+            .unwrap();
+        let perms2 = state
+            .vfs
+            .get_permissions(&PathBuf::from("/file2.txt"))
+            .unwrap();
+        assert_eq!(perms1.mode, 0o644);
+        assert_eq!(perms2.mode, 0o644);
+    }
+
+    #[test]
+    fn test_chmod_directory() {
+        let mut state = KernelState::new();
+        state.vfs.create_directory(PathBuf::from("/dir")).unwrap();
+
+        let mut chmod = Chmod::new(1, 0o755, vec![PathBuf::from("/dir")], false);
+
+        chmod_main_loop(&mut chmod, &mut state);
+        assert!(chmod.completed);
+        assert!(chmod.error.is_none());
+
+        // Verify directory permissions changed
+        let perms = state.vfs.get_permissions(&PathBuf::from("/dir")).unwrap();
+        assert_eq!(perms.mode, 0o755);
+    }
+
+    #[test]
+    fn test_chmod_recursive() {
+        let mut state = KernelState::new();
+        state.vfs.create_directory(PathBuf::from("/dir")).unwrap();
+        state
+            .vfs
+            .create_file(PathBuf::from("/dir/file.txt"), b"test".to_vec())
+            .unwrap();
+        state
+            .vfs
+            .create_directory(PathBuf::from("/dir/subdir"))
+            .unwrap();
+
+        let mut chmod = Chmod::new(
+            1,
+            0o700,
+            vec![PathBuf::from("/dir")],
+            true, // recursive
+        );
+
+        chmod_main_loop(&mut chmod, &mut state);
+        assert!(chmod.completed);
+        assert!(chmod.error.is_none());
+
+        // Verify all permissions changed
+        let dir_perms = state.vfs.get_permissions(&PathBuf::from("/dir")).unwrap();
+        let file_perms = state
+            .vfs
+            .get_permissions(&PathBuf::from("/dir/file.txt"))
+            .unwrap();
+        let subdir_perms = state
+            .vfs
+            .get_permissions(&PathBuf::from("/dir/subdir"))
+            .unwrap();
+
+        assert_eq!(dir_perms.mode, 0o700);
+        assert_eq!(file_perms.mode, 0o700);
+        assert_eq!(subdir_perms.mode, 0o700);
     }
 }
