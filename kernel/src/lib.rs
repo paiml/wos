@@ -11,6 +11,7 @@
 
 pub mod memory;
 pub mod scheduler;
+pub mod shm;
 pub mod signals;
 pub mod state;
 pub mod sync;
@@ -22,6 +23,7 @@ pub use memory::{
     PhysicalPage, VirtualAddress, VirtualMemory, VirtualPage, PAGE_SIZE,
 };
 pub use scheduler::Scheduler;
+pub use shm::{ProcessMapping, SharedMemoryId, SharedMemoryManager, SharedMemorySegment};
 pub use signals::{Signal, SignalAction, SignalSet};
 pub use state::{FileDescriptor, KernelState, Message, Process, ProcessId, ProcessState};
 pub use sync::{
