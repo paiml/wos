@@ -188,8 +188,8 @@ mod tests {
         let mut ctx_mut = ctx;
         let val = ctx_mut.next_random();
 
-        // Should successfully generate a value
-        assert!(val > 0 || val == 0); // Any u64 is valid
+        // Should successfully generate a value (any u64 is valid)
+        let _ = val; // Suppress unused variable warning
 
         // RNG should be initialized now
         assert!(ctx_mut.rng.is_some());

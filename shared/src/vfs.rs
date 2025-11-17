@@ -3785,7 +3785,8 @@ mod tests {
 
         let stat = vfs.stat(&PathBuf::from("/dir")).unwrap();
         // Directory size is typically fixed (e.g., 4096 or 0)
-        assert!(stat.size >= 0, "Directory should have a size");
+        // Note: size is unsigned, so it's always >= 0
+        assert!(stat.size < u64::MAX, "Directory should have a valid size");
     }
 
     #[test]

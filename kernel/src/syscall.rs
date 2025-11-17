@@ -4979,9 +4979,8 @@ mod tests {
                     let file_stat: wos_shared::vfs::FileStat =
                         serde_json::from_slice(&data).unwrap();
                     // Timestamps should exist (can be zero or non-zero depending on implementation)
-                    assert!(file_stat.atime >= 0);
-                    assert!(file_stat.mtime >= 0);
-                    assert!(file_stat.ctime >= 0);
+                    // Note: timestamps are unsigned, so they're always >= 0
+                    let _ = (file_stat.atime, file_stat.mtime, file_stat.ctime);
                 }
                 _ => panic!("Expected Data output"),
             }
