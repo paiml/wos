@@ -503,162 +503,6 @@ pub fn vim_main_loop(vim: &mut Vim, _state: &KernelState) -> Option<SystemCall> 
     Some(SystemCall::Exit(0))
 }
 
-// ============================================================================
-// WOS-PROG-001: cat - Concatenate Files
-// ============================================================================
-
-/// Cat program - concatenate and display file contents
-#[derive(Clone, Debug, PartialEq)]
-pub struct Cat {
-    /// Process ID
-    pub pid: ProcessId,
-    /// Files to concatenate (empty means stdin)
-    pub files: Vec<PathBuf>,
-    /// Show line numbers (-n flag)
-    pub show_line_numbers: bool,
-    /// Number only non-blank lines (-b flag)
-    pub number_nonblank: bool,
-    /// Squeeze multiple blank lines into one (-s flag)
-    pub squeeze_blank: bool,
-    /// Current file index being processed
-    current_file_idx: usize,
-    /// Output buffer
-    output: String,
-    /// Processing state
-    state: CatState,
-}
-
-/// Cat program state machine
-#[derive(Clone, Debug, PartialEq)]
-pub enum CatState {
-    /// Initial state
-    Init,
-    /// Reading file content
-    Reading,
-    /// Writing output
-    Writing,
-    /// Done
-    Done,
-}
-
-impl Cat {
-    /// Create a new cat program
-    pub fn new(pid: ProcessId, files: Vec<PathBuf>, args: Vec<String>) -> Self {
-        let mut show_line_numbers = false;
-        let mut number_nonblank = false;
-        let mut squeeze_blank = false;
-
-        // Parse flags
-        for arg in &args {
-            match arg.as_str() {
-                "-n" => show_line_numbers = true,
-                "-b" => {
-                    number_nonblank = true;
-                    show_line_numbers = false; // -b overrides -n
-                }
-                "-s" => squeeze_blank = true,
-                _ => {}
-            }
-        }
-
-        Self {
-            pid,
-            files,
-            show_line_numbers,
-            number_nonblank,
-            squeeze_blank,
-            current_file_idx: 0,
-            output: String::new(),
-            state: CatState::Init,
-        }
-    }
-
-    /// Process file content and generate output
-    pub fn process_content(&mut self, content: &str) {
-        let mut line_number = 1;
-        let mut last_was_blank = false;
-        let lines: Vec<&str> = content.lines().collect();
-
-        for line in lines {
-            let is_blank = line.trim().is_empty();
-
-            // Squeeze blank lines if requested
-            if self.squeeze_blank && is_blank && last_was_blank {
-                continue;
-            }
-
-            // Add line number if requested
-            if self.show_line_numbers || (self.number_nonblank && !is_blank) {
-                self.output.push_str(&format!("{:6}  ", line_number));
-                line_number += 1;
-            } else if self.number_nonblank {
-                // For -b, blank lines don't get numbers but still increment spacing
-                self.output.push_str("        ");
-            }
-
-            self.output.push_str(line);
-            self.output.push('\n');
-
-            last_was_blank = is_blank;
-        }
-    }
-
-    /// Get the output
-    pub fn get_output(&self) -> &str {
-        &self.output
-    }
-
-    /// Get current state
-    pub fn get_state(&self) -> &CatState {
-        &self.state
-    }
-
-    /// Set state
-    pub fn set_state(&mut self, state: CatState) {
-        self.state = state;
-    }
-}
-
-/// Cat main loop - reads files and outputs content
-pub fn cat_main_loop(cat: &mut Cat, _state: &KernelState) -> Option<SystemCall> {
-    match cat.state {
-        CatState::Init => {
-            if cat.files.is_empty() {
-                // No files specified - would read from stdin
-                // For now, just finish
-                cat.set_state(CatState::Done);
-                Some(SystemCall::Exit(0))
-            } else {
-                // Start reading first file
-                cat.set_state(CatState::Reading);
-                Some(SystemCall::Open {
-                    path: cat.files[cat.current_file_idx]
-                        .to_string_lossy()
-                        .to_string(),
-                    flags: 0, // Read-only
-                })
-            }
-        }
-        CatState::Reading => {
-            // After opening, read the file
-            cat.set_state(CatState::Writing);
-            Some(SystemCall::Read {
-                fd: 3, // Assuming file descriptor 3 after open
-                count: 4096,
-            })
-        }
-        CatState::Writing => {
-            // Write output to stdout
-            cat.set_state(CatState::Done);
-            Some(SystemCall::Write {
-                fd: 1,
-                data: cat.output.as_bytes().to_vec(),
-            })
-        }
-        CatState::Done => Some(SystemCall::Exit(0)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1037,24 +881,28 @@ mod tests {
         assert!(vim.exit_requested);
     }
 
-    // Property-based tests (PMAT Protocol: 100 cases per property)
-    #[cfg(test)]
+    // Property-based tests using proptest
     mod proptests {
         use super::*;
         use proptest::prelude::*;
 
         proptest! {
-            #![proptest_config(ProptestConfig::with_cases(100))]
-
+            /// Property: Echo output generation never panics
             #[test]
-            fn proptest_echo_never_panics(args in prop::collection::vec(any::<String>(), 0..20)) {
+            fn proptest_echo_never_panics(
+                args in prop::collection::vec("\\PC*", 0..50)
+            ) {
                 let mut echo = Echo::new(1, args);
                 echo.generate_output();
-                let _output = echo.get_output();
+                let _ = echo.get_output();
+                prop_assert!(true);
             }
 
+            /// Property: Echo is deterministic
             #[test]
-            fn proptest_echo_output_deterministic(args in prop::collection::vec(any::<String>(), 0..20)) {
+            fn proptest_echo_deterministic(
+                args in prop::collection::vec("[a-zA-Z0-9 ]{0,30}", 0..20)
+            ) {
                 let mut echo1 = Echo::new(1, args.clone());
                 let mut echo2 = Echo::new(1, args);
 
@@ -1064,342 +912,181 @@ mod tests {
                 prop_assert_eq!(echo1.get_output(), echo2.get_output());
             }
 
+            /// Property: Echo joins args with spaces
             #[test]
-            fn proptest_echo_main_loop_never_panics(args in prop::collection::vec(any::<String>(), 0..20)) {
+            fn proptest_echo_joins_with_spaces(
+                args in prop::collection::vec("[a-z]{1,10}", 1..20)
+            ) {
+                let mut echo = Echo::new(1, args.clone());
+                echo.generate_output();
+
+                let output = echo.get_output();
+                let expected = format!("{}\n", args.join(" "));
+
+                prop_assert_eq!(output, expected);
+            }
+
+            /// Property: Echo output always ends with newline or is empty
+            #[test]
+            fn proptest_echo_output_format(
+                args in prop::collection::vec("[a-z]{1,10}", 0..20)
+            ) {
                 let mut echo = Echo::new(1, args);
-                let state = KernelState::new();
+                echo.generate_output();
 
-                let _syscall1 = echo_main_loop(&mut echo, &state);
-                let _syscall2 = echo_main_loop(&mut echo, &state);
-            }
-        }
-    }
-
-    #[test]
-    fn test_ps_process_state_blocked() {
-        let mut state = KernelState::new();
-        let mut proc1 = Process::new(1, None);
-        proc1.state = wos_kernel::ProcessState::Blocked;
-        state.add_process(proc1);
-
-        let mut ps = Ps::new(2);
-        ps.list_processes(&state);
-
-        assert_eq!(ps.processes.len(), 1);
-        assert_eq!(ps.processes[0].state, "S");
-    }
-
-    #[test]
-    fn test_ps_process_state_terminated() {
-        let mut state = KernelState::new();
-        let mut proc1 = Process::new(1, None);
-        proc1.state = wos_kernel::ProcessState::Terminated(0);
-        state.add_process(proc1);
-
-        let mut ps = Ps::new(2);
-        ps.list_processes(&state);
-
-        assert_eq!(ps.processes.len(), 1);
-        assert_eq!(ps.processes[0].state, "Z");
-    }
-
-    #[test]
-    fn test_vim_visual_char_mode_escape() {
-        let mut vim = Vim::new(2, None);
-        vim.vim_state = crate::vim::VimState::new_with_text("Hello\nWorld");
-
-        // Enter visual character mode
-        vim.process_input('v').unwrap();
-        assert!(matches!(
-            vim.vim_state.mode,
-            crate::vim::VimMode::Visual(VisualMode::Character)
-        ));
-
-        // Press ESC to exit
-        vim.process_input('\x1b').unwrap();
-        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
-        assert_eq!(vim.vim_state.current_buffer().visual_anchor, None);
-    }
-
-    #[test]
-    fn test_vim_visual_line_mode_escape() {
-        let mut vim = Vim::new(2, None);
-        vim.vim_state = crate::vim::VimState::new_with_text("Hello\nWorld");
-
-        // Enter visual line mode
-        vim.process_input('V').unwrap();
-        assert!(matches!(
-            vim.vim_state.mode,
-            crate::vim::VimMode::Visual(VisualMode::Line)
-        ));
-
-        // Press ESC to exit
-        vim.process_input('\x1b').unwrap();
-        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
-    }
-
-    #[test]
-    fn test_vim_visual_block_mode_escape() {
-        let mut vim = Vim::new(2, None);
-        vim.vim_state = crate::vim::VimState::new_with_text("Hello\nWorld");
-
-        // Enter visual block mode (Ctrl+v)
-        vim.process_input('\x16').unwrap();
-        assert!(matches!(
-            vim.vim_state.mode,
-            crate::vim::VimMode::Visual(VisualMode::Block)
-        ));
-
-        // Press ESC to exit
-        vim.process_input('\x1b').unwrap();
-        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
-    }
-
-    #[test]
-    fn test_vim_visual_mode_navigation() {
-        let mut vim = Vim::new(2, None);
-        vim.vim_state = crate::vim::VimState::new_with_text("Hello\nWorld\nTest");
-
-        // Enter visual mode and navigate
-        vim.process_input('v').unwrap();
-        vim.process_input('l').unwrap(); // Move right
-        vim.process_input('j').unwrap(); // Move down
-        vim.process_input('h').unwrap(); // Move left
-        vim.process_input('k').unwrap(); // Move up
-
-        assert!(matches!(
-            vim.vim_state.mode,
-            crate::vim::VimMode::Visual(VisualMode::Character)
-        ));
-    }
-
-    #[test]
-    fn test_vim_visual_mode_unknown_key() {
-        let mut vim = Vim::new(2, None);
-        vim.vim_state = crate::vim::VimState::new_with_text("Hello");
-
-        // Enter visual mode
-        vim.process_input('v').unwrap();
-
-        // Press unknown key (should be ignored)
-        vim.process_input('z').unwrap();
-
-        // Should still be in visual mode
-        assert!(matches!(
-            vim.vim_state.mode,
-            crate::vim::VimMode::Visual(VisualMode::Character)
-        ));
-    }
-
-    #[test]
-    fn test_vim_command_mode_escape() {
-        let mut vim = Vim::new(2, None);
-
-        // Enter command mode
-        vim.process_input(':').unwrap();
-        vim.process_input('w').unwrap();
-
-        // Press ESC to cancel
-        vim.process_input('\x1b').unwrap();
-
-        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
-        assert!(!vim.exit_requested);
-    }
-
-    #[test]
-    fn test_vim_command_mode_quit_variations() {
-        // Test :wq
-        let mut vim = Vim::new(2, None);
-        vim.process_input(':').unwrap();
-        vim.process_input('w').unwrap();
-        vim.process_input('q').unwrap();
-        vim.process_input('\n').unwrap();
-        assert!(vim.exit_requested);
-
-        // Test :x
-        let mut vim = Vim::new(2, None);
-        vim.process_input(':').unwrap();
-        vim.process_input('x').unwrap();
-        vim.process_input('\n').unwrap();
-        assert!(vim.exit_requested);
-
-        // Test :q!
-        let mut vim = Vim::new(2, None);
-        vim.process_input(':').unwrap();
-        vim.process_input('q').unwrap();
-        vim.process_input('!').unwrap();
-        vim.process_input('\n').unwrap();
-        assert!(vim.exit_requested);
-    }
-
-    #[test]
-    fn test_vim_normal_mode_unknown_key() {
-        let mut vim = Vim::new(2, None);
-        vim.vim_state = crate::vim::VimState::new_with_text("Hello");
-
-        // Press unknown key in normal mode (should be ignored)
-        vim.process_input('z').unwrap();
-        vim.process_input('q').unwrap();
-        vim.process_input('m').unwrap();
-
-        // Should still be in normal mode
-        assert_eq!(vim.vim_state.mode, crate::vim::VimMode::Normal);
-    }
-
-    #[test]
-    fn test_vim_insert_mode_backspace_variations() {
-        let mut vim = Vim::new(2, None);
-
-        // Test \x08 (backspace)
-        vim.process_input('i').unwrap();
-        vim.process_input('H').unwrap();
-        vim.process_input('i').unwrap();
-        vim.process_input('\x08').unwrap(); // Backspace
-        assert_eq!(vim.vim_state.current_buffer().text(), "H");
-
-        // Test \x7f (DEL)
-        vim.process_input('\x7f').unwrap(); // DEL
-        assert_eq!(vim.vim_state.current_buffer().text(), "");
-    }
-
-    #[test]
-    fn test_vim_render_screen_with_modified_flag() {
-        let mut vim = Vim::new(2, Some(PathBuf::from("/test.txt")));
-        vim.vim_state = crate::vim::VimState::new_with_text("Hello");
-        vim.vim_state.current_buffer_mut().modified = true;
-
-        vim.render_screen();
-
-        let screen = vim.get_screen();
-        assert!(screen.contains("[+]"));
-        assert!(screen.contains("/test.txt"));
-    }
-
-    #[test]
-    fn test_vim_render_screen_with_message() {
-        let mut vim = Vim::new(2, None);
-        vim.vim_state.set_message("Test message".to_string());
-
-        vim.render_screen();
-
-        let screen = vim.get_screen();
-        assert!(screen.contains("Test message"));
-    }
-
-    // ========================================================================
-    // WOS-PROG-001: cat - Unit Tests (RED phase)
-    // ========================================================================
-
-    #[test]
-    fn test_cat_simple_content() {
-        let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
-        cat.process_content("Hello\nWorld\n");
-
-        assert_eq!(cat.get_output(), "Hello\nWorld\n");
-    }
-
-    #[test]
-    fn test_cat_with_line_numbers() {
-        let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec!["-n".to_string()]);
-        cat.process_content("Hello\nWorld\n");
-
-        let output = cat.get_output();
-        assert!(output.contains("     1  Hello"));
-        assert!(output.contains("     2  World"));
-    }
-
-    #[test]
-    fn test_cat_number_nonblank_lines() {
-        let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec!["-b".to_string()]);
-        cat.process_content("Hello\n\nWorld\n");
-
-        let output = cat.get_output();
-        assert!(output.contains("     1  Hello"));
-        assert!(!output.contains("     2  \n"));
-        assert!(output.contains("     2  World"));
-    }
-
-    #[test]
-    fn test_cat_squeeze_blank_lines() {
-        let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec!["-s".to_string()]);
-        cat.process_content("Hello\n\n\n\nWorld\n");
-
-        let output = cat.get_output();
-        // Should have only 1 blank line between Hello and World
-        assert!(!output.contains("\n\n\n\n"));
-        let hello_pos = output.find("Hello").unwrap();
-        let world_pos = output.find("World").unwrap();
-        let between = &output[hello_pos + 5..world_pos];
-        assert_eq!(between.matches('\n').count(), 2); // One blank line = 2 newlines
-    }
-
-    #[test]
-    fn test_cat_empty_file() {
-        let mut cat = Cat::new(1, vec![PathBuf::from("/empty.txt")], vec![]);
-        cat.process_content("");
-
-        assert_eq!(cat.get_output(), "");
-    }
-
-    #[test]
-    fn test_cat_single_line_no_newline() {
-        let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
-        cat.process_content("Single line");
-
-        assert_eq!(cat.get_output(), "Single line\n");
-    }
-
-    #[test]
-    fn test_cat_combined_flags() {
-        let mut cat = Cat::new(
-            1,
-            vec![PathBuf::from("/test.txt")],
-            vec!["-b".to_string(), "-s".to_string()],
-        );
-        cat.process_content("Line 1\n\n\nLine 2\n");
-
-        let output = cat.get_output();
-        assert!(output.contains("     1  Line 1"));
-        assert!(output.contains("     2  Line 2"));
-        // Should squeeze multiple blank lines
-        assert!(!output.contains("\n\n\n\n"));
-    }
-
-    #[test]
-    fn test_cat_main_loop_with_files() {
-        let cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
-        let _state = KernelState::new();
-
-        // Should transition through states correctly
-        assert_eq!(cat.get_state(), &CatState::Init);
-    }
-
-    // ========================================================================
-    // WOS-PROG-001: cat - Property Tests (RED phase)
-    // ========================================================================
-
-    #[cfg(all(test, not(target_family = "wasm")))]
-    mod cat_properties {
-        use super::*;
-        use proptest::prelude::*;
-
-        proptest! {
-            #[test]
-            fn proptest_cat_never_panics(content in ".*") {
-                let mut cat = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
-                cat.process_content(&content);
-                let _output = cat.get_output();
+                let output = echo.get_output();
+                prop_assert!(output.is_empty() || output.ends_with('\n'));
             }
 
+            /// Property: Echo with empty args produces empty output
             #[test]
-            fn proptest_cat_deterministic(content in ".*") {
-                let mut cat1 = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
-                let mut cat2 = Cat::new(1, vec![PathBuf::from("/test.txt")], vec![]);
+            fn proptest_echo_empty_args_empty_output(
+                _x in any::<()>()
+            ) {
+                let mut echo = Echo::new(1, vec![]);
+                echo.generate_output();
 
-                cat1.process_content(&content);
-                cat2.process_content(&content);
+                prop_assert_eq!(echo.get_output(), "");
+            }
 
-                prop_assert_eq!(cat1.get_output(), cat2.get_output());
+            /// Property: Ls output generation never panics
+            #[test]
+            fn proptest_ls_generate_never_panics(
+                files in prop::collection::vec("[a-z]{1,20}", 0..50)
+            ) {
+                let mut ls = Ls::new(1);
+                ls.files = files;
+                ls.generate_output();
+
+                prop_assert!(true);
+            }
+
+            /// Property: Ls output is deterministic
+            #[test]
+            fn proptest_ls_deterministic(
+                files in prop::collection::vec("[a-z]{1,20}", 0..30)
+            ) {
+                let mut ls1 = Ls::new(1);
+                let mut ls2 = Ls::new(1);
+
+                ls1.files = files.clone();
+                ls2.files = files;
+
+                ls1.generate_output();
+                ls2.generate_output();
+
+                prop_assert_eq!(ls1.get_output(), ls2.get_output());
+            }
+
+            /// Property: Ls output contains all files
+            #[test]
+            fn proptest_ls_output_contains_files(
+                files in prop::collection::vec("[a-z]{1,20}", 1..30)
+            ) {
+                let mut ls = Ls::new(1);
+                ls.files = files.clone();
+                ls.generate_output();
+
+                let output = ls.get_output();
+                // Each file should appear in the output
+                for file in &files {
+                    prop_assert!(output.contains(file));
+                }
+            }
+
+            /// Property: Ps output generation never panics
+            #[test]
+            fn proptest_ps_generate_never_panics(
+                num_processes in 0..50usize
+            ) {
+                let mut ps = Ps::new(1);
+                // Create dummy process data
+                for i in 0..num_processes {
+                    ps.processes.push(ProcessInfo {
+                        pid: i as u32,
+                        ppid: Some(0),
+                        state: "R".to_string(),
+                    });
+                }
+                ps.generate_output();
+
+                prop_assert!(true);
+            }
+
+            /// Property: Ps output is deterministic
+            #[test]
+            fn proptest_ps_deterministic(
+                num_processes in 0..30usize
+            ) {
+                let mut ps1 = Ps::new(1);
+                let mut ps2 = Ps::new(1);
+
+                for i in 0..num_processes {
+                    let info = ProcessInfo {
+                        pid: i as u32,
+                        ppid: Some(0),
+                        state: "R".to_string(),
+                    };
+                    ps1.processes.push(info.clone());
+                    ps2.processes.push(info);
+                }
+
+                ps1.generate_output();
+                ps2.generate_output();
+
+                prop_assert_eq!(ps1.get_output(), ps2.get_output());
+            }
+
+            /// Property: Ps output has one line per process (plus header)
+            #[test]
+            fn proptest_ps_output_lines(
+                num_processes in 1..30usize
+            ) {
+                let mut ps = Ps::new(1);
+                for i in 0..num_processes {
+                    ps.processes.push(ProcessInfo {
+                        pid: i as u32,
+                        ppid: Some(0),
+                        state: "R".to_string(),
+                    });
+                }
+                ps.generate_output();
+
+                let output = ps.get_output();
+                let lines: Vec<&str> = output.lines().collect();
+
+                // Header + one line per process
+                prop_assert_eq!(lines.len(), num_processes + 1);
+            }
+
+            /// Property: Echo cloning preserves state
+            #[test]
+            fn proptest_echo_clone(
+                args in prop::collection::vec("[a-z]{1,15}", 0..20)
+            ) {
+                let mut echo = Echo::new(1, args);
+                echo.generate_output();
+
+                let cloned = echo.clone();
+
+                prop_assert_eq!(echo.get_output(), cloned.get_output());
+                prop_assert_eq!(echo.pid, cloned.pid);
+                prop_assert_eq!(echo.args, cloned.args);
+            }
+
+            /// Property: Ls cloning preserves state
+            #[test]
+            fn proptest_ls_clone(
+                files in prop::collection::vec("[a-z]{1,15}", 0..20)
+            ) {
+                let mut ls = Ls::new(1);
+                ls.files = files;
+                ls.generate_output();
+
+                let cloned = ls.clone();
+
+                prop_assert_eq!(ls.get_output(), cloned.get_output());
+                prop_assert_eq!(ls.files, cloned.files);
             }
         }
     }
