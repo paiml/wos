@@ -927,17 +927,14 @@ fn sys_chmod(
     mode: u32,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
     let path_buf = PathBuf::from(&path);
-    state
-        .vfs
-        .chmod(&path_buf, mode)
-        .map_err(|e| match e {
-            wos_shared::vfs::VfsError::NotFound => KernelError::FileNotFound(path),
-            wos_shared::vfs::VfsError::PermissionDenied => KernelError::PermissionDenied,
-            wos_shared::vfs::VfsError::InvalidPath => {
-                KernelError::InvalidParameters("Invalid path".to_string())
-            }
-            _ => KernelError::InvalidParameters(format!("VFS error: {:?}", e)),
-        })?;
+    state.vfs.chmod(&path_buf, mode).map_err(|e| match e {
+        wos_shared::vfs::VfsError::NotFound => KernelError::FileNotFound(path),
+        wos_shared::vfs::VfsError::PermissionDenied => KernelError::PermissionDenied,
+        wos_shared::vfs::VfsError::InvalidPath => {
+            KernelError::InvalidParameters("Invalid path".to_string())
+        }
+        _ => KernelError::InvalidParameters(format!("VFS error: {:?}", e)),
+    })?;
 
     Ok((state, SyscallOutput::Success))
 }
@@ -951,17 +948,14 @@ fn sys_chown(
     gid: Option<u32>,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
     let path_buf = PathBuf::from(&path);
-    state
-        .vfs
-        .chown(&path_buf, uid, gid)
-        .map_err(|e| match e {
-            wos_shared::vfs::VfsError::NotFound => KernelError::FileNotFound(path),
-            wos_shared::vfs::VfsError::PermissionDenied => KernelError::PermissionDenied,
-            wos_shared::vfs::VfsError::InvalidPath => {
-                KernelError::InvalidParameters("Invalid path".to_string())
-            }
-            _ => KernelError::InvalidParameters(format!("VFS error: {:?}", e)),
-        })?;
+    state.vfs.chown(&path_buf, uid, gid).map_err(|e| match e {
+        wos_shared::vfs::VfsError::NotFound => KernelError::FileNotFound(path),
+        wos_shared::vfs::VfsError::PermissionDenied => KernelError::PermissionDenied,
+        wos_shared::vfs::VfsError::InvalidPath => {
+            KernelError::InvalidParameters("Invalid path".to_string())
+        }
+        _ => KernelError::InvalidParameters(format!("VFS error: {:?}", e)),
+    })?;
 
     Ok((state, SyscallOutput::Success))
 }
@@ -974,17 +968,14 @@ fn sys_access(
     mode: u32,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
     let path_buf = PathBuf::from(&path);
-    state
-        .vfs
-        .access(&path_buf, mode)
-        .map_err(|e| match e {
-            wos_shared::vfs::VfsError::NotFound => KernelError::FileNotFound(path),
-            wos_shared::vfs::VfsError::PermissionDenied => KernelError::PermissionDenied,
-            wos_shared::vfs::VfsError::InvalidPath => {
-                KernelError::InvalidParameters("Invalid path".to_string())
-            }
-            _ => KernelError::InvalidParameters(format!("VFS error: {:?}", e)),
-        })?;
+    state.vfs.access(&path_buf, mode).map_err(|e| match e {
+        wos_shared::vfs::VfsError::NotFound => KernelError::FileNotFound(path),
+        wos_shared::vfs::VfsError::PermissionDenied => KernelError::PermissionDenied,
+        wos_shared::vfs::VfsError::InvalidPath => {
+            KernelError::InvalidParameters("Invalid path".to_string())
+        }
+        _ => KernelError::InvalidParameters(format!("VFS error: {:?}", e)),
+    })?;
 
     Ok((state, SyscallOutput::Success))
 }
@@ -1024,20 +1015,17 @@ fn sys_readlink(
     path: String,
 ) -> SyscallResult<(KernelState, SyscallOutput)> {
     let path_buf = PathBuf::from(&path);
-    let target = state
-        .vfs
-        .readlink(&path_buf)
-        .map_err(|e| match e {
-            wos_shared::vfs::VfsError::NotFound => KernelError::FileNotFound(path),
-            wos_shared::vfs::VfsError::InvalidPath => {
-                KernelError::InvalidParameters("Not a symbolic link".to_string())
-            }
-            _ => KernelError::InvalidParameters(format!("VFS error: {:?}", e)),
-        })?;
+    let target = state.vfs.readlink(&path_buf).map_err(|e| match e {
+        wos_shared::vfs::VfsError::NotFound => KernelError::FileNotFound(path),
+        wos_shared::vfs::VfsError::InvalidPath => {
+            KernelError::InvalidParameters("Not a symbolic link".to_string())
+        }
+        _ => KernelError::InvalidParameters(format!("VFS error: {:?}", e)),
+    })?;
 
-    let target_str = target
-        .to_str()
-        .ok_or_else(|| KernelError::InvalidParameters("Invalid UTF-8 in symlink target".to_string()))?;
+    let target_str = target.to_str().ok_or_else(|| {
+        KernelError::InvalidParameters("Invalid UTF-8 in symlink target".to_string())
+    })?;
 
     Ok((state, SyscallOutput::Data(target_str.as_bytes().to_vec())))
 }
@@ -6368,7 +6356,10 @@ mod tests {
                 pid,
             );
             assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), KernelError::FileAlreadyExists(_)));
+            assert!(matches!(
+                result.unwrap_err(),
+                KernelError::FileAlreadyExists(_)
+            ));
         }
 
         #[test]
