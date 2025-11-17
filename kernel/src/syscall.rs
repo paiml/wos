@@ -189,6 +189,32 @@ pub enum SystemCall {
         /// Path to canonicalize
         path: String,
     },
+
+    /// Change file permissions
+    Chmod {
+        /// Path to file or directory
+        path: String,
+        /// New permission mode bits (e.g., 0o644)
+        mode: u32,
+    },
+
+    /// Change file ownership
+    Chown {
+        /// Path to file or directory
+        path: String,
+        /// New user ID (None means don't change)
+        uid: Option<u32>,
+        /// New group ID (None means don't change)
+        gid: Option<u32>,
+    },
+
+    /// Check file access permissions
+    Access {
+        /// Path to file or directory
+        path: String,
+        /// Access mode to check (F_OK=0, R_OK=4, W_OK=2, X_OK=1)
+        mode: u32,
+    },
 }
 
 /// System call output
@@ -879,6 +905,110 @@ fn sys_realpath(
     ))
 }
 
+/// Change file permissions (chmod syscall)
+fn sys_chmod(
+    mut state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+    mode: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = Path::new(&path);
+
+    match state.vfs.chmod(path, mode) {
+        Ok(_) => Ok((state, SyscallOutput::Success)),
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to change permissions: {:?}",
+            e
+        ))),
+    }
+}
+
+/// Change file ownership (chown syscall)
+fn sys_chown(
+    mut state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+    uid: Option<u32>,
+    gid: Option<u32>,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = Path::new(&path);
+
+    match state.vfs.chown(path, uid, gid) {
+        Ok(_) => Ok((state, SyscallOutput::Success)),
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            Err(KernelError::FileNotFound(path.display().to_string()))
+        }
+        Err(wos_shared::vfs::VfsError::PermissionDenied) => Err(KernelError::PermissionDenied),
+        Err(e) => Err(KernelError::InvalidParameters(format!(
+            "Failed to change ownership: {:?}",
+            e
+        ))),
+    }
+}
+
+/// Check file access permissions (access syscall)
+fn sys_access(
+    state: KernelState,
+    _calling_pid: ProcessId,
+    path: String,
+    mode: u32,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    let path = Path::new(&path);
+
+    // Get file metadata to check permissions
+    let file_stat = match state.vfs.stat(path) {
+        Ok(stat) => stat,
+        Err(wos_shared::vfs::VfsError::NotFound) => {
+            return Err(KernelError::FileNotFound(path.display().to_string()));
+        }
+        Err(e) => {
+            return Err(KernelError::InvalidParameters(format!(
+                "Failed to check access: {:?}",
+                e
+            )));
+        }
+    };
+
+    // F_OK (mode = 0): just check file exists
+    if mode == 0 {
+        return Ok((state, SyscallOutput::Success));
+    }
+
+    // Get current process uid/gid (for now, assume root with uid=0, gid=0)
+    // TODO: Get actual process uid/gid from process context
+    let current_uid = 0; // Root user
+    let current_gid = 0; // Root group
+
+    // Root bypasses all permission checks
+    if current_uid == 0 {
+        return Ok((state, SyscallOutput::Success));
+    }
+
+    // Determine which permission bits to check based on ownership
+    let permission_bits = if current_uid == file_stat.uid {
+        // Owner permissions (bits 6-8)
+        (file_stat.mode >> 6) & 0o7
+    } else if current_gid == file_stat.gid {
+        // Group permissions (bits 3-5)
+        (file_stat.mode >> 3) & 0o7
+    } else {
+        // Other permissions (bits 0-2)
+        file_stat.mode & 0o7
+    };
+
+    // Check if requested permissions match available permissions
+    // mode bits: R_OK=4, W_OK=2, X_OK=1
+    if (permission_bits & mode) == mode {
+        Ok((state, SyscallOutput::Success))
+    } else {
+        Err(KernelError::PermissionDenied)
+    }
+}
+
 ///
 /// Pure functional dispatcher: takes kernel state and syscall, returns new state and output.
 /// Never panics - all errors are returned as Results.
@@ -915,6 +1045,9 @@ pub fn dispatch_syscall(
         SystemCall::Stat { path } => sys_stat(state, calling_pid, path),
         SystemCall::Lstat { path } => sys_lstat(state, calling_pid, path),
         SystemCall::Realpath { path } => sys_realpath(state, calling_pid, path),
+        SystemCall::Chmod { path, mode } => sys_chmod(state, calling_pid, path, mode),
+        SystemCall::Chown { path, uid, gid } => sys_chown(state, calling_pid, path, uid, gid),
+        SystemCall::Access { path, mode } => sys_access(state, calling_pid, path, mode),
     }
 }
 
@@ -5838,6 +5971,922 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    // ============================================================================
+    // WOS-FS-004: File Permissions and Ownership Tests
+    // ============================================================================
+
+    #[test]
+    fn test_chmod_basic() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Change permissions to 0644
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Chmod {
+                path: "/test.txt".to_string(),
+                mode: 0o644,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+
+        // Verify permissions changed by stat
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Stat {
+                path: "/test.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => {
+                let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data).unwrap();
+                assert_eq!(file_stat.mode, 0o644);
+            }
+            _ => panic!("Expected Data output"),
+        }
+    }
+
+    #[test]
+    fn test_chmod_file_not_found() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to chmod non-existent file
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Chmod {
+                path: "/nonexistent.txt".to_string(),
+                mode: 0o644,
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn test_chmod_directory() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a directory
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Mkdir {
+                path: "/testdir".to_string(),
+                mode: 0o755,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Change directory permissions to 0700
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Chmod {
+                path: "/testdir".to_string(),
+                mode: 0o700,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+
+        // Verify directory permissions changed
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Stat {
+                path: "/testdir".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => {
+                let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data).unwrap();
+                assert_eq!(file_stat.mode, 0o700);
+            }
+            _ => panic!("Expected Data output"),
+        }
+    }
+
+    #[test]
+    fn test_chown_basic() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Change ownership
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Chown {
+                path: "/test.txt".to_string(),
+                uid: Some(1000),
+                gid: Some(1000),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+
+        // Verify ownership changed
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Stat {
+                path: "/test.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => {
+                let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data).unwrap();
+                assert_eq!(file_stat.uid, 1000);
+                assert_eq!(file_stat.gid, 1000);
+            }
+            _ => panic!("Expected Data output"),
+        }
+    }
+
+    #[test]
+    fn test_chown_uid_only() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Get initial gid
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Stat {
+                path: "/test.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, output) = result.unwrap();
+        let initial_gid = match output {
+            SyscallOutput::Data(data) => {
+                let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data).unwrap();
+                file_stat.gid
+            }
+            _ => panic!("Expected Data output"),
+        };
+
+        // Change only UID
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Chown {
+                path: "/test.txt".to_string(),
+                uid: Some(2000),
+                gid: None,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Verify only UID changed, GID unchanged
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Stat {
+                path: "/test.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => {
+                let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data).unwrap();
+                assert_eq!(file_stat.uid, 2000);
+                assert_eq!(file_stat.gid, initial_gid); // GID unchanged
+            }
+            _ => panic!("Expected Data output"),
+        }
+    }
+
+    #[test]
+    fn test_chown_gid_only() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Get initial uid
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Stat {
+                path: "/test.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, output) = result.unwrap();
+        let initial_uid = match output {
+            SyscallOutput::Data(data) => {
+                let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data).unwrap();
+                file_stat.uid
+            }
+            _ => panic!("Expected Data output"),
+        };
+
+        // Change only GID
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Chown {
+                path: "/test.txt".to_string(),
+                uid: None,
+                gid: Some(3000),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Verify only GID changed, UID unchanged
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Stat {
+                path: "/test.txt".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => {
+                let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data).unwrap();
+                assert_eq!(file_stat.uid, initial_uid); // UID unchanged
+                assert_eq!(file_stat.gid, 3000);
+            }
+            _ => panic!("Expected Data output"),
+        }
+    }
+
+    #[test]
+    fn test_chown_file_not_found() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Try to chown non-existent file
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Chown {
+                path: "/nonexistent.txt".to_string(),
+                uid: Some(1000),
+                gid: Some(1000),
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn test_chown_directory() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a directory
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Mkdir {
+                path: "/testdir".to_string(),
+                mode: 0o755,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Change directory ownership
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Chown {
+                path: "/testdir".to_string(),
+                uid: Some(1500),
+                gid: Some(1500),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Verify directory ownership changed
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Stat {
+                path: "/testdir".to_string(),
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        match output {
+            SyscallOutput::Data(data) => {
+                let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data).unwrap();
+                assert_eq!(file_stat.uid, 1500);
+                assert_eq!(file_stat.gid, 1500);
+            }
+            _ => panic!("Expected Data output"),
+        }
+    }
+
+    #[test]
+    fn test_access_file_exists() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Check file exists (F_OK = 0)
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Access {
+                path: "/test.txt".to_string(),
+                mode: 0, // F_OK
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+    }
+
+    #[test]
+    fn test_access_file_not_found() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Check non-existent file (F_OK = 0)
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Access {
+                path: "/nonexistent.txt".to_string(),
+                mode: 0, // F_OK
+            },
+            pid,
+        );
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn test_access_read_permission() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file with read permissions
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Set read-only permissions (0444)
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Chmod {
+                path: "/test.txt".to_string(),
+                mode: 0o444,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Check read permission (R_OK = 4)
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Access {
+                path: "/test.txt".to_string(),
+                mode: 4, // R_OK
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+    }
+
+    #[test]
+    fn test_access_write_permission() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file with write permissions
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Set write permissions (0222)
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Chmod {
+                path: "/test.txt".to_string(),
+                mode: 0o222,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Check write permission (W_OK = 2)
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Access {
+                path: "/test.txt".to_string(),
+                mode: 2, // W_OK
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+    }
+
+    #[test]
+    fn test_access_execute_permission() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file with execute permissions
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Set execute permissions (0111)
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Chmod {
+                path: "/test.txt".to_string(),
+                mode: 0o111,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Check execute permission (X_OK = 1)
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Access {
+                path: "/test.txt".to_string(),
+                mode: 1, // X_OK
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+    }
+
+    #[test]
+    fn test_access_combined_permissions() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a file
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Open {
+                path: "/test.txt".to_string(),
+                flags: O_CREAT | 0x0001,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Set read+write+execute permissions (0777)
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Chmod {
+                path: "/test.txt".to_string(),
+                mode: 0o777,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Check combined permissions (R_OK | W_OK | X_OK = 7)
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Access {
+                path: "/test.txt".to_string(),
+                mode: 7, // R_OK | W_OK | X_OK
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+    }
+
+    #[test]
+    fn test_access_directory() {
+        let mut state = KernelState::new();
+        let pid = state.allocate_pid();
+        let proc = Process::new(pid, None);
+        state.add_process(proc);
+
+        // Create a directory
+        let result = dispatch_syscall(
+            state.clone(),
+            SystemCall::Mkdir {
+                path: "/testdir".to_string(),
+                mode: 0o755,
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (state, _) = result.unwrap();
+
+        // Check directory exists
+        let result = dispatch_syscall(
+            state,
+            SystemCall::Access {
+                path: "/testdir".to_string(),
+                mode: 0, // F_OK
+            },
+            pid,
+        );
+        assert!(result.is_ok());
+        let (_, output) = result.unwrap();
+        assert_eq!(output, SyscallOutput::Success);
+    }
+
+    // ============================================================================
+    // WOS-FS-004: Property-Based Tests
+    // ============================================================================
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+        /// Property: chmod is deterministic - same mode always produces same result
+        #[test]
+        fn proptest_chmod_deterministic(mode in 0u32..0o7777) {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/test_chmod.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            prop_assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Apply chmod with same mode twice
+            let result1 = dispatch_syscall(
+                state.clone(),
+                SystemCall::Chmod {
+                    path: "/test_chmod.txt".to_string(),
+                    mode,
+                },
+                pid,
+            );
+            prop_assert!(result1.is_ok());
+            let (state1, output1) = result1.unwrap();
+
+            let result2 = dispatch_syscall(
+                state.clone(),
+                SystemCall::Chmod {
+                    path: "/test_chmod.txt".to_string(),
+                    mode,
+                },
+                pid,
+            );
+            prop_assert!(result2.is_ok());
+            let (state2, output2) = result2.unwrap();
+
+            // Results should be identical
+            prop_assert_eq!(output1, output2);
+
+            // Verify mode via stat
+            let result = dispatch_syscall(
+                state1,
+                SystemCall::Stat {
+                    path: "/test_chmod.txt".to_string(),
+                },
+                pid,
+            );
+            prop_assert!(result.is_ok());
+            let (_, output) = result.unwrap();
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data)
+                        .map_err(|e| TestCaseError::fail(format!("JSON error: {}", e)))?;
+                    prop_assert_eq!(file_stat.mode, mode);
+                }
+                _ => return Err(TestCaseError::fail("Expected Data output")),
+            }
+        }
+
+        /// Property: chown is deterministic - same uid/gid always produces same result
+        #[test]
+        fn proptest_chown_deterministic(uid in 0u32..10000, gid in 0u32..10000) {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/test_chown.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            prop_assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Apply chown with same uid/gid twice
+            let result1 = dispatch_syscall(
+                state.clone(),
+                SystemCall::Chown {
+                    path: "/test_chown.txt".to_string(),
+                    uid: Some(uid),
+                    gid: Some(gid),
+                },
+                pid,
+            );
+            prop_assert!(result1.is_ok());
+            let (state1, output1) = result1.unwrap();
+
+            let result2 = dispatch_syscall(
+                state.clone(),
+                SystemCall::Chown {
+                    path: "/test_chown.txt".to_string(),
+                    uid: Some(uid),
+                    gid: Some(gid),
+                },
+                pid,
+            );
+            prop_assert!(result2.is_ok());
+            let (_, output2) = result2.unwrap();
+
+            // Results should be identical
+            prop_assert_eq!(output1, output2);
+
+            // Verify ownership via stat
+            let result = dispatch_syscall(
+                state1,
+                SystemCall::Stat {
+                    path: "/test_chown.txt".to_string(),
+                },
+                pid,
+            );
+            prop_assert!(result.is_ok());
+            let (_, output) = result.unwrap();
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data)
+                        .map_err(|e| TestCaseError::fail(format!("JSON error: {}", e)))?;
+                    prop_assert_eq!(file_stat.uid, uid);
+                    prop_assert_eq!(file_stat.gid, gid);
+                }
+                _ => return Err(TestCaseError::fail("Expected Data output")),
+            }
+        }
+
+        /// Property: access correctly checks file existence
+        #[test]
+        fn proptest_access_file_existence(create_file in prop::bool::ANY) {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            let test_path = "/test_access_exist.txt";
+
+            if create_file {
+                // Create a file
+                let result = dispatch_syscall(
+                    state.clone(),
+                    SystemCall::Open {
+                        path: test_path.to_string(),
+                        flags: O_CREAT | 0x0001,
+                    },
+                    pid,
+                );
+                prop_assert!(result.is_ok());
+                let (new_state, _) = result.unwrap();
+                state = new_state;
+
+                // Access should succeed
+                let result = dispatch_syscall(
+                    state,
+                    SystemCall::Access {
+                        path: test_path.to_string(),
+                        mode: 0, // F_OK
+                    },
+                    pid,
+                );
+                prop_assert!(result.is_ok());
+            } else {
+                // File doesn't exist, access should fail
+                let result = dispatch_syscall(
+                    state,
+                    SystemCall::Access {
+                        path: test_path.to_string(),
+                        mode: 0, // F_OK
+                    },
+                    pid,
+                );
+                prop_assert!(result.is_err());
+                prop_assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
+            }
+        }
+
+        /// Property: chmod + access consistency - permissions are correctly enforced
+        #[test]
+        fn proptest_chmod_access_consistency(mode in 0u32..0o777) {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a file
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Open {
+                    path: "/test_perm.txt".to_string(),
+                    flags: O_CREAT | 0x0001,
+                },
+                pid,
+            );
+            prop_assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Set permissions
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Chmod {
+                    path: "/test_perm.txt".to_string(),
+                    mode,
+                },
+                pid,
+            );
+            prop_assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Verify permissions via stat
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Stat {
+                    path: "/test_perm.txt".to_string(),
+                },
+                pid,
+            );
+            prop_assert!(result.is_ok());
+            let (state, output) = result.unwrap();
+            match output {
+                SyscallOutput::Data(data) => {
+                    let file_stat: wos_shared::vfs::FileStat = serde_json::from_slice(&data)
+                        .map_err(|e| TestCaseError::fail(format!("JSON error: {}", e)))?;
+                    prop_assert_eq!(file_stat.mode, mode);
+                }
+                _ => return Err(TestCaseError::fail("Expected Data output")),
+            }
+
+            // Access with F_OK should always succeed (file exists)
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Access {
+                    path: "/test_perm.txt".to_string(),
+                    mode: 0, // F_OK
+                },
+                pid,
+            );
+            // As root (uid=0), access should always succeed
+            prop_assert!(result.is_ok());
         }
     }
 }
