@@ -239,6 +239,22 @@ pub enum SystemCall {
         /// Path to symbolic link
         path: String,
     },
+
+    /// Register signal handler (sigaction)
+    Sigaction {
+        /// Signal number to handle
+        signal: u32,
+        /// Action to take (Terminate, Ignore, or Handler ID)
+        action: crate::signals::SignalAction,
+    },
+
+    /// Block or unblock signals (sigprocmask)
+    Sigprocmask {
+        /// Signals to add to blocked set
+        block: Vec<u32>,
+        /// Signals to remove from blocked set
+        unblock: Vec<u32>,
+    },
 }
 
 /// System call output
@@ -556,6 +572,65 @@ fn sys_kill(
     state.processes.insert(target_pid, process);
 
     Ok((state, SyscallOutput::Success))
+}
+
+/// Handle Sigaction syscall - register signal handler
+fn sys_sigaction(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    signal_num: u32,
+    action: crate::signals::SignalAction,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // Validate signal number
+    let signal = crate::signals::Signal::from_number(signal_num)
+        .ok_or(KernelError::InvalidSignal(signal_num))?;
+
+    // Cannot change handler for SIGKILL
+    if signal == crate::signals::Signal::SIGKILL {
+        return Err(KernelError::InvalidParameters(
+            "Cannot set handler for SIGKILL".to_string(),
+        ));
+    }
+
+    // Get process and update signal handler
+    if let Some(process) = state.get_process_mut(calling_pid) {
+        process.signal_handlers.insert(signal_num, action);
+        Ok((state, SyscallOutput::Success))
+    } else {
+        Err(KernelError::ProcessNotFound(calling_pid))
+    }
+}
+
+/// Handle Sigprocmask syscall - block or unblock signals
+fn sys_sigprocmask(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    block: Vec<u32>,
+    unblock: Vec<u32>,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // Get process
+    if let Some(process) = state.get_process_mut(calling_pid) {
+        // Add signals to blocked set
+        for signal_num in block {
+            if let Some(signal) = crate::signals::Signal::from_number(signal_num) {
+                // SIGKILL cannot be blocked
+                if signal != crate::signals::Signal::SIGKILL {
+                    process.blocked_signals.add(signal);
+                }
+            }
+        }
+
+        // Remove signals from blocked set
+        for signal_num in unblock {
+            if let Some(signal) = crate::signals::Signal::from_number(signal_num) {
+                process.blocked_signals.remove(signal);
+            }
+        }
+
+        Ok((state, SyscallOutput::Success))
+    } else {
+        Err(KernelError::ProcessNotFound(calling_pid))
+    }
 }
 
 /// Handle Open syscall
@@ -1150,6 +1225,12 @@ pub fn dispatch_syscall(
             sys_symlink(state, calling_pid, link_path, target)
         }
         SystemCall::Readlink { path } => sys_readlink(state, calling_pid, path),
+        SystemCall::Sigaction { signal, action } => {
+            sys_sigaction(state, calling_pid, signal, action)
+        }
+        SystemCall::Sigprocmask { block, unblock } => {
+            sys_sigprocmask(state, calling_pid, block, unblock)
+        }
     }
 }
 
@@ -6779,6 +6860,277 @@ mod tests {
             assert_eq!(process.env.get("ARG0"), Some(&"multi_arg".to_string()));
             assert_eq!(process.env.get("ARG1"), Some(&"--flag".to_string()));
             assert_eq!(process.env.get("ARG2"), Some(&"value1".to_string()));
+        }
+
+        // ===== Signal Handler Registration Tests =====
+
+        #[test]
+        fn test_sigaction_register_handler() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Register handler for SIGINT
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Sigaction {
+                    signal: 2, // SIGINT
+                    action: crate::signals::SignalAction::Handler(100),
+                },
+                pid,
+            );
+
+            assert!(result.is_ok());
+            let (new_state, output) = result.unwrap();
+            assert_eq!(output, SyscallOutput::Success);
+
+            // Verify handler is registered
+            let process = new_state.get_process(pid).unwrap();
+            assert_eq!(
+                process.signal_handlers.get(&2),
+                Some(&crate::signals::SignalAction::Handler(100))
+            );
+        }
+
+        #[test]
+        fn test_sigaction_ignore_signal() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Set SIGTERM to be ignored
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Sigaction {
+                    signal: 15, // SIGTERM
+                    action: crate::signals::SignalAction::Ignore,
+                },
+                pid,
+            );
+
+            assert!(result.is_ok());
+            let (new_state, _) = result.unwrap();
+
+            let process = new_state.get_process(pid).unwrap();
+            assert_eq!(
+                process.signal_handlers.get(&15),
+                Some(&crate::signals::SignalAction::Ignore)
+            );
+        }
+
+        #[test]
+        fn test_sigaction_cannot_handle_sigkill() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Try to set handler for SIGKILL (should fail)
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Sigaction {
+                    signal: 9, // SIGKILL
+                    action: crate::signals::SignalAction::Handler(100),
+                },
+                pid,
+            );
+
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), KernelError::InvalidParameters(_)));
+        }
+
+        #[test]
+        fn test_sigaction_invalid_signal() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Try invalid signal number
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Sigaction {
+                    signal: 999, // Invalid signal
+                    action: crate::signals::SignalAction::Handler(100),
+                },
+                pid,
+            );
+
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), KernelError::InvalidSignal(_)));
+        }
+
+        #[test]
+        fn test_sigprocmask_block_signals() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Block SIGINT and SIGTERM
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Sigprocmask {
+                    block: vec![2, 15], // SIGINT, SIGTERM
+                    unblock: vec![],
+                },
+                pid,
+            );
+
+            assert!(result.is_ok());
+            let (new_state, output) = result.unwrap();
+            assert_eq!(output, SyscallOutput::Success);
+
+            // Verify signals are blocked
+            let process = new_state.get_process(pid).unwrap();
+            assert!(process
+                .blocked_signals
+                .contains(crate::signals::Signal::SIGINT));
+            assert!(process
+                .blocked_signals
+                .contains(crate::signals::Signal::SIGTERM));
+        }
+
+        #[test]
+        fn test_sigprocmask_unblock_signals() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let mut proc = Process::new(pid, None);
+
+            // Pre-block some signals
+            proc.blocked_signals
+                .add(crate::signals::Signal::SIGINT);
+            proc.blocked_signals
+                .add(crate::signals::Signal::SIGTERM);
+            state.add_process(proc);
+
+            // Unblock SIGINT
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Sigprocmask {
+                    block: vec![],
+                    unblock: vec![2], // SIGINT
+                },
+                pid,
+            );
+
+            assert!(result.is_ok());
+            let (new_state, _) = result.unwrap();
+
+            // Verify SIGINT is unblocked, SIGTERM still blocked
+            let process = new_state.get_process(pid).unwrap();
+            assert!(!process
+                .blocked_signals
+                .contains(crate::signals::Signal::SIGINT));
+            assert!(process
+                .blocked_signals
+                .contains(crate::signals::Signal::SIGTERM));
+        }
+
+        #[test]
+        fn test_sigprocmask_cannot_block_sigkill() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Try to block SIGKILL (should be silently ignored)
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Sigprocmask {
+                    block: vec![9], // SIGKILL
+                    unblock: vec![],
+                },
+                pid,
+            );
+
+            assert!(result.is_ok());
+            let (new_state, _) = result.unwrap();
+
+            // Verify SIGKILL is NOT blocked
+            let process = new_state.get_process(pid).unwrap();
+            assert!(!process
+                .blocked_signals
+                .contains(crate::signals::Signal::SIGKILL));
+        }
+
+        #[test]
+        fn test_sigprocmask_block_and_unblock() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let mut proc = Process::new(pid, None);
+
+            // Pre-block SIGINT
+            proc.blocked_signals
+                .add(crate::signals::Signal::SIGINT);
+            state.add_process(proc);
+
+            // Block SIGTERM, unblock SIGINT in same call
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Sigprocmask {
+                    block: vec![15],   // SIGTERM
+                    unblock: vec![2],  // SIGINT
+                },
+                pid,
+            );
+
+            assert!(result.is_ok());
+            let (new_state, _) = result.unwrap();
+
+            let process = new_state.get_process(pid).unwrap();
+            assert!(!process
+                .blocked_signals
+                .contains(crate::signals::Signal::SIGINT));
+            assert!(process
+                .blocked_signals
+                .contains(crate::signals::Signal::SIGTERM));
+        }
+
+        #[test]
+        fn test_signal_handler_integration() {
+            use crate::scheduler::deliver_signals;
+
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Register handler for SIGTERM
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Sigaction {
+                    signal: 15,
+                    action: crate::signals::SignalAction::Ignore,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Send SIGTERM to process
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Kill {
+                    pid,
+                    signal: 15,
+                },
+                pid,
+            );
+            assert!(result.is_ok());
+            let (state, _) = result.unwrap();
+
+            // Deliver signals - should be ignored due to handler
+            let state = deliver_signals(state).unwrap();
+
+            // Process should still be running (signal was ignored)
+            let process = state.get_process(pid).unwrap();
+            assert!(!matches!(
+                process.state,
+                crate::state::ProcessState::Terminated(_)
+            ));
         }
     }
 }
