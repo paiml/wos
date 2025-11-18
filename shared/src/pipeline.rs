@@ -864,16 +864,16 @@ mod tests {
     #[test]
     fn test_update_quote_state() {
         let (in_single, in_double) = update_quote_state('\'', false, false);
-        assert_eq!(in_single, true);
-        assert_eq!(in_double, false);
+        assert!(in_single);
+        assert!(!in_double);
 
         let (in_single, in_double) = update_quote_state('"', false, false);
-        assert_eq!(in_single, false);
-        assert_eq!(in_double, true);
+        assert!(!in_single);
+        assert!(in_double);
 
         let (in_single, in_double) = update_quote_state('\'', true, false);
-        assert_eq!(in_single, false);
-        assert_eq!(in_double, false);
+        assert!(!in_single);
+        assert!(!in_double);
     }
 }
 

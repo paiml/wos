@@ -5444,10 +5444,8 @@ mod tests {
                         if vfs.create_file(child_path, vec![]).is_ok() {
                             created_count += 1;
                         }
-                    } else {
-                        if vfs.create_directory(child_path).is_ok() {
-                            created_count += 1;
-                        }
+                    } else if vfs.create_directory(child_path).is_ok() {
+                        created_count += 1;
                     }
                 }
 
@@ -6121,7 +6119,6 @@ mod tests {
     }
 
     /// Property Tests (2 tests)
-
     #[cfg(test)]
     mod xattr_properties {
         use super::*;
@@ -6156,12 +6153,11 @@ mod tests {
                 vfs.create_file(path.clone(), vec![]).ok();
 
                 let attr_name = format!("user.{}", name);
-                if vfs.setxattr(&path, &attr_name, &value).is_ok() {
-                    if vfs.removexattr(&path, &attr_name).is_ok() {
+                if vfs.setxattr(&path, &attr_name, &value).is_ok()
+                    && vfs.removexattr(&path, &attr_name).is_ok() {
                         let result = vfs.getxattr(&path, &attr_name);
                         prop_assert_eq!(result, Err(VfsError::NotFound));
                     }
-                }
             }
         }
     }

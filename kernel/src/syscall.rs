@@ -3753,7 +3753,6 @@ mod tests {
     }
 
     /// Property Tests (2 tests)
-
     #[cfg(test)]
     mod sleep_properties {
         use super::*;
@@ -6695,7 +6694,10 @@ mod tests {
                 .unwrap();
             state
                 .vfs
-                .write_file(&std::path::PathBuf::from("/bin/child_prog"), b"child code".to_vec())
+                .write_file(
+                    &std::path::PathBuf::from("/bin/child_prog"),
+                    b"child code".to_vec(),
+                )
                 .unwrap();
 
             // Exec in child process
@@ -6739,7 +6741,10 @@ mod tests {
             );
 
             assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), KernelError::InvalidParameters(_)));
+            assert!(matches!(
+                result.unwrap_err(),
+                KernelError::InvalidParameters(_)
+            ));
         }
 
         #[test]
@@ -6767,7 +6772,10 @@ mod tests {
             );
 
             assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), KernelError::InvalidParameters(_)));
+            assert!(matches!(
+                result.unwrap_err(),
+                KernelError::InvalidParameters(_)
+            ));
         }
 
         #[test]
@@ -6777,7 +6785,8 @@ mod tests {
             let mut proc = Process::new(pid, None);
 
             // Set initial environment
-            proc.env.insert("OLD_VAR".to_string(), "old_value".to_string());
+            proc.env
+                .insert("OLD_VAR".to_string(), "old_value".to_string());
             state.add_process(proc);
 
             // Create executable
@@ -6787,7 +6796,10 @@ mod tests {
                 .unwrap();
             state
                 .vfs
-                .write_file(&std::path::PathBuf::from("/bin/prog"), b"program code".to_vec())
+                .write_file(
+                    &std::path::PathBuf::from("/bin/prog"),
+                    b"program code".to_vec(),
+                )
                 .unwrap();
 
             // Exec with new environment
@@ -6831,7 +6843,10 @@ mod tests {
                 .unwrap();
             state
                 .vfs
-                .write_file(&std::path::PathBuf::from("/bin/multi_arg"), b"code".to_vec())
+                .write_file(
+                    &std::path::PathBuf::from("/bin/multi_arg"),
+                    b"code".to_vec(),
+                )
                 .unwrap();
 
             // Exec with multiple arguments
@@ -6938,7 +6953,10 @@ mod tests {
             );
 
             assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), KernelError::InvalidParameters(_)));
+            assert!(matches!(
+                result.unwrap_err(),
+                KernelError::InvalidParameters(_)
+            ));
         }
 
         #[test]
@@ -7000,10 +7018,8 @@ mod tests {
             let mut proc = Process::new(pid, None);
 
             // Pre-block some signals
-            proc.blocked_signals
-                .add(crate::signals::Signal::SIGINT);
-            proc.blocked_signals
-                .add(crate::signals::Signal::SIGTERM);
+            proc.blocked_signals.add(crate::signals::Signal::SIGINT);
+            proc.blocked_signals.add(crate::signals::Signal::SIGTERM);
             state.add_process(proc);
 
             // Unblock SIGINT
@@ -7063,16 +7079,15 @@ mod tests {
             let mut proc = Process::new(pid, None);
 
             // Pre-block SIGINT
-            proc.blocked_signals
-                .add(crate::signals::Signal::SIGINT);
+            proc.blocked_signals.add(crate::signals::Signal::SIGINT);
             state.add_process(proc);
 
             // Block SIGTERM, unblock SIGINT in same call
             let result = dispatch_syscall(
                 state,
                 SystemCall::Sigprocmask {
-                    block: vec![15],   // SIGTERM
-                    unblock: vec![2],  // SIGINT
+                    block: vec![15],  // SIGTERM
+                    unblock: vec![2], // SIGINT
                 },
                 pid,
             );
@@ -7111,14 +7126,7 @@ mod tests {
             let (state, _) = result.unwrap();
 
             // Send SIGTERM to process
-            let result = dispatch_syscall(
-                state,
-                SystemCall::Kill {
-                    pid,
-                    signal: 15,
-                },
-                pid,
-            );
+            let result = dispatch_syscall(state, SystemCall::Kill { pid, signal: 15 }, pid);
             assert!(result.is_ok());
             let (state, _) = result.unwrap();
 

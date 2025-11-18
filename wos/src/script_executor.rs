@@ -1336,8 +1336,8 @@ fn create_test_executor() -> impl FnMut(&str) -> (String, i32) {
     move |line: &str| {
         let line = line.trim();
         // Handle echo command
-        if line.starts_with("echo ") {
-            let output = line[5..].trim().to_string();
+        if let Some(stripped) = line.strip_prefix("echo ") {
+            let output = stripped.trim().to_string();
             return (output, 0);
         }
         // Handle invalid_command for error testing
@@ -1966,8 +1966,8 @@ mod coverage_red_tests {
                 return ("".to_string(), 1); // Failure
             }
             // Handle echo command
-            if line.starts_with("echo ") {
-                let output = line[5..].trim().to_string();
+            if let Some(stripped) = line.strip_prefix("echo ") {
+                let output = stripped.trim().to_string();
                 return (output, 0);
             }
             // Handle true/false commands
@@ -2043,8 +2043,7 @@ mod coverage_red_tests {
 
         let result = ScriptExecutor::execute(&script, &mut vfs, &mut vars, &mut executor);
         // While loop might not be fully implemented, so check for error or success
-        if result.is_ok() {
-            let exec_result = result.unwrap();
+        if let Ok(exec_result) = result {
             // Output length is always valid (usize is unsigned)
             let _ = exec_result.output.len();
         }
@@ -2068,7 +2067,7 @@ mod coverage_red_tests {
         assert!(result.is_ok());
         let exec_result = result.unwrap();
         // Should echo each value
-        assert!(exec_result.output.len() > 0);
+        assert!(!exec_result.output.is_empty());
     }
 
     // Lines 118-132: case statement execution
