@@ -3141,8 +3141,12 @@ mod tests {
         assert!(find.completed);
 
         // Should only find files, not directories
-        assert_eq!(find.matches.len(), 1);
+        // Note: Includes /dev/null, /dev/zero, /dev/random device files
+        assert_eq!(find.matches.len(), 4);
         assert!(find.matches.contains(&PathBuf::from("/file.txt")));
+        assert!(find.matches.contains(&PathBuf::from("/dev/null")));
+        assert!(find.matches.contains(&PathBuf::from("/dev/zero")));
+        assert!(find.matches.contains(&PathBuf::from("/dev/random")));
         assert!(!find.matches.contains(&PathBuf::from("/")));
         assert!(!find.matches.contains(&PathBuf::from("/dir")));
     }

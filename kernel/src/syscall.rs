@@ -69,6 +69,16 @@ pub enum SystemCall {
     /// Exit current process with code
     Exit(i32),
 
+    /// Replace current process image with new program
+    Exec {
+        /// Path to executable
+        path: String,
+        /// Command-line arguments (argv)
+        args: Vec<String>,
+        /// Environment variables
+        env: Vec<(String, String)>,
+    },
+
     /// Wait for child process
     WaitPid(ProcessId),
 
@@ -388,6 +398,72 @@ fn sys_exit(
     }
 
     Ok((state, SyscallOutput::Success))
+}
+
+/// Handle Exec syscall - replace current process image with new program
+fn sys_exec(
+    mut state: KernelState,
+    calling_pid: ProcessId,
+    path: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+) -> SyscallResult<(KernelState, SyscallOutput)> {
+    // Check if executable file exists and is readable
+    let path_buf = std::path::PathBuf::from(&path);
+    match state.vfs.read_file(&path_buf) {
+        Ok(content) => {
+            // Validate that it's an executable (in WOS, we just check file exists and has content)
+            if content.is_empty() {
+                return Err(KernelError::InvalidParameters(format!(
+                    "Empty executable: {}",
+                    path
+                )));
+            }
+
+            // Get the process
+            if let Some(process) = state.get_process_mut(calling_pid) {
+                // Keep PID, parent_pid, and open files
+                // But reset:
+                // - Memory allocations (except keep open files)
+                // - Environment variables
+                // - Working directory stays same (cd persists across exec)
+
+                // Update environment variables
+                process.env = env.into_iter().collect();
+
+                // Store program path and args in environment
+                process.env.insert("_".to_string(), path.clone());
+                process
+                    .env
+                    .insert("ARGC".to_string(), args.len().to_string());
+                for (i, arg) in args.iter().enumerate() {
+                    process.env.insert(format!("ARG{}", i), arg.clone());
+                }
+
+                // In a real OS, we would:
+                // 1. Parse executable format (ELF, etc.)
+                // 2. Load code/data sections into memory
+                // 3. Set up stack with argc/argv/envp
+                // 4. Set instruction pointer to entry point
+                //
+                // For WOS (educational), we store the executable path
+                // and the program will be "executed" by the shell/interpreter
+                process.memory.program_path = Some(path);
+                process.memory.program_args = args;
+
+                // Reset process to Ready state (will be scheduled to run)
+                process.state = crate::state::ProcessState::Ready;
+
+                Ok((state, SyscallOutput::Success))
+            } else {
+                Err(KernelError::ProcessNotFound(calling_pid))
+            }
+        }
+        Err(_e) => Err(KernelError::InvalidParameters(format!(
+            "Cannot exec {}: file not found or not readable",
+            path
+        ))),
+    }
 }
 
 /// Handle WaitPid syscall
@@ -1047,6 +1123,7 @@ pub fn dispatch_syscall(
         SystemCall::GetPid => sys_getpid(state, calling_pid),
         SystemCall::Fork => sys_fork(state, calling_pid),
         SystemCall::Exit(code) => sys_exit(state, calling_pid, code),
+        SystemCall::Exec { path, args, env } => sys_exec(state, calling_pid, path, args, env),
         SystemCall::WaitPid(wait_pid) => sys_waitpid(state, calling_pid, wait_pid),
         SystemCall::Sleep(duration) => sys_sleep(state, calling_pid, duration),
         SystemCall::Open { path, flags } => sys_open(state, calling_pid, path, flags),
@@ -6458,6 +6535,250 @@ mod tests {
             );
             assert!(result.is_err());
             assert!(matches!(result.unwrap_err(), KernelError::FileNotFound(_)));
+        }
+
+        // ===== Exec Syscall Tests =====
+
+        #[test]
+        fn test_exec_basic() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create a simple executable file
+            state
+                .vfs
+                .create_file(std::path::PathBuf::from("/bin/test_prog"), Vec::new())
+                .unwrap();
+            state
+                .vfs
+                .write_file(
+                    &std::path::PathBuf::from("/bin/test_prog"),
+                    b"#!/bin/sh\necho hello".to_vec(),
+                )
+                .unwrap();
+
+            // Execute the program
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Exec {
+                    path: "/bin/test_prog".to_string(),
+                    args: vec!["test_prog".to_string(), "arg1".to_string()],
+                    env: vec![("PATH".to_string(), "/bin".to_string())],
+                },
+                pid,
+            );
+
+            assert!(result.is_ok());
+            let (new_state, output) = result.unwrap();
+            assert_eq!(output, SyscallOutput::Success);
+
+            // Check that process memory has been updated
+            let process = new_state.get_process(pid).unwrap();
+            assert_eq!(
+                process.memory.program_path,
+                Some("/bin/test_prog".to_string())
+            );
+            assert_eq!(
+                process.memory.program_args,
+                vec!["test_prog".to_string(), "arg1".to_string()]
+            );
+
+            // Check environment variables
+            assert_eq!(process.env.get("PATH"), Some(&"/bin".to_string()));
+            assert_eq!(process.env.get("_"), Some(&"/bin/test_prog".to_string()));
+            assert_eq!(process.env.get("ARGC"), Some(&"2".to_string()));
+            assert_eq!(process.env.get("ARG0"), Some(&"test_prog".to_string()));
+            assert_eq!(process.env.get("ARG1"), Some(&"arg1".to_string()));
+
+            // Process should be in Ready state
+            assert_eq!(process.state, ProcessState::Ready);
+        }
+
+        #[test]
+        fn test_exec_preserves_pid() {
+            let mut state = KernelState::new();
+            let parent_pid = state.allocate_pid();
+            let parent = Process::new(parent_pid, None);
+            state.add_process(parent);
+
+            let child_pid = state.allocate_pid();
+            let child = Process::new(child_pid, Some(parent_pid));
+            state.add_process(child);
+
+            // Create executable
+            state
+                .vfs
+                .create_file(std::path::PathBuf::from("/bin/child_prog"), Vec::new())
+                .unwrap();
+            state
+                .vfs
+                .write_file(&std::path::PathBuf::from("/bin/child_prog"), b"child code".to_vec())
+                .unwrap();
+
+            // Exec in child process
+            let result = dispatch_syscall(
+                state.clone(),
+                SystemCall::Exec {
+                    path: "/bin/child_prog".to_string(),
+                    args: vec![],
+                    env: vec![],
+                },
+                child_pid,
+            );
+
+            assert!(result.is_ok());
+            let (new_state, _) = result.unwrap();
+
+            // PID should remain same
+            let process = new_state.get_process(child_pid).unwrap();
+            assert_eq!(process.pid, child_pid);
+
+            // Parent PID should remain same
+            assert_eq!(process.parent_pid, Some(parent_pid));
+        }
+
+        #[test]
+        fn test_exec_nonexistent_file() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Try to exec nonexistent file
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Exec {
+                    path: "/bin/nonexistent".to_string(),
+                    args: vec![],
+                    env: vec![],
+                },
+                pid,
+            );
+
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), KernelError::InvalidParameters(_)));
+        }
+
+        #[test]
+        fn test_exec_empty_file() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create empty file
+            state
+                .vfs
+                .create_file(std::path::PathBuf::from("/bin/empty"), Vec::new())
+                .unwrap();
+
+            // Try to exec empty file
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Exec {
+                    path: "/bin/empty".to_string(),
+                    args: vec![],
+                    env: vec![],
+                },
+                pid,
+            );
+
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), KernelError::InvalidParameters(_)));
+        }
+
+        #[test]
+        fn test_exec_replaces_environment() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let mut proc = Process::new(pid, None);
+
+            // Set initial environment
+            proc.env.insert("OLD_VAR".to_string(), "old_value".to_string());
+            state.add_process(proc);
+
+            // Create executable
+            state
+                .vfs
+                .create_file(std::path::PathBuf::from("/bin/prog"), Vec::new())
+                .unwrap();
+            state
+                .vfs
+                .write_file(&std::path::PathBuf::from("/bin/prog"), b"program code".to_vec())
+                .unwrap();
+
+            // Exec with new environment
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Exec {
+                    path: "/bin/prog".to_string(),
+                    args: vec![],
+                    env: vec![("NEW_VAR".to_string(), "new_value".to_string())],
+                },
+                pid,
+            );
+
+            assert!(result.is_ok());
+            let (new_state, _) = result.unwrap();
+
+            let process = new_state.get_process(pid).unwrap();
+
+            // Old environment should be replaced
+            assert_eq!(process.env.get("OLD_VAR"), None);
+
+            // New environment should be set
+            assert_eq!(process.env.get("NEW_VAR"), Some(&"new_value".to_string()));
+
+            // Standard exec environment variables should be set
+            assert_eq!(process.env.get("_"), Some(&"/bin/prog".to_string()));
+            assert_eq!(process.env.get("ARGC"), Some(&"0".to_string()));
+        }
+
+        #[test]
+        fn test_exec_with_multiple_args() {
+            let mut state = KernelState::new();
+            let pid = state.allocate_pid();
+            let proc = Process::new(pid, None);
+            state.add_process(proc);
+
+            // Create executable
+            state
+                .vfs
+                .create_file(std::path::PathBuf::from("/bin/multi_arg"), Vec::new())
+                .unwrap();
+            state
+                .vfs
+                .write_file(&std::path::PathBuf::from("/bin/multi_arg"), b"code".to_vec())
+                .unwrap();
+
+            // Exec with multiple arguments
+            let args = vec![
+                "multi_arg".to_string(),
+                "--flag".to_string(),
+                "value1".to_string(),
+            ];
+
+            let result = dispatch_syscall(
+                state,
+                SystemCall::Exec {
+                    path: "/bin/multi_arg".to_string(),
+                    args: args.clone(),
+                    env: vec![],
+                },
+                pid,
+            );
+
+            assert!(result.is_ok());
+            let (new_state, _) = result.unwrap();
+
+            let process = new_state.get_process(pid).unwrap();
+            assert_eq!(process.memory.program_args, args);
+            assert_eq!(process.env.get("ARGC"), Some(&"3".to_string()));
+            assert_eq!(process.env.get("ARG0"), Some(&"multi_arg".to_string()));
+            assert_eq!(process.env.get("ARG1"), Some(&"--flag".to_string()));
+            assert_eq!(process.env.get("ARG2"), Some(&"value1".to_string()));
         }
     }
 }

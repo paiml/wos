@@ -135,6 +135,20 @@ pub struct Inode {
     pub ctime: Timestamp,
 }
 
+/// Type of device file
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub enum DeviceType {
+    /// /dev/null - discards writes, returns empty on read
+    Null,
+    /// /dev/zero - returns infinite zeros on read
+    Zero,
+    /// /dev/random - returns pseudorandom bytes deterministically
+    Random {
+        /// Seed for deterministic random number generation
+        seed: u64,
+    },
+}
+
 /// Type of inode
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum InodeType {
@@ -152,6 +166,11 @@ pub enum InodeType {
     Symlink {
         /// Target path (can be relative or absolute)
         target: PathBuf,
+    },
+    /// Device file (special files like /dev/null, /dev/zero, /dev/random)
+    Device {
+        /// Device type
+        device_type: DeviceType,
     },
 }
 
@@ -404,6 +423,14 @@ impl VirtualFileSystem {
         let _ = vfs.create_directory(PathBuf::from("/usr/local"));
         let _ = vfs.create_directory(PathBuf::from("/usr/local/bin"));
 
+        // Create device files in /dev
+        let _ = vfs.create_device(PathBuf::from("/dev/null"), DeviceType::Null);
+        let _ = vfs.create_device(PathBuf::from("/dev/zero"), DeviceType::Zero);
+        let _ = vfs.create_device(
+            PathBuf::from("/dev/random"),
+            DeviceType::Random { seed: 42 },
+        );
+
         vfs
     }
 
@@ -586,7 +613,7 @@ impl VirtualFileSystem {
                     let new_path = resolved_target.join(remaining);
                     return self.resolve_path_internal(&new_path, follow_final, depth + 1);
                 }
-                InodeType::File { .. } => {
+                InodeType::File { .. } | InodeType::Device { .. } => {
                     return Err(VfsError::NotADirectory);
                 }
             }
@@ -630,7 +657,7 @@ impl VirtualFileSystem {
                 InodeType::Directory { entries } => {
                     current_ino = *entries.get(*component).ok_or(VfsError::NotFound)?;
                 }
-                InodeType::File { .. } | InodeType::Symlink { .. } => {
+                InodeType::File { .. } | InodeType::Symlink { .. } | InodeType::Device { .. } => {
                     return Err(VfsError::NotADirectory);
                 }
             }
@@ -668,7 +695,7 @@ impl VirtualFileSystem {
 
         let entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } | InodeType::Symlink { .. } => {
+            InodeType::File { .. } | InodeType::Symlink { .. } | InodeType::Device { .. } => {
                 return Err(VfsError::NotADirectory)
             }
         };
@@ -740,7 +767,7 @@ impl VirtualFileSystem {
 
         let entries = match &inode.inode_type {
             InodeType::Directory { entries } => entries,
-            InodeType::File { .. } | InodeType::Symlink { .. } => {
+            InodeType::File { .. } | InodeType::Symlink { .. } | InodeType::Device { .. } => {
                 return Err(VfsError::NotADirectory)
             }
         };
@@ -759,7 +786,7 @@ impl VirtualFileSystem {
 
         let parent_entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } | InodeType::Symlink { .. } => {
+            InodeType::File { .. } | InodeType::Symlink { .. } | InodeType::Device { .. } => {
                 return Err(VfsError::NotADirectory)
             }
         };
@@ -818,8 +845,9 @@ impl VirtualFileSystem {
 
         let entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } => return Err(VfsError::NotADirectory),
-            InodeType::Symlink { .. } => return Err(VfsError::NotADirectory),
+            InodeType::File { .. } | InodeType::Symlink { .. } | InodeType::Device { .. } => {
+                return Err(VfsError::NotADirectory)
+            }
         };
 
         if entries.contains_key(&name) {
@@ -874,7 +902,9 @@ impl VirtualFileSystem {
 
         match &inode.inode_type {
             InodeType::Symlink { target } => Ok(target.clone()),
-            InodeType::File { .. } | InodeType::Directory { .. } => Err(VfsError::InvalidPath),
+            InodeType::File { .. } | InodeType::Directory { .. } | InodeType::Device { .. } => {
+                Err(VfsError::InvalidPath)
+            }
         }
     }
 
@@ -905,7 +935,7 @@ impl VirtualFileSystem {
                 // Recursively follow
                 self.follow_symlink_to_target(&resolved_target, depth + 1)
             }
-            InodeType::File { .. } | InodeType::Directory { .. } => {
+            InodeType::File { .. } | InodeType::Directory { .. } | InodeType::Device { .. } => {
                 // Not a symlink, return the path itself
                 Ok(path.to_path_buf())
             }
@@ -927,6 +957,7 @@ impl VirtualFileSystem {
             InodeType::Directory { entries } => entries,
             InodeType::File { .. } => return Err(VfsError::NotADirectory),
             InodeType::Symlink { .. } => return Err(VfsError::NotADirectory),
+            InodeType::Device { .. } => return Err(VfsError::NotADirectory),
         };
 
         let mut result = Vec::new();
@@ -936,6 +967,7 @@ impl VirtualFileSystem {
                 InodeType::File { .. } => EntryType::File,
                 InodeType::Directory { .. } => EntryType::Directory,
                 InodeType::Symlink { .. } => EntryType::Symlink,
+                InodeType::Device { .. } => EntryType::File,
             };
 
             result.push(DirectoryEntry {
@@ -979,7 +1011,7 @@ impl VirtualFileSystem {
 
         let entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } | InodeType::Symlink { .. } => {
+            InodeType::File { .. } | InodeType::Symlink { .. } | InodeType::Device { .. } => {
                 return Err(VfsError::NotADirectory)
             }
         };
@@ -1031,6 +1063,73 @@ impl VirtualFileSystem {
             atime: parent.atime,
             mtime: now, // Parent's mtime changes when entry added
             ctime: now, // Parent's ctime changes when entry added
+        };
+
+        self.inodes.insert(parent_ino, updated_parent);
+
+        Ok(())
+    }
+
+    /// Create a device file
+    pub fn create_device(
+        &mut self,
+        path: PathBuf,
+        device_type: DeviceType,
+    ) -> Result<(), VfsError> {
+        let (parent_ino, name) = self.resolve_parent(&path)?;
+
+        let parent = self
+            .inodes
+            .get(&parent_ino)
+            .ok_or(VfsError::NotFound)?
+            .clone();
+
+        let entries = match &parent.inode_type {
+            InodeType::Directory { entries } => entries.clone(),
+            InodeType::File { .. } | InodeType::Symlink { .. } | InodeType::Device { .. } => {
+                return Err(VfsError::NotADirectory)
+            }
+        };
+
+        if entries.contains_key(&name) {
+            return Err(VfsError::AlreadyExists);
+        }
+
+        // Create new device inode
+        let new_ino = self.next_ino;
+        self.next_ino += 1;
+
+        // Device files are typically 0666 (rw-rw-rw-) with umask applied
+        let mode = 0o666 & !self.umask;
+        let permissions = FilePermissions::new(mode, 0, 0); // Root owned
+
+        let now = current_timestamp();
+        let new_device = Inode {
+            ino: new_ino,
+            inode_type: InodeType::Device { device_type },
+            permissions,
+            nlinks: 1,
+            atime: now,
+            mtime: now,
+            ctime: now,
+        };
+
+        self.inodes.insert(new_ino, new_device);
+
+        // Add to parent directory
+        let mut new_entries = entries;
+        new_entries.insert(name, new_ino);
+
+        let updated_parent = Inode {
+            ino: parent_ino,
+            inode_type: InodeType::Directory {
+                entries: new_entries,
+            },
+            permissions: parent.permissions,
+            nlinks: parent.nlinks,
+            atime: parent.atime,
+            mtime: now,
+            ctime: now,
         };
 
         self.inodes.insert(parent_ino, updated_parent);
@@ -1117,7 +1216,7 @@ impl VirtualFileSystem {
 
         let parent_entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } | InodeType::Symlink { .. } => {
+            InodeType::File { .. } | InodeType::Symlink { .. } | InodeType::Device { .. } => {
                 return Err(VfsError::NotADirectory)
             }
         };
@@ -1201,7 +1300,7 @@ impl VirtualFileSystem {
 
         let entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } | InodeType::Symlink { .. } => {
+            InodeType::File { .. } | InodeType::Symlink { .. } | InodeType::Device { .. } => {
                 return Err(VfsError::NotADirectory)
             }
         };
@@ -1260,7 +1359,7 @@ impl VirtualFileSystem {
 
         let parent_entries = match &parent.inode_type {
             InodeType::Directory { entries } => entries.clone(),
-            InodeType::File { .. } | InodeType::Symlink { .. } => {
+            InodeType::File { .. } | InodeType::Symlink { .. } | InodeType::Device { .. } => {
                 return Err(VfsError::NotADirectory)
             }
         };
@@ -1355,6 +1454,9 @@ impl VirtualFileSystem {
                 InodeType::Symlink { .. } => {
                     // Skip symlinks to avoid infinite loops in legacy list_files()
                     // Real implementations would track visited inodes
+                }
+                InodeType::Device { .. } => {
+                    // Device files aren't regular files
                 }
             }
         }
@@ -1534,6 +1636,20 @@ impl VirtualFileSystem {
             InodeType::File { content } => Ok(content.clone()),
             InodeType::Directory { .. } => Err(VfsError::IsADirectory),
             InodeType::Symlink { .. } => Err(VfsError::NotFound),
+            InodeType::Device { device_type } => match device_type {
+                DeviceType::Null => Ok(vec![]),
+                DeviceType::Zero => Ok(vec![0u8; 4096]),
+                DeviceType::Random { seed } => {
+                    use rand::RngCore;
+                    use rand::SeedableRng;
+                    use rand_chacha::ChaCha8Rng;
+
+                    let mut rng = ChaCha8Rng::seed_from_u64(*seed);
+                    let mut bytes = vec![0u8; 4096];
+                    rng.fill_bytes(&mut bytes);
+                    Ok(bytes)
+                }
+            },
         }
     }
 
@@ -1570,6 +1686,22 @@ impl VirtualFileSystem {
             }
             InodeType::Directory { .. } => Err(VfsError::IsADirectory),
             InodeType::Symlink { .. } => Err(VfsError::NotFound),
+            InodeType::Device { .. } => {
+                // Device files accept writes but discard data
+                // Update atime only (device content doesn't change)
+                let now = current_timestamp();
+                let updated_inode = Inode {
+                    ino,
+                    inode_type: inode.inode_type.clone(),
+                    permissions: inode.permissions.clone(),
+                    nlinks: inode.nlinks,
+                    atime: now,         // Update on write
+                    mtime: inode.mtime, // Device content doesn't change
+                    ctime: inode.ctime, // Metadata doesn't change
+                };
+                self.inodes.insert(ino, updated_inode);
+                Ok(())
+            }
         }
     }
 
@@ -1688,6 +1820,7 @@ impl VirtualFileSystem {
             InodeType::File { content } => (FileType::RegularFile, content.len() as u64),
             InodeType::Directory { .. } => (FileType::Directory, 4096), // Fixed size for directories
             InodeType::Symlink { .. } => (FileType::Symlink, 0),        // Symlinks have size 0
+            InodeType::Device { .. } => (FileType::RegularFile, 0),     // Device files have no size
         };
 
         FileStat {
@@ -6030,6 +6163,87 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    mod devfs_tests {
+        use super::*;
+
+        #[test]
+        fn test_dev_null_read() {
+            let mut vfs = VirtualFileSystem::new();
+            // /dev/null should exist after initialization
+            let result = vfs.read_file(&PathBuf::from("/dev/null"));
+            assert_eq!(result, Ok(vec![]));
+        }
+
+        #[test]
+        fn test_dev_null_write() {
+            let mut vfs = VirtualFileSystem::new();
+            // Writing to /dev/null should succeed and discard data
+            let result = vfs.write_file(&PathBuf::from("/dev/null"), vec![1, 2, 3, 4, 5]);
+            assert!(result.is_ok());
+            // Reading should still return empty
+            let read_result = vfs.read_file(&PathBuf::from("/dev/null"));
+            assert_eq!(read_result, Ok(vec![]));
+        }
+
+        #[test]
+        fn test_dev_zero_read() {
+            let mut vfs = VirtualFileSystem::new();
+            // Reading from /dev/zero should return zeros
+            let result = vfs.read_file(&PathBuf::from("/dev/zero"));
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert!(!data.is_empty());
+            assert!(data.iter().all(|&b| b == 0));
+        }
+
+        #[test]
+        fn test_dev_zero_multiple_reads() {
+            let mut vfs = VirtualFileSystem::new();
+            // Multiple reads from /dev/zero should return zeros
+            let result1 = vfs.read_file(&PathBuf::from("/dev/zero"));
+            let result2 = vfs.read_file(&PathBuf::from("/dev/zero"));
+            assert!(result1.is_ok());
+            assert!(result2.is_ok());
+            assert!(result1.unwrap().iter().all(|&b| b == 0));
+            assert!(result2.unwrap().iter().all(|&b| b == 0));
+        }
+
+        #[test]
+        fn test_dev_random_read() {
+            let mut vfs = VirtualFileSystem::new();
+            // Reading from /dev/random should return non-zero bytes
+            let result = vfs.read_file(&PathBuf::from("/dev/random"));
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert!(!data.is_empty());
+            // Should have at least some non-zero bytes
+            assert!(data.iter().any(|&b| b != 0));
+        }
+
+        #[test]
+        fn test_dev_random_deterministic() {
+            let vfs1 = VirtualFileSystem::new();
+            let vfs2 = VirtualFileSystem::new();
+            // Two fresh VFS instances should produce same random bytes (deterministic)
+            let mut vfs1_clone = vfs1.clone();
+            let mut vfs2_clone = vfs2.clone();
+            let result1 = vfs1_clone.read_file(&PathBuf::from("/dev/random"));
+            let result2 = vfs2_clone.read_file(&PathBuf::from("/dev/random"));
+            assert_eq!(result1, result2);
+        }
+
+        #[test]
+        fn test_dev_files_exist() {
+            let vfs = VirtualFileSystem::new();
+            // Check that all device files exist in /dev
+            let entries = vfs.list_directory(&PathBuf::from("/dev")).unwrap();
+            let names: Vec<String> = entries.iter().map(|e| e.name.clone()).collect();
+            assert!(names.contains(&"null".to_string()));
+            assert!(names.contains(&"zero".to_string()));
+            assert!(names.contains(&"random".to_string()));
         }
     }
 }
