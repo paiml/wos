@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Signal Handler Registration (WOS-027)**: Implemented sigaction and sigprocmask syscalls
+  - Sigaction: Register custom signal handlers, set ignore/terminate actions
+  - Sigprocmask: Block/unblock signals atomically
+  - POSIX-compliant: SIGKILL cannot be caught or blocked
+  - Tests: 9 comprehensive tests covering all signal handler scenarios
+  - Location: `kernel/src/syscall.rs` (+352 lines)
+  - Commit: f0aeb14
+
+- **Exec System Call (WOS-026)**: Process image replacement functionality
+  - Replace current process with new program while preserving PID
+  - Environment variable management and replacement
+  - Program arguments stored in VirtualMemory
+  - File descriptor preservation across exec
+  - Tests: 6 comprehensive tests covering exec behavior and error paths
+  - Location: `kernel/src/syscall.rs` (+321 lines), `kernel/src/memory.rs` (+8 lines), `kernel/src/state.rs` (+3 lines)
+  - Commit: fcfc427
+
+### Quality
+- **Clippy Warnings Eliminated**: Fixed all 35 clippy warnings → 0 warnings
+  - Fixed unnecessary_unwrap: Use if-let pattern
+  - Fixed len_zero: Use !is_empty() instead of len() > 0
+  - Fixed manual_strip: Use strip_prefix() for string operations
+  - Fixed bool_assert_comparison: Use assert!() for boolean values (25 occurrences)
+  - Fixed empty_line_after_doc_comments: Remove blank lines
+  - Fixed needless_range_loop: Use enumerate() instead of range indexing
+  - Fixed collapsible_if patterns: Simplified conditional logic
+  - All 3,036 tests passing after refactoring
+  - Files modified: 6 files across kernel, shared, and wos crates
+  - Commit: 84ac6f6
+
 ## [0.3.2] - 2025-11-15
 
 ### Testing

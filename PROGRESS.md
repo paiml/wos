@@ -4,10 +4,10 @@
 
 WOS (WebAssembly Operating System) is an educational microkernel designed to demonstrate OS concepts in a pure Rust, safe environment that compiles to WebAssembly.
 
-**Current Status**: 23 tickets completed across 6 development phases + Documentation phase
-**Total Tests**: 22,320 passing (277 Rust: 159 kernel + 17 shared + 45 userspace + 56 wos + 22,043 Frontend: 43 unit + 22,000 property + 39 benchmarks + 29 E2E)
+**Current Status**: 25+ tickets completed across 7 development phases + Documentation phase
+**Total Tests**: 25,079+ passing (3,036 Rust: 2,025 wos + 317 kernel + 366 shared + 324 userspace + 4 integration + 22,043 Frontend: 43 unit + 22,000 property + 39 benchmarks + 211 E2E scenarios)
 **Test Coverage**: Exceeding 85% target (94.11% Rust backend) with extensive property-based testing
-**Code Quality**: Zero unsafe code, all clippy lints passing, comprehensive mutation testing (98.5% mutation score)
+**Code Quality**: Zero unsafe code, zero clippy warnings, comprehensive mutation testing (98.5% mutation score)
 **TDG Grade**: A+ (96-97%) - Elite-tier quality across entire codebase
 **Documentation**: 318KB comprehensive documentation across 8 documents
   - Architecture & Design: 132KB (3 specifications with Toyota Way principles)
@@ -48,7 +48,7 @@ WOS (WebAssembly Operating System) is an educational microkernel designed to dem
 - ✅ **WOS-021**: Multi-format export (JSON/HTML/Markdown/SARIF) and final validation
 - ✅ **WOS-022**: Frontend testing infrastructure with Deno (43 unit + 22,000 property + 39 benchmarks)
 
-### Phase 7: Documentation (Week 18)
+### Phase 7: Advanced Features & Documentation (Week 18+)
 - ✅ **WOS-023**: Comprehensive testing strategy documentation (v1.1, 88KB)
   - Tool version table with MSRV and update guide
   - Troubleshooting FAQ (15+ common issues with solutions)
@@ -64,6 +64,19 @@ WOS (WebAssembly Operating System) is an educational microkernel designed to dem
   - Complete Playwright test examples with TypeScript
   - Chaos engineering and long-running stability tests
   - 10-week implementation roadmap
+- ✅ **WOS-026**: Exec system call implementation
+  - Process image replacement while preserving PID
+  - Environment variable management and replacement
+  - Program arguments stored in VirtualMemory
+  - File descriptor preservation across exec
+  - Tests: 6 comprehensive tests covering exec behavior and error paths
+  - Location: kernel/src/syscall.rs (+321 lines)
+- ✅ **WOS-027**: Signal handler registration
+  - Sigaction syscall: Register custom signal handlers, set ignore/terminate actions
+  - Sigprocmask syscall: Block/unblock signals atomically
+  - POSIX-compliant: SIGKILL cannot be caught or blocked
+  - Tests: 9 comprehensive tests covering all signal handler scenarios
+  - Location: kernel/src/syscall.rs (+352 lines)
 
 ## Architecture Highlights
 
@@ -75,25 +88,29 @@ WOS (WebAssembly Operating System) is an educational microkernel designed to dem
 
 ### Key Components
 
-#### Kernel (159 tests)
-- **Process Management**: Fork/exec model with parent-child relationships
+#### Kernel (317 tests)
+- **Process Management**: Fork/exec model with parent-child relationships (exec syscall)
 - **Memory Management**: Page-based virtual memory with read/write/execute permissions
-- **System Calls**: 11 implemented syscalls (GetPid, Fork, Exit, WaitPid, Open, Close, Read, Write, Mmap, Munmap, Send, Recv)
+- **System Calls**: 13 implemented syscalls (GetPid, Fork, Exec, Exit, WaitPid, Open, Close, Read, Write, Mmap, Munmap, Sigaction, Sigprocmask, Send, Recv)
+- **Signal Handling**: Custom signal handlers with blocking/unblocking (POSIX-compliant)
 - **Scheduler**: Round-robin with O(1) operations
 - **File System**: VFS with permissions + dynamic ProcFS
 - **IPC**: Message passing with FIFO ordering
 - **Debugging**: Time-travel debugging with full state snapshots
 
-#### Shared (17 tests)
+#### Shared (366 tests)
 - **VFS**: In-memory file system with persistent data structures
 - **Context**: Deterministic execution context
+- **Parser**: Command parsing and tokenization
+- **Pipeline**: Command pipeline execution
 
-#### Userspace (45 tests)
+#### Userspace (324 tests)
 - **Init Process**: PID 1 with shell launching and orphan reaping
 - **Shell Process**: Command parsing, built-ins, history, environment variables
 - **User Programs**: echo, ls, ps with syscall integration
+- **Script Executor**: Bash-compatible script execution
 
-#### WASM Layer (56 tests)
+#### WASM Layer (2,025 tests)
 - **WASM Bindings**: wasm-bindgen wrapper for browser integration
 - **State Persistence**: JSON serialization for getState/setState
 - **Syscall Interface**: JSON-based syscall execution from JavaScript

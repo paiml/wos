@@ -14,7 +14,7 @@ An educational microkernel operating system written in pure Rust that compiles t
 
 - **🦀 Pure Rust**: 100% safe Rust with `#![forbid(unsafe_code)]` - zero undefined behavior
 - **🌐 Browser-Native**: Compiles to WASM, runs in any modern browser without plugins
-- **🧪 Elite Testing**: 452 unit tests + 147 E2E tests with 85%+ coverage
+- **🧪 Elite Testing**: 3,036 Rust unit tests + 22,043 Frontend tests + 211 E2E test scenarios with 94.11% coverage
 - **⚡ Functional Design**: Pure functional syscalls with immutable state transitions
 - **🔍 Time-Travel Debugging**: Bidirectional execution replay with full state snapshots
 - **📊 Quality Metrics**: Real-time TDG dashboard (99.3/100 A+) with JSON/HTML export
@@ -174,12 +174,13 @@ State flows in, new state + output flow out. No global state, no side effects.
 
 ## System Calls
 
-WOS implements 11 core syscalls:
+WOS implements 13 core syscalls:
 
 | Syscall | Description |
 |---------|-------------|
 | `GetPid` | Get current process ID |
 | `Fork` | Create child process |
+| `Exec` | Replace process image with new program |
 | `Exit` | Terminate process |
 | `WaitPid` | Wait for child termination |
 | `Open` | Open file descriptor |
@@ -188,28 +189,33 @@ WOS implements 11 core syscalls:
 | `Write` | Write to file descriptor |
 | `Mmap` | Map memory pages |
 | `Munmap` | Unmap memory pages |
+| `Sigaction` | Register signal handlers |
+| `Sigprocmask` | Block/unblock signals |
 | `Send` / `Recv` | Message-passing IPC |
 
 ## Project Structure
 
 ```
 wos/
-├── kernel/          # Core microkernel (159 tests)
+├── kernel/          # Core microkernel (317 tests)
 │   ├── state.rs     # Process and kernel state types
 │   ├── scheduler.rs # Round-robin scheduler
 │   ├── memory.rs    # Virtual memory management
-│   ├── syscall.rs   # System call implementations
+│   ├── syscall.rs   # System call implementations (13 syscalls)
 │   └── trace.rs     # Time-travel debugging
-├── shared/          # Shared types (17 tests)
+├── shared/          # Shared types (366 tests)
 │   ├── vfs.rs       # Virtual file system
-│   └── context.rs   # Execution context
-├── userspace/       # User programs (45 tests)
+│   ├── context.rs   # Execution context
+│   ├── parser.rs    # Command parsing and tokenization
+│   └── pipeline.rs  # Command pipeline execution
+├── userspace/       # User programs (324 tests)
 │   ├── init.rs      # PID 1 init process
 │   ├── shell.rs     # Interactive shell
 │   └── programs.rs  # User programs (echo, ls, ps)
-├── wos/             # WASM bindings (56 tests)
+├── wos/             # WASM bindings (2,025 tests)
 │   ├── lib.rs       # wasm-bindgen wrapper
-│   └── quality.rs   # TDG quality metrics
+│   ├── quality.rs   # TDG quality metrics
+│   └── script_executor.rs  # Bash-compatible script execution
 ├── dist/wos/        # Frontend (22,043 tests)
 │   ├── index.html   # Terminal UI
 │   ├── app.js       # Frontend logic
@@ -227,12 +233,12 @@ WOS follows extreme Test-Driven Development (TDD):
 ### Test Coverage
 
 - **94.11%** Rust backend coverage
-- **23,376** total tests (546 unit + 22,000 property + 211 E2E scenarios + 107 canary + 411 mutation + 101 other)
+- **25,079+** total tests (3,036 Rust unit + 22,043 Frontend [43 unit + 22,000 property + 39 benchmarks] + 211 E2E scenarios + 107 canary + 411 mutation tests)
 - **98.5%** mutation score (411 mutants)
 
 ### Test Types
 
-1. **Unit Tests**: 546 Rust + Frontend tests
+1. **Unit Tests**: 3,036 Rust unit tests + 43 Frontend unit tests
 2. **Property Tests**: 42 Rust + 22 Frontend = 64 properties generating 22,000+ test cases
 3. **Integration Tests**: Syscall pipelines, fork/wait workflows
 4. **E2E Tests**: 211 test scenarios across 5 browsers (Chromium, Firefox, WebKit, Mobile Chrome, Mobile Safari) = 1,055 total tests

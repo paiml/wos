@@ -1847,18 +1847,25 @@ future_phases:
   - id: phase-7
     name: "Advanced Features"
     status: partially_completed
-    completion_date: "2025-11-17"
+    completion_date: "2025-11-18"
     completion_notes: |
-      Completed 4 core advanced features in this session:
+      Completed 6 core advanced features across two sessions:
+
+      Session 1 (2025-11-17):
       - WOS-022: Priority Scheduling with aging (8 levels, starvation prevention)
       - WOS-014: Synchronization Primitives (Mutex with deadlock detection, Semaphore)
       - WOS-013: Shared Memory IPC (reference counting, multi-process access)
       - DevFS Special Files (/dev/null, /dev/zero, /dev/random with deterministic RNG)
 
+      Session 2 (2025-11-18):
+      - WOS-026: Exec system call (process image replacement, preserves PID)
+      - WOS-027: Signal handler registration (sigaction & sigprocmask, POSIX-compliant)
+      - WOS-QUALITY: Fix all clippy warnings (35 → 0)
+
       Statistics:
-      - Total Lines Added: 1,706 lines
-      - Total Tests Added: 46 tests (7 + 19 + 13 + 7)
-      - All 330 tests passing
+      - Total Lines Added: 2,379 lines (+673 in session 2)
+      - Total Tests Added: 61 tests (+15 in session 2: 6 exec + 9 signal)
+      - All 3,036 tests passing
       - 0 clippy warnings
 
       Commits:
@@ -1866,17 +1873,20 @@ future_phases:
       - a04ab58: [WOS-014] feat: Implement synchronization primitives (Mutex, Semaphore)
       - 30396ac: [WOS-013] feat: Implement shared memory IPC
       - 95023fa: [WOS-DEVFS] feat: Implement DevFS special files
+      - fcfc427: [WOS-026] feat: Implement Exec system call
+      - f0aeb14: [WOS-027] feat: Implement signal handler registration (sigaction & sigprocmask)
+      - 84ac6f6: [WOS-QUALITY] Fix all clippy warnings (35 → 0)
     features_completed:
       - "✅ Priority scheduling (WOS-022)"
       - "✅ Synchronization primitives (WOS-014)"
       - "✅ Shared memory IPC (WOS-013)"
       - "✅ Special filesystems (DevFS: /dev/null, /dev/zero, /dev/random)"
+      - "✅ Exec system call (WOS-026)"
+      - "✅ Signal handler registration (WOS-027: sigaction & sigprocmask)"
     features_deferred:
       - "Preemptive multitasking (WOS-023)"
       - "Virtual memory paging (WOS-024)"
       - "Network stack (WOS-025)"
-      - "Exec system call (WOS-026)"
-      - "Signals (WOS-027)"
       - "Pipes and redirection (WOS-028)"
       - "Multi-core support (WOS-029)"
       - "Debugging tools (WOS-030)"
