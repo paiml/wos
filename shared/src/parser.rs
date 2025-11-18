@@ -559,55 +559,55 @@ mod tests {
     #[test]
     fn test_handle_quote_toggle_single() {
         let (new_single, new_double, had_quotes) = handle_quote_toggle('\'', false, false);
-        assert_eq!(new_single, true);
-        assert_eq!(new_double, false);
-        assert_eq!(had_quotes, true);
+        assert!(new_single);
+        assert!(!new_double);
+        assert!(had_quotes);
     }
 
     #[test]
     fn test_handle_quote_toggle_double() {
         let (new_single, new_double, had_quotes) = handle_quote_toggle('"', false, false);
-        assert_eq!(new_single, false);
-        assert_eq!(new_double, true);
-        assert_eq!(had_quotes, true);
+        assert!(!new_single);
+        assert!(new_double);
+        assert!(had_quotes);
     }
 
     #[test]
     fn test_handle_quote_toggle_close_single() {
         let (new_single, new_double, had_quotes) = handle_quote_toggle('\'', true, false);
-        assert_eq!(new_single, false);
-        assert_eq!(new_double, false);
-        assert_eq!(had_quotes, true);
+        assert!(!new_single);
+        assert!(!new_double);
+        assert!(had_quotes);
     }
 
     #[test]
     fn test_should_end_token_whitespace() {
-        assert_eq!(should_end_token(' ', false, false, 0, 0), true);
-        assert_eq!(should_end_token('\t', false, false, 0, 0), true);
+        assert!(should_end_token(' ', false, false, 0, 0));
+        assert!(should_end_token('\t', false, false, 0, 0));
     }
 
     #[test]
     fn test_should_end_token_in_quotes() {
-        assert_eq!(should_end_token(' ', true, false, 0, 0), false);
-        assert_eq!(should_end_token(' ', false, true, 0, 0), false);
+        assert!(!should_end_token(' ', true, false, 0, 0));
+        assert!(!should_end_token(' ', false, true, 0, 0));
     }
 
     #[test]
     fn test_should_end_token_in_command_substitution() {
         // Space inside $(...)  should not end token
-        assert_eq!(should_end_token(' ', false, false, 1, 0), false);
-        assert_eq!(should_end_token('\t', false, false, 1, 0), false);
+        assert!(!should_end_token(' ', false, false, 1, 0));
+        assert!(!should_end_token('\t', false, false, 1, 0));
         // Space outside $(...)  should end token
-        assert_eq!(should_end_token(' ', false, false, 0, 0), true);
+        assert!(should_end_token(' ', false, false, 0, 0));
     }
 
     #[test]
     fn test_should_end_token_in_parameter_expansion() {
         // Space inside ${...} should not end token
-        assert_eq!(should_end_token(' ', false, false, 0, 1), false);
-        assert_eq!(should_end_token('\t', false, false, 0, 1), false);
+        assert!(!should_end_token(' ', false, false, 0, 1));
+        assert!(!should_end_token('\t', false, false, 0, 1));
         // Space outside ${...} should end token
-        assert_eq!(should_end_token(' ', false, false, 0, 0), true);
+        assert!(should_end_token(' ', false, false, 0, 0));
     }
 
     // Property-based tests using proptest
@@ -702,10 +702,10 @@ mod tests {
             ) {
                 // Build input with variable spacing (1-5 spaces between words)
                 let mut input = words[0].clone();
-                for i in 1..words.len() {
+                for (i, word) in words.iter().enumerate().skip(1) {
                     let num_spaces = (i % 5) + 1; // 1-5 spaces
                     input.push_str(&" ".repeat(num_spaces));
-                    input.push_str(&words[i]);
+                    input.push_str(word);
                 }
 
                 let (cmd, args) = parse_command(&input);

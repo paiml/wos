@@ -5866,7 +5866,7 @@ mod coverage_red_tests {
     fn test_mb3_var_dollar() {
         let mut wos = WosWasm::new();
         wos.execute_command("X=hi");
-        assert!(wos.execute_command("echo $X").len() > 0);
+        assert!(!wos.execute_command("echo $X").is_empty());
     }
     #[test]
     fn test_mb3_var_brace() {
