@@ -163,7 +163,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly init_pure_wasm: () => void;
   readonly __wbg_woswasm_free: (a: number, b: number) => void;
   readonly getDefaultConfig: () => [number, number];
   readonly loadConfigFromYaml: (a: number, b: number) => [number, number, number, number];
@@ -186,6 +185,7 @@ export interface InitOutput {
   readonly woswasm_processCount: (a: number) => number;
   readonly woswasm_reset: (a: number) => void;
   readonly woswasm_setState: (a: number, b: number, c: number) => [number, number];
+  readonly init_pure_wasm: () => void;
   readonly wasm_bindgen__convert__closures_____invoke__h7d928a9f858445a7: (a: number, b: number, c: any) => void;
   readonly wasm_bindgen__closure__destroy__hcf43f0be3d966007: (a: number, b: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;

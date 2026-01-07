@@ -11,7 +11,7 @@
 # Disable built-in implicit rules for faster Make execution
 .SUFFIXES:
 
-.PHONY: help build test test-fast coverage quality wasm clean dist fmt lint hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-scripts lint-all cleanup-processes check-memory link-dev deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config bashrs-check bashrs-fix bashrs-audit bashrs-score bashrs-test bashrs-coverage bashrs-format bashrs-purify probar-test probar-terminal probar-panels probar-commands probar-playbooks probar-all
+.PHONY: help build test test-fast coverage quality wasm clean dist fmt lint hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-scripts lint-all cleanup-processes check-memory link-dev deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config bashrs-check bashrs-fix bashrs-audit bashrs-score bashrs-test bashrs-coverage bashrs-format bashrs-purify probar-test probar-terminal probar-panels probar-commands probar-playbooks probar-compliance probar-all serve dev
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
@@ -280,14 +280,18 @@ probar-commands:
 	@echo "✓ Command tests passed"
 
 probar-playbooks:
-	@echo "📋 Playbooks available in wos/tests/playbooks/:"
-	@ls -1 wos/tests/playbooks/*.apr 2>/dev/null || echo "  No playbooks found"
-	@echo ""
-	@echo "💡 Run with: probador run wos/tests/playbooks/<name>.apr"
+	@echo "📋 Running Probador playbooks..."
+	@probador playbook wos/tests/playbooks/*.apr --continue-on-error -v
+	@echo "✓ Playbooks complete"
 
-probar-all: probar-terminal probar-panels probar-commands
+probar-compliance:
+	@echo "📋 Running compliance tests..."
+	@cargo test --package wos --test probar_compliance -- --test-threads=1
+	@echo "✓ Compliance tests passed"
+
+probar-all: probar-terminal probar-panels probar-commands probar-compliance
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "✅ All Probador tests passed (95 tests)"
+	@echo "✅ All Probador tests passed (150 tests)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ============================================================================
@@ -582,9 +586,13 @@ hooks-install:
 # ============================================================================
 
 serve:
-	@echo "🌐 Starting development server with hot reload on http://localhost:8000"
-	@echo "💡 Features: Hot reload (--watch), WASM auto-compilation (--watch-wasm)"
-	@cd dist && ruchy serve wos --port 8000 --watch --watch-wasm --verbose
+	@echo "🌐 Starting Probador dev server on http://localhost:8000"
+	@echo "💡 Features: Hot reload, COOP/COEP headers, WASM validation"
+	@probador serve -d dist/wos -p 8000 --watch --cross-origin-isolated --open -v
+
+dev: dist
+	@echo "🔧 Building WASM and starting dev server..."
+	@$(MAKE) serve
 
 clean:
 	@echo "🧹 Cleaning build artifacts..."
