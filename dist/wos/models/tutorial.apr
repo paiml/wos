@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "format": "WosKernelState",
+  "seed": 42,
+  "initial_state": null,
+  "inputs": [
+    { "tick": 0, "input": { "Command": "echo Welcome to WOS Tutorial" } },
+    { "tick": 1000, "input": { "Command": "ps" } },
+    { "tick": 2000, "input": { "Command": "ls /proc" } },
+    { "tick": 3000, "input": { "Command": "cat /proc/1/status" } },
+    { "tick": 4000, "input": { "Command": "echo Creating a file..." } },
+    { "tick": 5000, "input": { "Command": "echo 'Hello World' > /tmp/hello.txt" } },
+    { "tick": 6000, "input": { "Command": "cat /tmp/hello.txt" } },
+    { "tick": 7000, "input": { "Command": "ls /tmp" } },
+    { "tick": 8000, "input": { "Command": "echo Tutorial complete!" } }
+  ],
+  "expected_outputs": [],
+  "checkpoints": [],
+  "metadata": {
+    "name": "WOS Tutorial",
+    "description": "Interactive tutorial demonstrating core WOS features",
+    "author": "WOS",
+    "created": "2025-01-05"
+  }
+}

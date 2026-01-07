@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "format": "WosKernelState",
+  "seed": 12345,
+  "initial_state": null,
+  "inputs": [
+    { "tick": 0, "input": { "Command": "echo Hello WOS" } },
+    { "tick": 500, "input": { "Command": "ps" } },
+    { "tick": 1000, "input": { "Command": "ls" } },
+    { "tick": 1500, "input": { "Command": "cat /proc/1/status" } }
+  ],
+  "expected_outputs": [],
+  "checkpoints": [],
+  "metadata": {
+    "name": "demo-session",
+    "description": "Demo session showing basic WOS commands",
+    "author": "WOS",
+    "created": "2025-01-05"
+  }
+}

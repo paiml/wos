@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WOS v2.0 - Pure WASM Operating System</title>
+    <link rel="stylesheet" href="style.css">
+    <!--
+    WOS v2.0 Pure WASM Architecture
+    ================================
+
+    This is the pure WASM version of WOS following the specification:
+    docs/specifications/streamlined-no-js-pure-probador-apr-enhanced-wos-with-basic-linux-kernal-and-virtualization.md
+
+    Key Features:
+    - Zero JavaScript application code (only minimal WASM loader)
+    - All DOM manipulation in Rust via web-sys
+    - APR model support for deterministic replay
+    - MicroVM virtualization layer
+    - Jidoka invariant guards
+    - Probador-first testing
+
+    The minimal JavaScript below is ONLY for WASM initialization.
+    All application logic runs in pure WASM.
+    -->
+  </head>
+  <body>
+    <!-- WOS-308: Skip link for keyboard navigation (WCAG 2.4.1) -->
+    <a href="#terminal-input" class="skip-link">Skip to terminal</a>
+
+    <div class="container">
+      <header>
+        <h1>WOS v2.0</h1>
+        <p class="subtitle">Pure WASM | Zero JavaScript | Rust + WebAssembly</p>
+      </header>
+
+      <main role="main">
+        <div class="terminal-container">
+          <div class="terminal-header">
+            <span class="terminal-title">Terminal</span>
+            <div class="terminal-controls" id="terminal-controls">
+              <!-- Buttons will be created by WASM -->
+            </div>
+          </div>
+          <div class="terminal" id="terminal">
+            <!-- ARIA live region for screen readers (WCAG 4.1.2) -->
+            <div id="terminal-output" role="log" aria-live="polite" aria-atomic="false">
+              <div class="terminal-line">WOS v2.0 - Pure WASM Operating System</div>
+              <div class="terminal-line">Loading WebAssembly module...</div>
+            </div>
+            <div class="terminal-input-line">
+              <label for="terminal-input" class="terminal-prompt">wos$ </label>
+              <input
+                type="text"
+                id="terminal-input"
+                class="terminal-input"
+                autocomplete="off"
+                spellcheck="false"
+                autofocus
+                aria-label="Terminal command input"
+                disabled
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel Toolbar - All buttons managed by WASM -->
+        <div class="panel-toolbar" role="toolbar" aria-label="Panel switcher" id="panel-toolbar">
+          <!-- Panel buttons will be created by WASM -->
+        </div>
+
+        <!-- Panels Container -->
+        <div class="file-manager" id="panels-container">
+          <!-- Panels will be created dynamically by WASM -->
+
+          <!-- Process List Panel -->
+          <div id="panel-process-list" class="file-panel process-panel" data-panel="process_list">
+            <div class="file-panel-header">
+              <h3>Process List</h3>
+            </div>
+            <div class="panel-content">
+              <div class="process-list">
+                <table class="process-table">
+                  <thead>
+                    <tr>
+                      <th>PID</th>
+                      <th>State</th>
+                      <th>Parent</th>
+                      <th>Command</th>
+                    </tr>
+                  </thead>
+                  <tbody id="process-table-body">
+                    <tr>
+                      <td colspan="4" class="no-data">Waiting for WASM...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Memory Map Panel -->
+          <div id="panel-memory-map" class="file-panel memory-panel" data-panel="memory_map">
+            <div class="file-panel-header">
+              <h3>Memory Map</h3>
+            </div>
+            <div class="panel-content">
+              <div class="memory-visualization" id="memory-visualization">
+                <p class="no-data">Waiting for WASM...</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- System Info Panel -->
+          <div id="panel-system-monitor" class="file-panel system-panel" data-panel="system_monitor">
+            <div class="file-panel-header">
+              <h3>System Info</h3>
+            </div>
+            <div class="system-info">
+              <p><strong>Status:</strong> <span id="status">Loading WASM...</span></p>
+              <p><strong>Architecture:</strong> Pure WASM (Zero JS)</p>
+              <p><strong>Version:</strong> <span id="version">2.0.0</span></p>
+              <p><strong>Processes:</strong> <span id="process-count">0</span></p>
+              <p><strong>APR Runtime:</strong> <span id="apr-status">Ready</span></p>
+              <p><strong>VM Manager:</strong> <span id="vm-status">Ready</span></p>
+              <p><strong>Jidoka Guards:</strong> <span id="jidoka-status">Active</span></p>
+            </div>
+          </div>
+
+          <!-- APR Model Panel (New in v2.0) -->
+          <div id="panel-apr" class="file-panel" data-panel="apr">
+            <div class="file-panel-header">
+              <h3>APR Runtime</h3>
+            </div>
+            <div class="panel-content">
+              <div id="apr-content">
+                <p><strong>APR Version:</strong> 1.0.0</p>
+                <p><strong>Loaded Model:</strong> <span id="apr-model">None</span></p>
+                <p><strong>Seed:</strong> <span id="apr-seed">-</span></p>
+                <p><strong>Inputs:</strong> <span id="apr-inputs">0</span></p>
+                <p><strong>Checkpoints:</strong> <span id="apr-checkpoints">0</span></p>
+                <div id="apr-controls" class="apr-controls">
+                  <!-- APR controls will be created by WASM -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- VM Manager Panel (New in v2.0) -->
+          <div id="panel-vm" class="file-panel" data-panel="vm">
+            <div class="file-panel-header">
+              <h3>VM Manager</h3>
+            </div>
+            <div class="panel-content">
+              <div id="vm-content">
+                <p><strong>Active VMs:</strong> <span id="vm-count">0</span></p>
+                <p><strong>Max VMs:</strong> 16</p>
+                <p><strong>Default Memory:</strong> 16 MB</p>
+                <div id="vm-list">
+                  <p class="no-data">No VMs running</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+
+    <!-- Pragmatic AI Labs Badge -->
+    <a href="https://paiml.com" target="_blank" rel="noopener noreferrer" class="paiml-badge" title="Made by Pragmatic AI Labs" aria-label="Made by Pragmatic AI Labs">
+      <span class="paiml-text">paiml.com</span>
+    </a>
+
+    <!--
+    MINIMAL WASM LOADER
+    ===================
+
+    This is the ONLY JavaScript in WOS v2.0.
+    It exists solely to load the WASM module - a current browser requirement.
+    All application logic runs inside the WASM module.
+
+    Once loaded, the WASM module takes over:
+    - Event handling
+    - DOM manipulation
+    - State management
+    - Terminal input/output
+    - Panel rendering
+
+    The goal is for this to eventually be replaced by native WASM module loading
+    when browsers support it (ES Module Integration for WASM).
+    -->
+    <script type="module">
+      // Minimal WASM loader - ZERO application logic here
+      async function initWasm() {
+        try {
+          // Import and initialize WASM module
+          const wasm = await import('./wos.js');
+          await wasm.default();
+
+          // Enable terminal input once WASM is ready
+          const input = document.getElementById('terminal-input');
+          if (input) {
+            input.disabled = false;
+            input.focus();
+          }
+
+          // Update status
+          const status = document.getElementById('status');
+          if (status) {
+            status.textContent = 'Ready (Pure WASM)';
+          }
+
+          // Log to console for debugging
+          console.log('WOS v2.0 WASM module loaded successfully');
+          console.log('Architecture: Pure WASM with Zero JavaScript application code');
+        } catch (e) {
+          console.error('Failed to load WASM module:', e);
+          const status = document.getElementById('status');
+          if (status) {
+            status.textContent = 'Failed to load WASM';
+          }
+        }
+      }
+
+      initWasm();
+    </script>
+  </body>
+</html>

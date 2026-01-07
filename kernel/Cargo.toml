@@ -1,0 +1,21 @@
+[package]
+name = "wos-kernel"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+wos-shared = { path = "../shared" }
+im.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+# Real aprender integration (not mocked)
+aprender = { path = "../../aprender", default-features = false }
+
+[dev-dependencies]
+proptest.workspace = true
+jugar-probar = { workspace = true, features = ["tui"] }

@@ -1,0 +1,162 @@
+# PMAT Quality Gates for WOS
+# Zero-tolerance quality enforcement with Toyota Way principles
+
+[project]
+name = "wos"
+type = "rust-wasm"
+version = "0.1.0"
+description = "WASM Operating System - Educational Microkernel"
+
+[quality_gate]
+# Extreme quality standards (Toyota Way - Zero Defects)
+# Synced with roadmap.yaml quality_gates section
+max_cyclomatic_complexity = 10  # roadmap: 20, stricter for new code
+max_cognitive_complexity = 10   # roadmap: 15, stricter for new code
+max_satd_comments = 0  # ZERO TOLERANCE for technical debt (roadmap: 0)
+min_test_coverage = 85.0  # roadmap: 0.85
+fail_fast = true
+strict_mode = true
+
+[roadmap]
+# Roadmap-driven development integration
+roadmap_file = "roadmap.yaml"
+enforce_tickets = true
+require_ticket_id_in_commits = true
+commit_pattern = "^(feat|fix|refactor|test|docs|chore)\\(.*\\):"
+validate_on_commit = true
+
+[rust]
+# Rust-specific quality gates
+edition = "2021"
+max_cyclomatic_complexity = 10  # Stricter: was 20
+max_cognitive_complexity = 10   # Stricter: was 15
+enforce_clippy = true
+enforce_rustfmt = true
+forbid_unsafe = true  # 100% safe Rust
+max_function_length = 100
+max_file_length = 1000
+
+[rust.quality]
+# Technical Debt Gap (TDG) - must be under 1.0
+max_technical_debt_gap = 0.8
+
+# Self-Admitted Technical Debt (SATD) - zero tolerance
+allow_satd = false
+satd_keywords = ["TODO", "FIXME", "HACK", "XXX", "BUG", "TEMP", "DEPRECATED"]
+
+# Maintainability thresholds
+min_maintainability_index = 75
+max_halstead_difficulty = 20
+max_halstead_effort = 1000
+
+[wasm]
+# Strict WASM quality enforcement
+max_module_size_bytes = 512_000  # 500KB uncompressed
+max_module_size_gzip_bytes = 102_400  # 100KB gzipped
+max_function_complexity = 10  # Stricter: was 20
+max_functions_per_module = 100
+
+# CRITICAL: No WASI imports (wasm32-unknown-unknown target)
+max_imports = 0
+forbid_wasi_imports = true
+allowed_import_modules = []  # Empty = no imports allowed
+
+# Exports
+max_exports = 50
+require_minimal_exports = true
+
+# Debug symbols
+require_dwarf_symbols_debug = true  # Debug builds only
+forbid_dwarf_symbols_release = true  # Strip for production
+
+[wasm.performance]
+# Performance requirements
+max_cold_start_ms = 100  # <100ms WASM load in browser
+max_step_execution_us = 10_000  # 10ms per step
+max_vfs_clone_us = 10  # O(1) persistent data structures
+max_serialization_p99_ms = 10
+
+[wasm.quality]
+# Quality gates
+min_test_coverage = 85.0
+require_property_tests = true
+min_property_test_inputs = 10_000
+require_mutation_testing = true
+min_mutation_kill_rate = 90.0
+
+[wasm.security]
+# Security analysis
+forbid_unsafe_operations = true
+require_sandbox_isolation = true
+check_side_effects = true
+verify_determinism = true
+check_memory_safety = true
+
+[testing]
+# Testing requirements
+min_unit_test_coverage = 85.0
+min_branch_coverage = 90.0
+min_integration_test_coverage = 80.0
+require_property_tests = true
+require_e2e_tests = true
+
+[testing.property]
+# Property-based testing
+min_inputs_per_test = 10_000
+required_properties = [
+    "determinism",           # Same input → same output
+    "referential_transparency",  # Pure functions only
+    "sandbox_isolation",     # State changes only from explicit operations
+    "robustness"             # Must never panic on any input
+]
+
+[testing.mutation]
+# Mutation testing
+min_kill_rate = 90.0
+timeout_multiplier = 2.0
+excluded_patterns = ["tests/*", "benches/*"]
+
+[paths]
+# Project structure for PMAT analysis
+source_dirs = ["shared/src", "kernel/src", "userspace/src", "wos/src"]
+test_dirs = ["tests", "*/tests"]
+ignore_dirs = ["target", "dist", ".git"]
+
+source_patterns = ["**/*.rs"]
+test_patterns = ["**/tests/**/*.rs", "**/*_test.rs", "tests/**/*.rs"]
+
+ignore_patterns = [
+    "**/target/**",
+    "**/dist/**",
+    "**/.git/**",
+    "**/*.wasm",
+    "**/e2e/**",  # TypeScript E2E tests (not Rust code)
+    "**/*.spec.ts"  # TypeScript test files
+]
+
+[validation]
+# Strict validation settings
+fail_on_warning = true  # Zero tolerance
+fail_on_error = true
+cache_results = true
+cache_dir = "target/pmat-cache"
+
+[output]
+format = "json"
+verbose = true
+color = true
+include_metrics = true
+
+[pre_commit]
+# Pre-commit hook configuration (<30s total)
+enabled = true
+checks = ["fmt", "clippy", "satd", "unit-tests", "complexity"]
+auto_fix = true
+block_commit = true
+timeout_seconds = 30
+
+[toyota_way]
+# Toyota Way principles integration
+enable_jidoka = true       # Build quality in (automation stops on defect)
+enable_kaizen = true       # Continuous improvement
+zero_defects = true        # No compromises on quality

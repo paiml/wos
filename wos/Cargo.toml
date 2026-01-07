@@ -1,0 +1,82 @@
+[package]
+name = "wos"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["yaml-config", "regex-support", "wasm"]
+yaml-config = ["dep:serde_yaml"]
+regex-support = ["dep:regex"]
+wasm = ["dep:wasm-bindgen", "web-sys"]
+full = ["yaml-config", "regex-support", "wasm"]
+
+[dependencies]
+wos-shared = { path = "../shared" }
+wos-kernel = { path = "../kernel" }
+wos-userspace = { path = "../userspace" }
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml = { workspace = true, optional = true }
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook.workspace = true
+regex = { version = "1.10", optional = true }
+
+# Real aprender integration (not mocked) - path dependency for dev
+aprender = { path = "../../aprender", default-features = false }
+
+# Extended web-sys features for pure WASM DOM manipulation
+[dependencies.web-sys]
+version = "0.3"
+optional = true
+features = [
+    # Core DOM
+    "console",
+    "Window",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "HtmlInputElement",
+    "HtmlButtonElement",
+    "HtmlDivElement",
+    "HtmlTableElement",
+    "HtmlTableRowElement",
+    "HtmlTableCellElement",
+    "HtmlTableSectionElement",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "Node",
+    "NodeList",
+    "Text",
+    "CssStyleDeclaration",
+    "DomTokenList",
+    # Events
+    "Event",
+    "EventTarget",
+    "KeyboardEvent",
+    "MouseEvent",
+    "InputEvent",
+    "FocusEvent",
+    "CustomEvent",
+    "CustomEventInit",
+    # Storage
+    "Storage",
+    # Performance
+    "Performance",
+    # URL
+    "Url",
+    "UrlSearchParams",
+    "Location",
+    "History",
+]
+
+[dev-dependencies]
+proptest.workspace = true
+wasm-bindgen-test = "0.3"

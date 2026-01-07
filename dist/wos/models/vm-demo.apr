@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "format": "WosKernelState",
+  "seed": 99999,
+  "initial_state": null,
+  "inputs": [
+    { "tick": 0, "input": { "Command": "vm create test-vm" } },
+    { "tick": 500, "input": { "Command": "vm list" } },
+    { "tick": 1000, "input": { "Command": "vm start test-vm" } },
+    { "tick": 2000, "input": { "Command": "vm status test-vm" } },
+    { "tick": 3000, "input": { "Command": "vm stop test-vm" } }
+  ],
+  "expected_outputs": [],
+  "checkpoints": [],
+  "metadata": {
+    "name": "vm-demo",
+    "description": "Demo session showing MicroVM virtualization",
+    "author": "WOS",
+    "created": "2025-01-05"
+  }
+}

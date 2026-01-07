@@ -1,0 +1,93 @@
+[workspace]
+resolver = "2"
+members = [
+    "shared",
+    "kernel",
+    "userspace",
+    "wos",
+    "wos-ui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["WOS Contributors"]
+license = "MIT"
+repository = "https://github.com/noahgift/wos"
+
+[workspace.dependencies]
+# Persistent data structures (O(1) clone)
+im = { version = "15.1", features = ["serde"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Deterministic RNG
+rand = "0.8"
+rand_chacha = "0.3"
+getrandom = { version = "0.2", features = ["js"] }
+
+# Error handling
+thiserror = "1.0"
+
+# WASM bindings
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console"] }
+console_error_panic_hook = "0.1"
+
+# Testing
+proptest = "1.4"
+jugar-probar = "0.4"  # Probar testing framework (GUI coverage)
+
+# NOTE: tree-sitter for syntax highlighting will be added in future
+# Currently blocked by WASM compilation issues with C dependencies
+# NOTE: bashrs (bash parser/linter) cannot compile to WASM (uses tokio, file I/O)
+# We use bashrs CLI for static analysis of shell scripts in quality gates
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "warn"
+missing_docs = "warn"
+unused_must_use = "warn"
+
+[workspace.lints.clippy]
+# Correctness lints (highest priority)
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+
+# Code quality lints
+pedantic = "warn"
+perf = "warn"
+complexity = "warn"
+style = "warn"
+
+# Specific high-value lints
+checked_conversions = "warn"
+cloned_instead_of_copied = "warn"
+explicit_iter_loop = "warn"
+manual_let_else = "warn"
+map_unwrap_or = "warn"
+match_wildcard_for_single_variants = "warn"
+needless_continue = "warn"
+needless_pass_by_value = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+similar_names = "warn"
+single_match_else = "warn"
+uninlined_format_args = "warn"
+unnecessary_wraps = "warn"
+unwrap_used = "warn"
+used_underscore_binding = "warn"
+
+[profile.release]
+opt-level = 3
+lto = false
+codegen-units = 1
+strip = false
+
+[profile.dev]
+opt-level = 0
+debug = true

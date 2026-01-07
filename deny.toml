@@ -1,0 +1,53 @@
+# cargo-deny configuration for WOS project
+# Enforces dependency policies and security standards
+
+# Ban section - reject specific crates
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+workspace-default-features = "allow"
+
+# Deny git dependencies (prefer versioned releases)
+[[bans.deny]]
+name = "*"
+# Uncomment to ban git dependencies:
+# deny-multiple-versions = true
+
+# Licenses section - enforce acceptable licenses
+[licenses]
+# We allow permissive licenses compatible with MIT
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "CC0-1.0",
+]
+# Deny copyleft licenses
+deny = [
+    "GPL-3.0",
+    "AGPL-3.0",
+]
+confidence-threshold = 0.8
+exceptions = []
+
+# Advisory section - security vulnerabilities
+[advisories]
+# Deny crates with security vulnerabilities
+vulnerability = "deny"
+unmaintained = "warn"
+unsound = "warn"
+yanked = "deny"
+notice = "warn"
+ignore = []
+
+# Sources section - only allow crates.io
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

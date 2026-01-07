@@ -1,0 +1,31 @@
+# PMAT Quality Metrics Configuration
+# WOS - WebAssembly Operating System
+
+[thresholds]
+# TDG (Technical Debt Grade) minimum
+min_grade = "A"
+min_score = 90.0
+
+# Coverage thresholds
+min_coverage = 85.0
+min_mutation_score = 90.0
+
+# Complexity thresholds
+max_cyclomatic = 15
+max_cognitive = 12
+
+[satd]
+# Zero tolerance for SATD comments
+enabled = true
+fail_on_satd = true
+
+[quality_gates]
+# Pre-commit checks
+pre_commit = ["fmt", "clippy", "test"]
+# Pre-push checks
+pre_push = ["coverage", "mutation"]
+
+[project]
+name = "wos"
+description = "WebAssembly Operating System - Educational microkernel"
+stack = "sovereign-ai"

@@ -1,0 +1,30 @@
+# Clippy configuration for WOS project
+# Enforces project-specific style preferences and safety requirements
+
+# Disallow unsafe methods that bypass safety guarantees
+disallowed-methods = [
+    # Panicking methods (prefer Result/Option handling)
+    { path = "std::option::Option::unwrap", reason = "use expect() with descriptive message or pattern match" },
+    { path = "std::result::Result::unwrap", reason = "use expect() with descriptive message or pattern match" },
+    { path = "std::option::Option::unwrap_or_else", reason = "use unwrap_or_default() or pattern match" },
+
+    # String conversions that can panic
+    { path = "std::string::String::from_utf8_unchecked", reason = "use from_utf8() which validates UTF-8" },
+    { path = "std::str::from_utf8_unchecked", reason = "use from_utf8() which validates UTF-8" },
+
+    # Memory operations
+    { path = "std::mem::forget", reason = "causes memory leaks - use ManuallyDrop instead" },
+    { path = "std::mem::transmute", reason = "extremely unsafe - use safe alternatives" },
+
+    # Threading primitives that can deadlock
+    { path = "std::sync::Mutex::lock", reason = "prefer try_lock() to avoid deadlocks" },
+]
+
+# Maximum cyclomatic complexity (enforced by PMAT gates)
+cognitive-complexity-threshold = 10
+
+# Maximum type complexity
+type-complexity-threshold = 100
+
+# Enable all lints by default
+# Specific overrides are in workspace.lints.clippy in Cargo.toml
