@@ -163,24 +163,20 @@ pmat quality-gate --strict   # All gates pass
 
 ### Probar Comply
 
-**Status: IN PROGRESS** — [WOS-PROBAR-001](docs/tickets/WOS-PROBAR-001-zero-javascript-compliance.yaml)
+**Status: COMPLETE** — Zero JavaScript achieved
 
 | Requirement | Status | Notes |
 |-------------|--------|-------|
-| Zero JavaScript | ❌ | 5,051 lines to migrate |
-| jugar-probar | ✓ | Added as dev-dependency |
-| GUI Coverage | ⏳ | Tracking ticket created |
-| probador CLI | ⏳ | Migration planned |
+| Zero JavaScript | ✓ | Pure WASM, no app.js |
+| WASM Init | ✓ | `#[wasm_bindgen(start)]` auto-init |
+| DOM via web-sys | ✓ | All DOM ops in Rust |
+| Event Handlers | ✓ | Terminal, panels, controls |
 
-**Current Test Matrix:**
-| Type | Count | Coverage |
-|------|-------|----------|
-| Unit Tests | 3,036 Rust + 43 Frontend | 94.11% |
-| Property Tests | 22,000+ cases | Invariant validation |
-| E2E Tests | 211 × 5 browsers | User workflows |
-| Mutation Tests | 411 mutants | 98.5% killed |
-
-**Migration Path**: See [WOS-PROBAR-001](docs/tickets/WOS-PROBAR-001-zero-javascript-compliance.yaml) for the full zero-JavaScript compliance plan.
+**Architecture:**
+- `wos/src/wasm_init.rs` - Pure WASM entry point
+- `wos/src/dom.rs` - web-sys DOM abstractions
+- `dist/wos/wos.js` - wasm-bindgen glue only (required by browsers)
+- `dist/wos/index.html` - Minimal WASM loader (no app logic)
 
 ### Quality Gates
 
