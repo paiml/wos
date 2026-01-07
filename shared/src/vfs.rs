@@ -386,7 +386,7 @@ fn current_timestamp() -> Timestamp {
     {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time must be after UNIX epoch")
             .as_millis() as u64
     }
 }

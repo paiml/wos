@@ -24,6 +24,9 @@ use wasm_bindgen::JsCast;
 /// Result type for DOM operations
 pub type DomResult<T> = Result<T, DomError>;
 
+/// Type alias for event callback closure
+pub type EventClosure = Closure<dyn FnMut(web_sys::Event)>;
+
 /// DOM operation errors
 #[derive(Debug, Clone, PartialEq)]
 pub enum DomError {
@@ -266,7 +269,7 @@ pub fn remove_event_listener(
 }
 
 /// Create a keyboard event callback
-pub fn on_keydown<F>(mut handler: F) -> Closure<dyn FnMut(web_sys::Event)>
+pub fn on_keydown<F>(mut handler: F) -> EventClosure
 where
     F: FnMut(web_sys::KeyboardEvent) + 'static,
 {
@@ -278,7 +281,7 @@ where
 }
 
 /// Create a mouse event callback
-pub fn on_click<F>(mut handler: F) -> Closure<dyn FnMut(web_sys::Event)>
+pub fn on_click<F>(mut handler: F) -> EventClosure
 where
     F: FnMut(web_sys::MouseEvent) + 'static,
 {
@@ -290,7 +293,7 @@ where
 }
 
 /// Create an input event callback
-pub fn on_input<F>(mut handler: F) -> Closure<dyn FnMut(web_sys::Event)>
+pub fn on_input<F>(mut handler: F) -> EventClosure
 where
     F: FnMut(web_sys::InputEvent) + 'static,
 {

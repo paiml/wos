@@ -5,6 +5,13 @@
 use std::collections::HashMap;
 use wos_shared::{Script, ScriptError, VirtualFileSystem};
 
+/// Result type for control flow blocks (if/while/for/case)
+/// Returns (output, exit_code, next_line_index)
+type ControlFlowResult = Result<(String, i32, usize), ScriptError>;
+
+/// Type alias for elif blocks: condition and body lines
+type ElifBlocks<'a> = Vec<(String, Vec<&'a str>)>;
+
 /// Script executor for running scripts line-by-line
 #[allow(dead_code)]
 pub struct ScriptExecutor;
@@ -212,7 +219,7 @@ impl ScriptExecutor {
         script_vars: &mut HashMap<String, String>,
         variables: &mut HashMap<String, String>,
         executor: &mut F,
-    ) -> Result<(String, i32, usize), ScriptError>
+    ) -> ControlFlowResult
     where
         F: FnMut(&str) -> (String, i32),
     {
@@ -256,7 +263,7 @@ impl ScriptExecutor {
         // Find the end of the if block and all elif/else clauses
         let mut i = then_idx;
         let mut then_block: Vec<&str> = Vec::new();
-        let mut elif_blocks: Vec<(String, Vec<&str>)> = Vec::new();
+        let mut elif_blocks: ElifBlocks = Vec::new();
         let mut else_block: Option<Vec<&str>> = None;
         let mut fi_idx = None;
 
@@ -462,7 +469,9 @@ impl ScriptExecutor {
         }
 
         // Return output, exit code, and index of next line after fi
-        Ok((accumulated_output, exit_code, fi_idx.unwrap() + 1))
+        // fi_idx is guaranteed to be Some here since we found "fi" in the loop
+        let fi_index = fi_idx.expect("fi_idx must be set when parsing if block");
+        Ok((accumulated_output, exit_code, fi_index + 1))
     }
 
     /// Execute a while loop block: while CONDITION; do ... done
@@ -474,7 +483,7 @@ impl ScriptExecutor {
         script_vars: &mut HashMap<String, String>,
         variables: &mut HashMap<String, String>,
         executor: &mut F,
-    ) -> Result<(String, i32, usize), ScriptError>
+    ) -> ControlFlowResult
     where
         F: FnMut(&str) -> (String, i32),
     {
@@ -626,7 +635,9 @@ impl ScriptExecutor {
         }
 
         // Return output, exit code, and index of next line after done
-        Ok((accumulated_output, exit_code, done_idx.unwrap() + 1))
+        // done_idx is guaranteed to be Some here since we found "done" in the loop
+        let done_index = done_idx.expect("done_idx must be set when parsing while block");
+        Ok((accumulated_output, exit_code, done_index + 1))
     }
 
     /// Execute a for loop block: for VAR in LIST; do ... done
@@ -638,7 +649,7 @@ impl ScriptExecutor {
         script_vars: &mut HashMap<String, String>,
         _variables: &mut HashMap<String, String>,
         executor: &mut F,
-    ) -> Result<(String, i32, usize), ScriptError>
+    ) -> ControlFlowResult
     where
         F: FnMut(&str) -> (String, i32),
     {
@@ -817,7 +828,9 @@ impl ScriptExecutor {
         }
 
         // Return output, exit code, and index of next line after done
-        Ok((accumulated_output, exit_code, done_idx.unwrap() + 1))
+        // done_idx is guaranteed to be Some here since we found "done" in the loop
+        let done_index = done_idx.expect("done_idx must be set when parsing for block");
+        Ok((accumulated_output, exit_code, done_index + 1))
     }
 
     /// Execute a case statement: case WORD in PATTERN) COMMANDS ;; esac
@@ -828,7 +841,7 @@ impl ScriptExecutor {
         start_idx: usize,
         script_vars: &mut HashMap<String, String>,
         executor: &mut F,
-    ) -> Result<(String, i32, usize), ScriptError>
+    ) -> ControlFlowResult
     where
         F: FnMut(&str) -> (String, i32),
     {
@@ -886,8 +899,9 @@ impl ScriptExecutor {
         // Parse patterns and commands
         let mut i = start_idx + 1;
         let mut matched = false;
+        let esac_index = esac_idx.expect("esac_idx checked above");
 
-        while i < esac_idx.unwrap() {
+        while i < esac_index {
             let line = lines[i].trim();
 
             if line.is_empty() {
@@ -963,7 +977,7 @@ impl ScriptExecutor {
 
                     // Execute commands on following lines until ;;
                     i += 1;
-                    while i < esac_idx.unwrap() {
+                    while i < esac_index {
                         let cmd_line = lines[i].trim();
 
                         if cmd_line == ";;" || cmd_line.ends_with(";;") {
@@ -1007,7 +1021,7 @@ impl ScriptExecutor {
         }
 
         // Return output, exit code, and index after esac
-        Ok((accumulated_output, exit_code, esac_idx.unwrap() + 1))
+        Ok((accumulated_output, exit_code, esac_index + 1))
     }
 
     /// Execute a script in current shell context (for 'source' command)

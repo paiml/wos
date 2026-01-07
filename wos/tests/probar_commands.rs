@@ -42,10 +42,12 @@ mod file_commands {
     fn test_ls_nonexistent() {
         let mut wos = WosWasm::new();
         let output = wos.execute_command("ls /nonexistent_dir_12345");
-        assert!(output.to_lowercase().contains("not found") ||
-                output.to_lowercase().contains("no such") ||
-                output.to_lowercase().contains("error"),
-            "ls nonexistent should report error");
+        assert!(
+            output.to_lowercase().contains("not found")
+                || output.to_lowercase().contains("no such")
+                || output.to_lowercase().contains("error"),
+            "ls nonexistent should report error"
+        );
     }
 
     #[test]
@@ -124,8 +126,10 @@ mod process_commands {
     fn test_ps_basic() {
         let mut wos = WosWasm::new();
         let output = wos.execute_command("ps");
-        assert!(output.contains("PID") || output.contains("pid") || output.contains("1"),
-            "ps should show process info");
+        assert!(
+            output.contains("PID") || output.contains("pid") || output.contains("1"),
+            "ps should show process info"
+        );
     }
 
     #[test]
@@ -141,7 +145,10 @@ mod process_commands {
         let mut wos = WosWasm::new();
         let output = wos.execute_command("kill 99999");
         // kill invalid PID may error or succeed silently - both are valid
-        assert!(!output.contains("panic"), "kill should not panic on invalid PID");
+        assert!(
+            !output.contains("panic"),
+            "kill should not panic on invalid PID"
+        );
     }
 
     #[test]
@@ -235,10 +242,12 @@ mod shell_builtins {
     fn test_cd_nonexistent() {
         let mut wos = WosWasm::new();
         let output = wos.execute_command("cd /nonexistent_path_12345");
-        assert!(output.to_lowercase().contains("not found") ||
-                output.to_lowercase().contains("no such") ||
-                output.to_lowercase().contains("error") ||
-                output.is_empty());
+        assert!(
+            output.to_lowercase().contains("not found")
+                || output.to_lowercase().contains("no such")
+                || output.to_lowercase().contains("error")
+                || output.is_empty()
+        );
     }
 
     #[test]
@@ -246,8 +255,10 @@ mod shell_builtins {
         let mut wos = WosWasm::new();
         let _ = wos.execute_command("export FOO=bar");
         let output = wos.execute_command("echo $FOO");
-        assert!(output.contains("bar") || output.contains("FOO"),
-            "Exported variable should be accessible");
+        assert!(
+            output.contains("bar") || output.contains("FOO"),
+            "Exported variable should be accessible"
+        );
     }
 
     #[test]
@@ -296,8 +307,12 @@ mod help_info {
     fn test_help() {
         let mut wos = WosWasm::new();
         let output = wos.execute_command("help");
-        assert!(output.contains("Available") || output.contains("Commands") ||
-                output.contains("help") || output.contains("ls"));
+        assert!(
+            output.contains("Available")
+                || output.contains("Commands")
+                || output.contains("help")
+                || output.contains("ls")
+        );
     }
 
     #[test]
@@ -312,8 +327,12 @@ mod help_info {
     fn test_version() {
         let mut wos = WosWasm::new();
         let output = wos.execute_command("version");
-        assert!(output.contains("WOS") || output.contains("wos") ||
-                output.contains("2.0") || output.contains("Version"));
+        assert!(
+            output.contains("WOS")
+                || output.contains("wos")
+                || output.contains("2.0")
+                || output.contains("Version")
+        );
     }
 
     #[test]
@@ -385,8 +404,7 @@ mod special_features {
         let mut wos = WosWasm::new();
         let output = wos.execute_command("clear");
         // Should clear terminal or return escape codes
-        assert!(output.is_empty() || output.contains("\x1b") ||
-                output.len() < 100);
+        assert!(output.is_empty() || output.contains("\x1b") || output.len() < 100);
     }
 
     #[test]
@@ -505,9 +523,11 @@ mod error_handling {
     fn test_command_not_found() {
         let mut wos = WosWasm::new();
         let output = wos.execute_command("this_command_does_not_exist_12345");
-        assert!(output.to_lowercase().contains("not found") ||
-                output.to_lowercase().contains("unknown") ||
-                output.to_lowercase().contains("command"));
+        assert!(
+            output.to_lowercase().contains("not found")
+                || output.to_lowercase().contains("unknown")
+                || output.to_lowercase().contains("command")
+        );
     }
 
     #[test]

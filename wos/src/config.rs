@@ -913,7 +913,6 @@ ui:
         let err = ConfigError::ValidationError("invalid".to_string());
         assert_eq!(err.to_string(), "Config validation error: invalid");
     }
-
 }
 
 // Property-based tests using proptest

@@ -25,7 +25,10 @@ fn test_terminal_help_command() {
     let mut wos = WosWasm::new();
     let output = wos.execute_command("help");
 
-    assert!(output.contains("Available commands"), "Help should list commands");
+    assert!(
+        output.contains("Available commands"),
+        "Help should list commands"
+    );
     assert!(output.contains("help"), "Help should mention itself");
     assert!(output.contains("ls"), "Help should mention ls");
     assert!(output.contains("ps"), "Help should mention ps");
@@ -67,12 +70,16 @@ fn test_terminal_ps_command() {
     let output = wos.execute_command("ps");
 
     // Should have header
-    assert!(output.contains("PID") || output.contains("pid"),
-        "ps should show PID column");
+    assert!(
+        output.contains("PID") || output.contains("pid"),
+        "ps should show PID column"
+    );
 
     // Should show at least init process
-    assert!(output.contains("1") || output.contains("init"),
-        "ps should show init process");
+    assert!(
+        output.contains("1") || output.contains("init"),
+        "ps should show init process"
+    );
 }
 
 #[test]
@@ -81,12 +88,17 @@ fn test_terminal_cat_command() {
 
     // Cat a proc file
     let output = wos.execute_command("cat /proc/1/status");
-    assert!(!output.is_empty(), "cat should produce output for valid file");
+    assert!(
+        !output.is_empty(),
+        "cat should produce output for valid file"
+    );
 
     // Cat non-existent file
     let output = wos.execute_command("cat /nonexistent");
-    assert!(output.contains("not found") || output.contains("No such") || output.contains("error"),
-        "cat should report error for missing file");
+    assert!(
+        output.contains("not found") || output.contains("No such") || output.contains("error"),
+        "cat should report error for missing file"
+    );
 }
 
 #[test]
@@ -120,8 +132,10 @@ fn test_terminal_exit_code() {
     // Successful command
     let _ = wos.execute_command("echo test");
     let output = wos.execute_command("echo $?");
-    assert!(output.trim() == "0" || output.contains("0"),
-        "Exit code after successful command should be 0");
+    assert!(
+        output.trim() == "0" || output.contains("0"),
+        "Exit code after successful command should be 0"
+    );
 }
 
 // ============================================================================
@@ -133,9 +147,13 @@ fn test_terminal_invalid_command() {
     let mut wos = WosWasm::new();
     let output = wos.execute_command("nonexistentcommand123");
 
-    assert!(output.contains("not found") || output.contains("unknown") ||
-            output.contains("command") || output.contains("error"),
-        "Invalid command should produce error message");
+    assert!(
+        output.contains("not found")
+            || output.contains("unknown")
+            || output.contains("command")
+            || output.contains("error"),
+        "Invalid command should produce error message"
+    );
 }
 
 #[test]
@@ -144,8 +162,10 @@ fn test_terminal_empty_command() {
     let output = wos.execute_command("");
 
     // Empty command should be handled gracefully
-    assert!(output.is_empty() || !output.contains("panic"),
-        "Empty command should not cause panic");
+    assert!(
+        output.is_empty() || !output.contains("panic"),
+        "Empty command should not cause panic"
+    );
 }
 
 #[test]
@@ -154,8 +174,10 @@ fn test_terminal_whitespace_command() {
     let output = wos.execute_command("   ");
 
     // Whitespace-only command should be handled gracefully
-    assert!(!output.contains("panic"),
-        "Whitespace command should not cause panic");
+    assert!(
+        !output.contains("panic"),
+        "Whitespace command should not cause panic"
+    );
 }
 
 // ============================================================================
@@ -168,8 +190,10 @@ fn test_terminal_clear_returns_empty() {
     let output = wos.execute_command("clear");
 
     // Clear should return empty or special clear sequence
-    assert!(output.is_empty() || output.contains("\x1b") || output.len() < 100,
-        "Clear should not produce verbose output");
+    assert!(
+        output.is_empty() || output.contains("\x1b") || output.len() < 100,
+        "Clear should not produce verbose output"
+    );
 }
 
 #[test]
@@ -178,9 +202,13 @@ fn test_terminal_version_command() {
     let output = wos.execute_command("version");
 
     // Should show version info
-    assert!(output.contains("WOS") || output.contains("wos") ||
-            output.contains("2.0") || output.contains("version"),
-        "Version command should show version info");
+    assert!(
+        output.contains("WOS")
+            || output.contains("wos")
+            || output.contains("2.0")
+            || output.contains("version"),
+        "Version command should show version info"
+    );
 }
 
 // ============================================================================
@@ -206,8 +234,10 @@ fn test_terminal_pipe_command() {
 
     // Simple pipe
     let output = wos.execute_command("echo hello | cat");
-    assert!(output.contains("hello") || !output.is_empty(),
-        "Pipe should pass data through");
+    assert!(
+        output.contains("hello") || !output.is_empty(),
+        "Pipe should pass data through"
+    );
 }
 
 #[test]
@@ -216,8 +246,10 @@ fn test_terminal_semicolon_commands() {
 
     // Multiple commands with semicolon
     let output = wos.execute_command("echo first; echo second");
-    assert!(output.contains("first") || output.contains("second"),
-        "Semicolon should execute multiple commands");
+    assert!(
+        output.contains("first") || output.contains("second"),
+        "Semicolon should execute multiple commands"
+    );
 }
 
 // ============================================================================
@@ -249,8 +281,10 @@ fn test_terminal_touch_command() {
     // Verify exists (cat should not error)
     let output = wos.execute_command("cat /tmp/testfile");
     // Empty file or no error
-    assert!(!output.contains("not found") || output.is_empty(),
-        "Touch should create file");
+    assert!(
+        !output.contains("not found") || output.is_empty(),
+        "Touch should create file"
+    );
 }
 
 // ============================================================================

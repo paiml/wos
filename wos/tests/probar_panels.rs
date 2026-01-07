@@ -54,8 +54,10 @@ fn test_panel_process_list_format() {
 
     // First line should be header
     if let Some(header) = lines.first() {
-        assert!(header.contains("PID") || header.contains("STATE") || header.contains("PPID"),
-            "ps header should contain column names");
+        assert!(
+            header.contains("PID") || header.contains("STATE") || header.contains("PPID"),
+            "ps header should contain column names"
+        );
     }
 }
 
@@ -65,8 +67,10 @@ fn test_panel_process_init_exists() {
     let output = wos.execute_command("ps");
 
     // Should show some process information
-    assert!(!output.is_empty() && !output.contains("panic"),
-        "ps should produce valid output");
+    assert!(
+        !output.is_empty() && !output.contains("panic"),
+        "ps should produce valid output"
+    );
 }
 
 #[test]
@@ -77,7 +81,8 @@ fn test_panel_process_count_matches() {
     let ps_output = wos.execute_command("ps");
 
     // Count lines (excluding header)
-    let process_lines = ps_output.lines()
+    let process_lines = ps_output
+        .lines()
         .skip(1) // Skip header
         .filter(|line| !line.trim().is_empty())
         .count();
@@ -220,7 +225,10 @@ fn test_panel_concurrent_data() {
     assert!(!help_output.is_empty(), "help should produce output");
 
     // They should be different
-    assert_ne!(ps_output, help_output, "Different commands should produce different output");
+    assert_ne!(
+        ps_output, help_output,
+        "Different commands should produce different output"
+    );
 }
 
 // ============================================================================
@@ -246,8 +254,10 @@ fn test_panel_procfs_status() {
     let output = wos.execute_command("cat /proc/1/status");
 
     // Should contain process info
-    assert!(!output.is_empty() || !output.contains("panic"),
-        "/proc/1/status should be readable");
+    assert!(
+        !output.is_empty() || !output.contains("panic"),
+        "/proc/1/status should be readable"
+    );
 }
 
 // ============================================================================
@@ -289,6 +299,8 @@ fn test_panel_state_isolation() {
 
     // Final state should be consistent
     let final_ps = wos.execute_command("ps");
-    assert!(final_ps.contains("PID") || final_ps.contains("init"),
-        "State should remain consistent after panel switches");
+    assert!(
+        final_ps.contains("PID") || final_ps.contains("init"),
+        "State should remain consistent after panel switches"
+    );
 }

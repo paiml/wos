@@ -166,6 +166,7 @@ impl WosWasm {
     }
 
     /// Initialize the default Iris classification model and save to /models/iris.apr
+    #[allow(clippy::disallowed_methods)] // serde_json::json! macro uses unwrap internally
     fn init_default_model(state: &mut KernelState) {
         use aprender::classification::LogisticRegression;
         use aprender::primitives::Matrix;
@@ -216,6 +217,7 @@ impl WosWasm {
 
     /// Initialize XOR classification model and save to /models/xor.apr
     /// XOR is a classic binary classification problem: output 1 when inputs differ
+    #[allow(clippy::disallowed_methods)] // serde_json::json! macro uses unwrap internally
     fn init_xor_model(state: &mut KernelState) {
         use aprender::classification::LogisticRegression;
         use aprender::primitives::Matrix;
@@ -386,7 +388,8 @@ impl WosWasm {
         }
 
         // Must start with letter or underscore
-        if !name.chars().next().unwrap().is_alphabetic() && !name.starts_with('_') {
+        let first_char = name.chars().next()?;
+        if !first_char.is_alphabetic() && !name.starts_with('_') {
             return None;
         }
 
@@ -587,12 +590,14 @@ impl WosWasm {
                     }
                 } else if chars.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
                     // Special variables $1-$9 - positional parameters
-                    let digit_ch = chars.next().unwrap();
-                    let pos = (digit_ch as u8 - b'0') as usize;
-                    if let Some(param) = self.positional_params.get(pos) {
-                        result.push_str(param);
+                    // Safety: We verified peek() is Some and is_ascii_digit above
+                    if let Some(digit_ch) = chars.next() {
+                        let pos = (digit_ch as u8 - b'0') as usize;
+                        if let Some(param) = self.positional_params.get(pos) {
+                            result.push_str(param);
+                        }
+                        // If undefined, expand to empty string
                     }
-                    // If undefined, expand to empty string
                 } else if chars.peek() == Some(&'#') {
                     // Special variable $# - number of positional parameters
                     // Count excludes $0 (script name), so subtract 1
@@ -655,8 +660,6 @@ impl WosWasm {
         var_name: &str,
     ) -> String {
         let var_value = self.variables.get(var_name);
-        let is_set = var_value.is_some();
-        let is_empty = var_value.map(|v| v.is_empty()).unwrap_or(false);
 
         let first_op = chars.next(); // Consume operator character
 
@@ -669,44 +672,47 @@ impl WosWasm {
                             // ${VAR:-default} - use default if unset or empty
                             chars.next(); // consume '-'
                             let default = self.collect_until_close_brace(chars);
-                            if is_set && !is_empty {
-                                var_value.unwrap().clone()
-                            } else {
-                                default
+                            // Use value if set and non-empty, otherwise default
+                            match var_value {
+                                Some(v) if !v.is_empty() => v.clone(),
+                                _ => default,
                             }
                         }
                         '=' => {
                             // ${VAR:=default} - assign default if unset or empty
                             chars.next(); // consume '='
                             let default = self.collect_until_close_brace(chars);
-                            if is_set && !is_empty {
-                                var_value.unwrap().clone()
-                            } else {
-                                // Assign the default value to the variable
-                                self.variables.insert(var_name.to_string(), default.clone());
-                                default
+                            // Use value if set and non-empty, otherwise assign and use default
+                            match var_value {
+                                Some(v) if !v.is_empty() => v.clone(),
+                                _ => {
+                                    // Assign the default value to the variable
+                                    self.variables.insert(var_name.to_string(), default.clone());
+                                    default
+                                }
                             }
                         }
                         '?' => {
                             // ${VAR:?error} - error if unset or empty
                             chars.next(); // consume '?'
                             let error_msg = self.collect_until_close_brace(chars);
-                            if is_set && !is_empty {
-                                var_value.unwrap().clone()
-                            } else if error_msg.is_empty() {
-                                format!("bash: {}: parameter null or not set", var_name)
-                            } else {
-                                format!("bash: {}: {}", var_name, error_msg)
+                            // Use value if set and non-empty, otherwise error
+                            match var_value {
+                                Some(v) if !v.is_empty() => v.clone(),
+                                _ if error_msg.is_empty() => {
+                                    format!("bash: {}: parameter null or not set", var_name)
+                                }
+                                _ => format!("bash: {}: {}", var_name, error_msg),
                             }
                         }
                         '+' => {
                             // ${VAR:+alternate} - use alternate if set and non-empty
                             chars.next(); // consume '+'
                             let alternate = self.collect_until_close_brace(chars);
-                            if is_set && !is_empty {
-                                alternate
-                            } else {
-                                String::new()
+                            // Use alternate if set and non-empty
+                            match var_value {
+                                Some(v) if !v.is_empty() => alternate,
+                                _ => String::new(),
                             }
                         }
                         ' ' => {
@@ -2178,8 +2184,7 @@ impl WosWasm {
         for (pid, process) in &self.state.processes {
             let parent = process
                 .parent_pid
-                .map(|p| p.to_string())
-                .unwrap_or_else(|| "-".to_string());
+                .map_or("-".to_string(), |p| p.to_string());
 
             let state_str = format!("{:?}", process.state);
 
@@ -2895,6 +2900,7 @@ impl WosWasm {
     }
 
     /// Train a REAL Iris classifier using aprender LogisticRegression
+    #[allow(clippy::disallowed_methods)] // serde_json::json! macro uses unwrap internally
     fn apr_train(&mut self) -> String {
         use aprender::classification::LogisticRegression;
         use aprender::primitives::Matrix;

@@ -105,7 +105,10 @@ pub fn init_pure_wasm() -> Result<(), JsValue> {
 /// Setup terminal input event handler
 fn setup_terminal_input(app: Rc<RefCell<App>>) -> DomResult<()> {
     let input: web_sys::HtmlInputElement = get_html_element_by_id("terminal-input")?;
-    let input_target: web_sys::EventTarget = input.clone().dyn_into().unwrap();
+    let input_target: web_sys::EventTarget = input
+        .clone()
+        .dyn_into()
+        .expect("HtmlInputElement must be EventTarget");
 
     let app_clone = app.clone();
     let input_clone = input.clone();
@@ -221,7 +224,10 @@ fn setup_panel_toolbar(app: Rc<RefCell<App>>) -> DomResult<()> {
         }
 
         // Add click handler
-        let button_target: web_sys::EventTarget = button.clone().dyn_into().unwrap();
+        let button_target: web_sys::EventTarget = button
+            .clone()
+            .dyn_into()
+            .expect("HtmlElement must be EventTarget");
         let app_clone = app.clone();
         let panel_id_owned = panel_id.to_string();
 
@@ -251,7 +257,10 @@ fn setup_terminal_controls(_app: Rc<RefCell<App>>) -> DomResult<()> {
     set_attribute(&clear_btn, "aria-label", "Clear terminal")?;
     add_class(&clear_btn, "terminal-btn")?;
 
-    let clear_target: web_sys::EventTarget = clear_btn.clone().dyn_into().unwrap();
+    let clear_target: web_sys::EventTarget = clear_btn
+        .clone()
+        .dyn_into()
+        .expect("HtmlElement must be EventTarget");
     let clear_handler = on_click(move |_| {
         let _ = clear_terminal();
     });
