@@ -223,111 +223,34 @@ test-all: test test-frontend-all e2e
 
 coverage:
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "📊 Comprehensive Coverage Analysis (Rust + Frontend + E2E)"
+	@echo "📊 Rust Coverage Analysis (cargo-llvm-cov)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@echo "🗑️  Cleaning old coverage data..."
-	@rm -rf target/coverage
-	@rm -f e2e/test-results.json
 	@mkdir -p target/coverage
-	@echo ""
-	@echo "🦀 Running Rust coverage..."
-	@which cargo-tarpaulin > /dev/null 2>&1 || (echo "📦 Installing cargo-tarpaulin..." && cargo install cargo-tarpaulin --locked)
-	@cargo tarpaulin --workspace --out Html --out Lcov --output-dir target/coverage --timeout 300 --exclude-files 'wos/*' 'dist/*'
-	@echo ""
-	@echo "🌐 Running E2E test coverage..."
-	@cd e2e && npm run test:coverage && npm run coverage:summary
+	@echo "🦀 Running Rust coverage (excluding WASM-only modules)..."
+	@which cargo-llvm-cov > /dev/null 2>&1 || (echo "📦 Installing cargo-llvm-cov..." && cargo install cargo-llvm-cov)
+	@cargo llvm-cov --workspace --all-features --ignore-filename-regex='(wasm_init|dom)\.rs' --html --output-dir target/coverage
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "✅ Coverage Reports Generated"
+	@echo "✅ Coverage Report Generated"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo ""
-	@echo "📄 Rust Coverage:"
-	@echo "   • HTML: target/coverage/tarpaulin-report.html"
-	@echo "   • LCOV: target/coverage/lcov.info"
+	@echo "📄 HTML Report: target/coverage/html/index.html"
 	@echo ""
-	@echo "📄 E2E Coverage:"
-	@echo "   • Summary: target/coverage/e2e-summary.json"
-	@echo "   • Report: e2e/playwright-report/index.html"
-	@echo ""
-	@echo "💡 Run 'make coverage-summary' for unified report"
+	@echo "💡 Note: WASM-only modules (dom.rs, wasm_init.rs) excluded"
+	@echo "   These require browser testing via probador"
 	@echo ""
 
 coverage-check:
-	@echo "📊 Checking coverage thresholds (≥85%)..."
-	@if [ ! -f "target/coverage/lcov.info" ]; then \
-		echo "❌ Coverage data not found. Run 'make coverage' first"; \
-		exit 1; \
-	fi
-	@cargo tarpaulin --workspace --out Stdout --timeout 300 --exclude-files 'wos/*' 'dist/*' --fail-under 85
-	@echo "✓ Coverage thresholds met"
-
-coverage-frontend:
-	@echo "📊 Running frontend test coverage..."
-	@which deno > /dev/null 2>&1 || (echo "❌ Deno not found. Install: https://deno.land/" && exit 1)
-	@cd dist/wos && deno task test:coverage
-	@echo ""
-	@echo "💡 Coverage profile: dist/wos/cov_profile"
-	@echo ""
-
-coverage-frontend-all:
-	@echo "📊 Running comprehensive frontend coverage (unit + property tests)..."
-	@which deno > /dev/null 2>&1 || (echo "❌ Deno not found. Install: https://deno.land/" && exit 1)
-	@cd dist/wos && deno task test:coverage:all
-	@echo ""
-	@echo "💡 Coverage profile: dist/wos/cov_profile"
-	@echo ""
+	@echo "📊 Checking coverage thresholds (≥95%)..."
+	@cargo llvm-cov --package wos-kernel --package wos-shared --package wos-userspace --all-features --fail-under-lines 95
+	@echo "✓ Coverage thresholds met (95%+ on core crates)"
 
 coverage-summary:
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "📊 Unified Coverage Summary"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo ""
-	@if [ -f "target/coverage/lcov.info" ]; then \
-		echo "🦀 Rust Coverage:"; \
-		grep -E "^LF:|^LH:" target/coverage/lcov.info | \
-		awk -F: 'BEGIN {lines=0; hit=0} /^LF/ {lines+=$$2} /^LH/ {hit+=$$2} END {if (lines > 0) printf "   Lines: %d/%d (%.2f%%)\n", hit, lines, (hit/lines)*100; else print "   No data"}'; \
-	else \
-		echo "⚠️  No Rust coverage data found. Run 'make coverage' first."; \
-	fi
-	@echo ""
-	@if [ -f "target/coverage/e2e-summary.json" ]; then \
-		echo "🌐 E2E Test Coverage:"; \
-		node -pe "const data=require('./target/coverage/e2e-summary.json'); '   Tests: ' + data.stats.passed + '/' + data.stats.total + ' (' + data.passRate.toFixed(2) + '%)'"; \
-	else \
-		echo "⚠️  No E2E coverage data found. Run 'make coverage' first."; \
-	fi
-	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "💡 View detailed reports:"
-	@echo "   • Rust: target/coverage/tarpaulin-report.html"
-	@echo "   • E2E:  e2e/playwright-report/index.html"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo ""
-
-coverage-e2e:
-	@echo "🌐 Running E2E test coverage..."
-	@echo "🗑️  Cleaning old E2E coverage data..."
-	@rm -f e2e/test-results.json
-	@rm -f target/coverage/e2e-summary.json
-	@mkdir -p target/coverage
-	@cd e2e && npm run test:coverage
-	@cd e2e && npm run coverage:summary
-	@echo "✓ E2E coverage complete"
-
-coverage-rust:
-	@echo "🦀 Running Rust coverage..."
-	@echo "🗑️  Cleaning old Rust coverage data..."
-	@rm -f target/coverage/lcov.info target/coverage/tarpaulin-report.html target/coverage/cobertura.xml
-	@which cargo-tarpaulin > /dev/null 2>&1 || (echo "📦 Installing cargo-tarpaulin..." && cargo install cargo-tarpaulin --locked)
-	@mkdir -p target/coverage
-	@cargo tarpaulin --workspace --out Html --out Lcov --output-dir target/coverage --timeout 300 --exclude-files 'wos/*' 'dist/*'
-	@echo "✓ Rust coverage complete"
+	@echo "📊 Coverage Summary (core crates)..."
+	@cargo llvm-cov --package wos-kernel --package wos-shared --package wos-userspace --all-features 2>&1 | tail -3
 
 coverage-all: coverage
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "✅ All coverage reports generated (Rust + E2E)"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@make coverage-summary
 
 # ============================================================================

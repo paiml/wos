@@ -5,7 +5,6 @@ members = [
     "kernel",
     "userspace",
     "wos",
-    "wos-ui",
 ]
 
 [workspace.package]

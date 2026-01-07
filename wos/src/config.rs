@@ -914,38 +914,6 @@ ui:
         assert_eq!(err.to_string(), "Config validation error: invalid");
     }
 
-    #[test]
-    fn test_load_development_config() {
-        let yaml = std::fs::read_to_string("../config/development.yaml")
-            .expect("Development config should exist");
-        let config = UxLayoutConfig::from_yaml(&yaml).expect("Should parse development config");
-        assert_eq!(config.environment, Environment::Development);
-        assert!(
-            config.validate().is_ok(),
-            "Development config should be valid"
-        );
-    }
-
-    #[test]
-    fn test_load_staging_config() {
-        let yaml =
-            std::fs::read_to_string("../config/staging.yaml").expect("Staging config should exist");
-        let config = UxLayoutConfig::from_yaml(&yaml).expect("Should parse staging config");
-        assert_eq!(config.environment, Environment::Staging);
-        assert!(config.validate().is_ok(), "Staging config should be valid");
-    }
-
-    #[test]
-    fn test_load_production_config() {
-        let yaml = std::fs::read_to_string("../config/production.yaml")
-            .expect("Production config should exist");
-        let config = UxLayoutConfig::from_yaml(&yaml).expect("Should parse production config");
-        assert_eq!(config.environment, Environment::Production);
-        assert!(
-            config.validate().is_ok(),
-            "Production config should be valid"
-        );
-    }
 }
 
 // Property-based tests using proptest

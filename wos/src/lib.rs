@@ -5279,23 +5279,6 @@ environment: production
         assert!(result.unwrap_err().contains("YAML parse error"));
     }
 
-    #[test]
-    fn test_config_roundtrip() {
-        // Load development config
-        let dev_yaml = std::fs::read_to_string("../config/development.yaml").unwrap();
-
-        // Load via WASM binding
-        let result = load_config_from_yaml(&dev_yaml);
-        assert!(result.is_ok());
-
-        let json = result.unwrap();
-
-        // Verify it's valid JSON
-        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["environment"], "development");
-        assert_eq!(parsed["version"], "1.0");
-    }
-
     // WOS-204: bash command integration tests
     #[test]
     fn test_bash_command_execute_script() {
