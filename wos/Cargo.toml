@@ -79,4 +79,5 @@ features = [
 
 [dev-dependencies]
 proptest.workspace = true
-wasm-bindgen-test = "0.3"
+wasm-bindgen-test.workspace = true
+jugar-probar.workspace = true

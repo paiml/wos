@@ -1,0 +1,84 @@
+# WOS Process Management Playbook
+# Tests process lifecycle operations
+#
+# Toyota Principle: Genchi Genbutsu (Go and See)
+# - Verify actual process behavior, not just API calls
+
+version: "1.0"
+name: "Process Management"
+description: "Test process creation, listing, and termination"
+timeout_ms: 30000
+
+setup:
+  url: "http://localhost:8000"
+  wait_for: "#terminal-input:enabled"
+
+scenarios:
+  # Scenario 1: List Initial Processes
+  - name: "List Initial Processes"
+    description: "ps should show init process"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "ps"
+      - action: press
+        key: "Enter"
+      - action: assert_text
+        selector: "#terminal-output"
+        contains: "PID"
+
+  # Scenario 2: View Process Status
+  - name: "View Process Status"
+    description: "Cat /proc/1/status should work"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "cat /proc/1/status"
+      - action: press
+        key: "Enter"
+      - action: wait_ms
+        duration: 200
+      # Should show process info or error gracefully
+
+  # Scenario 3: Process Count
+  - name: "Check Process Count"
+    description: "System should have at least init process"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "ps | wc -l"
+      - action: press
+        key: "Enter"
+      # Should show at least 2 (header + init)
+
+  # Scenario 4: Background Process
+  - name: "Run Background Process"
+    description: "Run command in background with &"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "sleep 10 &"
+      - action: press
+        key: "Enter"
+      - action: wait_ms
+        duration: 100
+      # Should return immediately
+
+  # Scenario 5: Jobs Command
+  - name: "List Background Jobs"
+    description: "jobs command should list background processes"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "jobs"
+      - action: press
+        key: "Enter"
+      # May show background job or empty
+
+teardown:
+  - action: screenshot
+    path: "artifacts/process-management-final.png"
+
+assertions:
+  - type: no_console_errors
+  - type: no_unhandled_rejections

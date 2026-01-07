@@ -1,0 +1,153 @@
+# WOS Vim Editor Workflow Playbook
+# Tests vim editor functionality
+#
+# Toyota Principle: Jidoka (Built-in Quality)
+# - Each step verifies correct state before proceeding
+
+version: "1.0"
+name: "Vim Editor Workflow"
+description: "Test vim modal editor operations"
+timeout_ms: 60000
+
+setup:
+  url: "http://localhost:8000"
+  wait_for: "#terminal-input:enabled"
+
+scenarios:
+  # Scenario 1: Open Vim
+  - name: "Open Vim Editor"
+    description: "Open vim with a new file"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "vim /tmp/test.txt"
+      - action: press
+        key: "Enter"
+      - action: wait_ms
+        duration: 500
+      # Vim should be in normal mode or show vim interface
+
+  # Scenario 2: Enter Insert Mode
+  - name: "Enter Insert Mode"
+    description: "Press i to enter insert mode"
+    steps:
+      - action: press
+        key: "i"
+      - action: wait_ms
+        duration: 100
+      # Should now be in INSERT mode
+
+  # Scenario 3: Type Text
+  - name: "Type Text in Insert Mode"
+    description: "Type some text in the editor"
+    steps:
+      - action: type
+        text: "Hello from WOS vim!"
+      - action: wait_ms
+        duration: 100
+
+  # Scenario 4: Exit Insert Mode
+  - name: "Exit Insert Mode"
+    description: "Press Escape to return to normal mode"
+    steps:
+      - action: press
+        key: "Escape"
+      - action: wait_ms
+        duration: 100
+      # Should now be in NORMAL mode
+
+  # Scenario 5: Save File
+  - name: "Save File with :w"
+    description: "Use :w command to save"
+    steps:
+      - action: press
+        key: ":"
+      - action: type
+        text: "w"
+      - action: press
+        key: "Enter"
+      - action: wait_ms
+        duration: 200
+
+  # Scenario 6: Quit Vim
+  - name: "Quit Vim with :q"
+    description: "Use :q command to quit"
+    steps:
+      - action: press
+        key: ":"
+      - action: type
+        text: "q"
+      - action: press
+        key: "Enter"
+      - action: wait_ms
+        duration: 200
+      # Should return to shell
+
+  # Scenario 7: Verify File Created
+  - name: "Verify File Contents"
+    description: "Cat the file to verify contents"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "cat /tmp/test.txt"
+      - action: press
+        key: "Enter"
+      - action: assert_text
+        selector: "#terminal-output"
+        contains: "Hello from WOS vim!"
+
+  # Scenario 8: Edit Existing File
+  - name: "Edit Existing File"
+    description: "Open existing file in vim"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "vim /tmp/test.txt"
+      - action: press
+        key: "Enter"
+      - action: wait_ms
+        duration: 500
+
+  # Scenario 9: Navigation Commands
+  - name: "Vim Navigation"
+    description: "Test hjkl navigation"
+    steps:
+      - action: press
+        key: "j"  # Down
+      - action: press
+        key: "k"  # Up
+      - action: press
+        key: "l"  # Right
+      - action: press
+        key: "h"  # Left
+      - action: press
+        key: "0"  # Beginning of line
+      - action: press
+        key: "$"  # End of line
+
+  # Scenario 10: Quit Without Save
+  - name: "Force Quit"
+    description: "Quit without saving with :q!"
+    steps:
+      - action: press
+        key: ":"
+      - action: type
+        text: "q!"
+      - action: press
+        key: "Enter"
+      - action: wait_ms
+        duration: 200
+
+teardown:
+  - action: screenshot
+    path: "artifacts/vim-workflow-final.png"
+  # Clean up test file
+  - action: fill
+    selector: "#terminal-input"
+    value: "rm /tmp/test.txt"
+  - action: press
+    key: "Enter"
+
+assertions:
+  - type: no_console_errors
+  - type: no_unhandled_rejections

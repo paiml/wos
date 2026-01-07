@@ -1,0 +1,102 @@
+# WOS Smoke Test Playbook
+# Verifies basic functionality after deployment
+#
+# Toyota Principle: Genchi Genbutsu (Go and See)
+# - Test actual user workflows, not just unit behavior
+
+version: "1.0"
+name: "WOS Smoke Test"
+description: "Basic functionality verification for WOS v2.0"
+timeout_ms: 30000
+
+setup:
+  url: "http://localhost:8000"
+  wait_for: "#terminal-input:enabled"
+  screenshots: true
+
+scenarios:
+  # Scenario 1: Terminal Ready State
+  - name: "Terminal Initialization"
+    description: "Verify terminal is ready for input"
+    steps:
+      - action: wait_for_selector
+        selector: "#terminal-output"
+        timeout_ms: 5000
+      - action: assert_visible
+        selector: "#terminal-input"
+      - action: assert_attribute
+        selector: "#terminal-input"
+        attribute: "disabled"
+        value: null  # Should NOT be disabled
+      - action: assert_text
+        selector: "#status"
+        contains: "Ready"
+
+  # Scenario 2: Help Command
+  - name: "Help Command"
+    description: "Verify help command works"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "help"
+      - action: press
+        key: "Enter"
+      - action: wait_for_text
+        selector: "#terminal-output"
+        contains: "Available"
+        timeout_ms: 2000
+      - action: assert_text
+        selector: "#terminal-output"
+        contains: "commands"
+
+  # Scenario 3: Echo Command
+  - name: "Echo Command"
+    description: "Verify echo command outputs correctly"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "echo hello world"
+      - action: press
+        key: "Enter"
+      - action: assert_text
+        selector: "#terminal-output"
+        contains: "hello world"
+
+  # Scenario 4: Process List
+  - name: "Process List"
+    description: "Verify ps command shows processes"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "ps"
+      - action: press
+        key: "Enter"
+      - action: assert_text
+        selector: "#terminal-output"
+        contains: "PID"
+
+  # Scenario 5: Version Check
+  - name: "Version Command"
+    description: "Verify version information"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "version"
+      - action: press
+        key: "Enter"
+      - action: assert_text
+        selector: "#terminal-output"
+        matches: "WOS|wos|2\\.0"
+
+teardown:
+  - action: screenshot
+    path: "artifacts/smoke-test-final.png"
+  - action: console_log
+    message: "Smoke test completed"
+
+assertions:
+  # Global assertions checked at end
+  - type: no_console_errors
+  - type: no_js_errors
+  - type: page_loaded
+    timeout_ms: 10000

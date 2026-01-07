@@ -11,7 +11,7 @@
 # Disable built-in implicit rules for faster Make execution
 .SUFFIXES:
 
-.PHONY: help build test test-fast coverage quality wasm clean dist fmt lint hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-scripts lint-all cleanup-processes check-memory link-dev deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config bashrs-check bashrs-fix bashrs-audit bashrs-score bashrs-test bashrs-coverage bashrs-format bashrs-purify
+.PHONY: help build test test-fast coverage quality wasm clean dist fmt lint hooks-install bench bench-baseline bench-compare bench-syscalls bench-scheduler bench-memory mutants mutants-check mutants-diff mutants-kernel mutants-incremental fuzz fuzz-install fuzz-syscalls fuzz-processes fuzz-memory fuzz-scheduler fuzz-coverage fuzz-clean e2e e2e-install e2e-headed e2e-ui e2e-debug e2e-chromium e2e-firefox e2e-webkit e2e-report e2e-clean canary canary-all canary-fast canary-terminal canary-process canary-file canary-state canary-error canary-headed canary-ui canary-debug canary-report canary-chromium canary-firefox canary-webkit lint-frontend lint-frontend-fix lint-frontend-check lint-scripts lint-all cleanup-processes check-memory link-dev deploy deploy-build deploy-upload deploy-invalidate deploy-check deploy-config bashrs-check bashrs-fix bashrs-audit bashrs-score bashrs-test bashrs-coverage bashrs-format bashrs-purify probar-test probar-terminal probar-panels probar-commands probar-playbooks probar-all
 
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
@@ -252,6 +252,43 @@ coverage-summary:
 
 coverage-all: coverage
 	@make coverage-summary
+
+# ============================================================================
+# Probador Testing (Zero JavaScript E2E)
+# ============================================================================
+
+probar-test:
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🧪 Running Probar E2E Tests (Pure Rust)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@cargo test --package wos --test 'probar_*' -- --test-threads=1
+	@echo "✓ Probar tests passed"
+
+probar-terminal:
+	@echo "🖥️  Running terminal tests..."
+	@cargo test --package wos --test probar_terminal -- --test-threads=1
+	@echo "✓ Terminal tests passed"
+
+probar-panels:
+	@echo "📊 Running panel tests..."
+	@cargo test --package wos --test probar_panels -- --test-threads=1
+	@echo "✓ Panel tests passed"
+
+probar-commands:
+	@echo "⌨️  Running command tests..."
+	@cargo test --package wos --test probar_commands -- --test-threads=1
+	@echo "✓ Command tests passed"
+
+probar-playbooks:
+	@echo "📋 Playbooks available in wos/tests/playbooks/:"
+	@ls -1 wos/tests/playbooks/*.apr 2>/dev/null || echo "  No playbooks found"
+	@echo ""
+	@echo "💡 Run with: probador run wos/tests/playbooks/<name>.apr"
+
+probar-all: probar-terminal probar-panels probar-commands
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ All Probador tests passed (95 tests)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ============================================================================
 # Property-Based Testing & Jidoka Guards

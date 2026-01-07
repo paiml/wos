@@ -1,0 +1,117 @@
+# WOS Panel Switching Playbook
+# Tests all panel switching functionality
+#
+# Toyota Principle: Heijunka (Leveling)
+# - Consistent test coverage across all panels
+
+version: "1.0"
+name: "Panel Switching Tests"
+description: "Verify all panel navigation works correctly"
+timeout_ms: 30000
+
+setup:
+  url: "http://localhost:8000"
+  wait_for: "#terminal-input:enabled"
+
+scenarios:
+  # Scenario 1: System Panel (Default)
+  - name: "System Panel Default"
+    description: "System panel should be active by default"
+    steps:
+      - action: assert_visible
+        selector: "#panel-system-monitor"
+      - action: assert_class
+        selector: "[data-panel='system_monitor']"
+        contains: "active"
+
+  # Scenario 2: Process Panel
+  - name: "Switch to Process Panel"
+    description: "Click process button and verify panel shows"
+    steps:
+      - action: click
+        selector: "[data-panel='process_list']"
+      - action: wait_for_visible
+        selector: "#panel-process-list"
+        timeout_ms: 1000
+      - action: assert_class
+        selector: "[data-panel='process_list']"
+        contains: "active"
+      - action: assert_not_visible
+        selector: "#panel-system-monitor"
+
+  # Scenario 3: Memory Panel
+  - name: "Switch to Memory Panel"
+    description: "Click memory button and verify panel shows"
+    steps:
+      - action: click
+        selector: "[data-panel='memory_map']"
+      - action: wait_for_visible
+        selector: "#panel-memory-map"
+        timeout_ms: 1000
+      - action: assert_class
+        selector: "[data-panel='memory_map']"
+        contains: "active"
+
+  # Scenario 4: APR Panel
+  - name: "Switch to APR Panel"
+    description: "Click APR button and verify panel shows"
+    steps:
+      - action: click
+        selector: "[data-panel='apr']"
+      - action: wait_for_visible
+        selector: "#panel-apr"
+        timeout_ms: 1000
+      - action: assert_class
+        selector: "[data-panel='apr']"
+        contains: "active"
+
+  # Scenario 5: VM Panel
+  - name: "Switch to VM Panel"
+    description: "Click VM button and verify panel shows"
+    steps:
+      - action: click
+        selector: "[data-panel='vm']"
+      - action: wait_for_visible
+        selector: "#panel-vm"
+        timeout_ms: 1000
+      - action: assert_class
+        selector: "[data-panel='vm']"
+        contains: "active"
+
+  # Scenario 6: Return to System Panel
+  - name: "Return to System Panel"
+    description: "Click system button and verify return"
+    steps:
+      - action: click
+        selector: "[data-panel='system_monitor']"
+      - action: wait_for_visible
+        selector: "#panel-system-monitor"
+        timeout_ms: 1000
+      - action: assert_class
+        selector: "[data-panel='system_monitor']"
+        contains: "active"
+
+  # Scenario 7: Rapid Panel Switching
+  - name: "Rapid Panel Switching"
+    description: "Quickly switch between panels without issues"
+    steps:
+      - action: click
+        selector: "[data-panel='process_list']"
+      - action: click
+        selector: "[data-panel='memory_map']"
+      - action: click
+        selector: "[data-panel='apr']"
+      - action: click
+        selector: "[data-panel='vm']"
+      - action: click
+        selector: "[data-panel='system_monitor']"
+      - action: assert_visible
+        selector: "#panel-system-monitor"
+
+teardown:
+  - action: screenshot
+    path: "artifacts/panel-switching-final.png"
+
+assertions:
+  - type: no_console_errors
+  - type: aria_pressed_matches_state

@@ -39,7 +39,8 @@ console_error_panic_hook = "0.1"
 
 # Testing
 proptest = "1.4"
-jugar-probar = "0.4"  # Probar testing framework (GUI coverage)
+jugar-probar = { version = "0.5", features = ["tui"] }  # Probar testing framework
+wasm-bindgen-test = "0.3"  # WASM unit tests
 
 # NOTE: tree-sitter for syntax highlighting will be added in future
 # Currently blocked by WASM compilation issues with C dependencies

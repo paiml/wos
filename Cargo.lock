@@ -937,9 +937,9 @@ dependencies = [
 
 [[package]]
 name = "jugar-probar"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d08aff8480ddf05a63e8178afcfbc393ca8af1e74011c2b4fe587e72fcd44c45"
+checksum = "b21c6d235f85bb56f5f8971546478def89393fc009404a9286d991b08c3c9889"
 dependencies = [
  "base64",
  "chrono",
@@ -2644,6 +2644,7 @@ dependencies = [
  "aprender",
  "console_error_panic_hook",
  "js-sys",
+ "jugar-probar",
  "proptest",
  "regex",
  "serde",

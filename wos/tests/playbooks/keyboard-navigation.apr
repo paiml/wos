@@ -1,0 +1,149 @@
+# WOS Keyboard Navigation Playbook
+# Tests keyboard accessibility (WCAG 2.1 compliance)
+#
+# Toyota Principle: Poka-Yoke (Error-Proofing)
+# - Ensure keyboard-only users can navigate effectively
+
+version: "1.0"
+name: "Keyboard Navigation"
+description: "Verify keyboard accessibility for all interactions"
+timeout_ms: 30000
+
+setup:
+  url: "http://localhost:8000"
+  wait_for: "#terminal-input:enabled"
+
+scenarios:
+  # Scenario 1: Skip Link
+  - name: "Skip Link Accessibility"
+    description: "Skip link should be first focusable element"
+    steps:
+      - action: press
+        key: "Tab"
+      - action: assert_focused
+        selector: ".skip-link"
+      - action: press
+        key: "Enter"
+      - action: assert_focused
+        selector: "#terminal-input"
+
+  # Scenario 2: Terminal Focus
+  - name: "Terminal Input Focus"
+    description: "Terminal input should be focusable"
+    steps:
+      - action: focus
+        selector: "#terminal-input"
+      - action: assert_focused
+        selector: "#terminal-input"
+
+  # Scenario 3: Command History (Arrow Keys)
+  - name: "Command History Navigation"
+    description: "Arrow keys should navigate command history"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "echo first"
+      - action: press
+        key: "Enter"
+      - action: fill
+        selector: "#terminal-input"
+        value: "echo second"
+      - action: press
+        key: "Enter"
+      - action: press
+        key: "ArrowUp"
+      - action: assert_value
+        selector: "#terminal-input"
+        value: "echo second"
+      - action: press
+        key: "ArrowUp"
+      - action: assert_value
+        selector: "#terminal-input"
+        value: "echo first"
+      - action: press
+        key: "ArrowDown"
+      - action: assert_value
+        selector: "#terminal-input"
+        value: "echo second"
+
+  # Scenario 4: Ctrl+L Clear
+  - name: "Ctrl+L Clear Terminal"
+    description: "Ctrl+L should clear terminal output"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "echo test"
+      - action: press
+        key: "Enter"
+      - action: assert_text
+        selector: "#terminal-output"
+        contains: "test"
+      - action: press
+        key: "Control+l"
+      - action: wait_ms
+        duration: 100
+      # Terminal should be cleared
+
+  # Scenario 5: Panel Button Focus
+  - name: "Panel Button Keyboard Access"
+    description: "Panel buttons should be keyboard accessible"
+    steps:
+      - action: focus
+        selector: "[data-panel='system_monitor']"
+      - action: press
+        key: "Tab"
+      - action: assert_focused
+        selector: "[data-panel='process_list']"
+      - action: press
+        key: "Enter"
+      - action: assert_visible
+        selector: "#panel-process-list"
+
+  # Scenario 6: Tab Order
+  - name: "Logical Tab Order"
+    description: "Tab order should follow visual layout"
+    steps:
+      - action: focus
+        selector: "#terminal-input"
+      - action: press
+        key: "Tab"
+      # Next focusable should be clear button or panel buttons
+      - action: assert_focused_in
+        selectors:
+          - ".terminal-btn"
+          - "[data-panel]"
+
+  # Scenario 7: ARIA Roles
+  - name: "ARIA Roles Present"
+    description: "Verify ARIA roles for screen readers"
+    steps:
+      - action: assert_attribute
+        selector: "#terminal-output"
+        attribute: "role"
+        value: "log"
+      - action: assert_attribute
+        selector: "#terminal-output"
+        attribute: "aria-live"
+        value: "polite"
+      - action: assert_attribute
+        selector: ".panel-toolbar"
+        attribute: "role"
+        value: "toolbar"
+
+  # Scenario 8: Focus Visible
+  - name: "Focus Indicators Visible"
+    description: "Focus should be visually indicated"
+    steps:
+      - action: focus
+        selector: "#terminal-input"
+      - action: assert_has_focus_style
+        selector: "#terminal-input"
+
+teardown:
+  - action: screenshot
+    path: "artifacts/keyboard-navigation-final.png"
+
+assertions:
+  - type: no_console_errors
+  - type: focus_visible_on_focus
+  - type: aria_labels_present
