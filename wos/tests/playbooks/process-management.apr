@@ -75,6 +75,28 @@ scenarios:
         key: "Enter"
       # May show background job or empty
 
+  # Scenario 6: Kill Process
+  - name: "Kill Process Signal"
+    description: "kill command should send signals to processes"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "kill -0 1"
+      - action: press
+        key: "Enter"
+      # Should handle gracefully (init is protected)
+
+  # Scenario 7: Process Termination
+  - name: "Process Signal Handling"
+    description: "Test kill with invalid PID"
+    steps:
+      - action: fill
+        selector: "#terminal-input"
+        value: "kill 99999"
+      - action: press
+        key: "Enter"
+      # Should report error for nonexistent process
+
 teardown:
   - action: screenshot
     path: "artifacts/process-management-final.png"

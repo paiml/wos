@@ -571,4 +571,60 @@ mod error_handling {
         let output = wos.execute_command("echo test\0test");
         assert!(!output.contains("panic"));
     }
+
+    // QA Checklist Items 21-25: Error Handling
+    #[test]
+    fn test_error_invalid_path() {
+        // QA Checklist #21: Invalid path handling
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("cd /this/path/does/not/exist/at/all");
+        assert!(
+            output.to_lowercase().contains("not found")
+                || output.to_lowercase().contains("no such")
+                || output.to_lowercase().contains("error")
+                || output.is_empty()
+        );
+    }
+
+    #[test]
+    fn test_error_missing_arguments() {
+        // QA Checklist #22: Missing argument handling
+        let mut wos = WosWasm::new();
+
+        // Commands that expect arguments
+        let output = wos.execute_command("cat");
+        assert!(!output.contains("panic"));
+
+        let output = wos.execute_command("mkdir");
+        assert!(!output.contains("panic"));
+    }
+
+    #[test]
+    fn test_error_invalid_options() {
+        // QA Checklist #23: Invalid option handling
+        let mut wos = WosWasm::new();
+        let output = wos.execute_command("ls --invalid-option-xyz");
+        assert!(!output.contains("panic"));
+    }
+
+    #[test]
+    fn test_error_recursive_operations() {
+        // QA Checklist #24: Recursive operation errors
+        let mut wos = WosWasm::new();
+        // Try to remove non-empty directory
+        let _ = wos.execute_command("mkdir /tmp/parent");
+        let _ = wos.execute_command("touch /tmp/parent/child");
+        let output = wos.execute_command("rmdir /tmp/parent");
+        // Should error or handle gracefully
+        assert!(!output.contains("panic"));
+    }
+
+    #[test]
+    fn test_error_signal_handling() {
+        // QA Checklist #25: Signal/interrupt handling
+        let mut wos = WosWasm::new();
+        // Send signal to non-existent process
+        let output = wos.execute_command("kill -9 99999");
+        assert!(!output.contains("panic"));
+    }
 }
