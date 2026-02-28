@@ -30,7 +30,7 @@ console_error_panic_hook.workspace = true
 regex = { version = "1.10", optional = true }
 
 # Real aprender integration (not mocked) - path dependency for dev
-aprender = { path = "../../aprender", default-features = false }
+aprender = { version = "0.27", path = "../../aprender", default-features = false }
 
 # Extended web-sys features for pure WASM DOM manipulation
 [dependencies.web-sys]
