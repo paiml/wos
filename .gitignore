@@ -52,3 +52,4 @@ tests/e2e/screenshots/*.png
 .DS_Store
 Thumbs.db
 desktop.ini
+.cargo/config.toml
