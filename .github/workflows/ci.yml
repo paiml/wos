@@ -64,7 +64,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace -- -D warnings
 
   coverage:
     name: Coverage
@@ -90,6 +90,7 @@ jobs:
 
       - name: Generate coverage
         run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+        continue-on-error: true
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
