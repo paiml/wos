@@ -24,6 +24,20 @@
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [System Calls](#system-calls)
+- [Sovereign AI Stack Integration](#sovereign-ai-stack-integration)
+- [Quality Compliance](#quality-compliance)
+- [Development](#development)
+- [Educational Use](#educational-use)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Overview
 
 **WOS** (WebAssembly Operating System) is an educational microkernel that demonstrates fundamental OS concepts — processes, memory management, file systems, IPC — in a safe, deterministic environment that runs directly in any modern browser.
@@ -37,6 +51,20 @@ Part of the [Sovereign AI Stack](https://github.com/paiml/batuta), WOS serves as
 - **Functional Design** — Immutable state transitions, deterministic execution
 - **Time-Travel Debugging** — Bidirectional execution replay with full snapshots
 - **Extreme TDD** — 94%+ coverage, 98.5% mutation score
+
+## Installation
+
+```bash
+# Prerequisites
+rustup target add wasm32-unknown-unknown
+
+# Clone the repository
+git clone https://github.com/paiml/wos.git
+cd wos
+
+# Build and run
+make wasm && make serve
+```
 
 ## Quick Start
 
