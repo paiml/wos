@@ -2048,46 +2048,18 @@ impl WosWasm {
     }
 
     /// Execute a single command and return (output, exit_code)
-    fn execute_single_command(
-        &mut self,
-        cmd_name: &str,
-        args: &[String],
-        stdin: &str, // Pipe input from previous command
-    ) -> (String, i32) {
-        // Check if command is an executable script (./script.sh, ../script.sh, or /script.sh)
-        let output = if cmd_name.starts_with("./")
-            || cmd_name.starts_with("../")
-            || cmd_name.starts_with("/")
-        {
-            // Normalize path to absolute path
-            // Current working directory is always / (see cmd_pwd)
-            let abs_path = if let Some(rel_path) = cmd_name.strip_prefix("./") {
-                // ./script.sh -> /script.sh
-                // Ensure leading slash
-                if rel_path.starts_with('/') {
-                    rel_path.to_string()
-                } else {
-                    format!("/{}", rel_path)
-                }
-            } else if let Some(rel_path) = cmd_name.strip_prefix("../") {
-                // ../script.sh -> /script.sh (we're at root, so .. is still root)
-                // Ensure leading slash
-                if rel_path.starts_with('/') {
-                    rel_path.to_string()
-                } else {
-                    format!("/{}", rel_path)
-                }
-            } else if cmd_name.starts_with("/") {
-                // Already absolute path
-                cmd_name.to_string()
-            } else {
-                cmd_name.to_string()
-            };
-
-            // Execute as a script using bash
-            self.cmd_bash(vec![abs_path])
+    fn normalize_script_path(cmd_name: &str) -> String {
+        if let Some(rel_path) = cmd_name.strip_prefix("./") {
+            if rel_path.starts_with('/') { rel_path.to_string() } else { format!("/{rel_path}") }
+        } else if let Some(rel_path) = cmd_name.strip_prefix("../") {
+            if rel_path.starts_with('/') { rel_path.to_string() } else { format!("/{rel_path}") }
         } else {
-            match cmd_name {
+            cmd_name.to_string()
+        }
+    }
+
+    fn dispatch_builtin(&mut self, cmd_name: &str, args: &[String], stdin: &str) -> String {
+        match cmd_name {
                 "help" => self.cmd_help(),
                 "ps" => self.cmd_ps(args.to_vec()),
                 "ls" => self.cmd_ls(args.to_vec()),
@@ -2123,6 +2095,22 @@ impl WosWasm {
                     cmd_name
                 ),
             }
+    }
+
+    fn execute_single_command(
+        &mut self,
+        cmd_name: &str,
+        args: &[String],
+        stdin: &str,
+    ) -> (String, i32) {
+        let output = if cmd_name.starts_with("./")
+            || cmd_name.starts_with("../")
+            || cmd_name.starts_with("/")
+        {
+            let abs_path = Self::normalize_script_path(cmd_name);
+            self.cmd_bash(vec![abs_path])
+        } else {
+            self.dispatch_builtin(cmd_name, args, stdin)
         };
 
         // Commands that set last_exit_code directly (echo, ls, cat, true, false)
