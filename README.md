@@ -45,7 +45,7 @@
 
 Part of the [Sovereign AI Stack](https://github.com/paiml/batuta), WOS serves as the runtime foundation for browser-based ML inference and educational computing environments.
 
-### Key Features
+## Features
 
 - **100% Safe Rust** — `#![forbid(unsafe_code)]` enforced at crate level
 - **Pure WASM** — No plugins, runs in any modern browser
