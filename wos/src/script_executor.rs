@@ -213,6 +213,28 @@ impl ScriptExecutor {
     /// Execute an if/then/elif/else/fi block
     ///
     /// Returns (output, exit_code, next_line_index)
+    fn parse_condition_line(line: &str, keyword_len: usize, line_num: usize, next_line: Option<&str>) -> Result<(String, bool), ScriptError> {
+        if let Some(semicolon_pos) = line.find(';') {
+            let after_semicolon = line[semicolon_pos + 1..].trim();
+            if after_semicolon != "then" {
+                return Err(ScriptError::SyntaxError {
+                    line: line_num, content: line.to_string(),
+                    message: format!("Expected 'then' after semicolon in {} statement", &line[..keyword_len].trim()),
+                });
+            }
+            Ok((line[keyword_len..semicolon_pos].trim().to_string(), false))
+        } else {
+            match next_line {
+                Some(nl) if nl.trim() == "then" => Ok((line[keyword_len..].trim().to_string(), true)),
+                _ => Err(ScriptError::SyntaxError {
+                    line: line_num + 1,
+                    content: next_line.unwrap_or("").to_string(),
+                    message: format!("Expected 'then' after {} condition", &line[..keyword_len].trim()),
+                }),
+            }
+        }
+    }
+
     fn execute_if_block<F>(
         lines: &[&str],
         start_idx: usize,
@@ -226,39 +248,11 @@ impl ScriptExecutor {
         let mut accumulated_output = String::new();
         let mut exit_code = 0;
 
-        // Parse the if line: "if CONDITION; then" or "if CONDITION" followed by "then"
         let if_line = lines[start_idx];
         let mut then_idx = start_idx + 1;
-
-        // Check if "then" is on the same line as "if"
-        let condition = if let Some(semicolon_pos) = if_line.find(';') {
-            // "if CONDITION; then" format
-            let after_semicolon = if_line[semicolon_pos + 1..].trim();
-            if after_semicolon != "then" {
-                return Err(ScriptError::SyntaxError {
-                    line: start_idx + 1,
-                    content: if_line.to_string(),
-                    message: "Expected 'then' after semicolon in if statement".to_string(),
-                });
-            }
-            if_line[3..semicolon_pos].trim().to_string()
-        } else {
-            // "if CONDITION" on one line, "then" on next line
-            // Next line should be "then"
-            if then_idx >= lines.len() || lines[then_idx].trim() != "then" {
-                return Err(ScriptError::SyntaxError {
-                    line: then_idx + 1,
-                    content: if then_idx < lines.len() {
-                        lines[then_idx].to_string()
-                    } else {
-                        String::new()
-                    },
-                    message: "Expected 'then' after if condition".to_string(),
-                });
-            }
-            then_idx += 1;
-            if_line[3..].trim().to_string()
-        };
+        let next = if then_idx < lines.len() { Some(lines[then_idx]) } else { None };
+        let (condition, consumed_next) = Self::parse_condition_line(if_line, 3, start_idx + 1, next)?;
+        if consumed_next { then_idx += 1; }
 
         // Find the end of the if block and all elif/else clauses
         let mut i = then_idx;
@@ -277,24 +271,9 @@ impl ScriptExecutor {
                 // Process elif: similar to if
                 let elif_line = line;
                 let mut elif_then_idx = i + 1;
-
-                let elif_condition = if let Some(semicolon_pos) = elif_line.find(';') {
-                    elif_line[5..semicolon_pos].trim().to_string()
-                } else {
-                    if elif_then_idx >= lines.len() || lines[elif_then_idx].trim() != "then" {
-                        return Err(ScriptError::SyntaxError {
-                            line: elif_then_idx + 1,
-                            content: if elif_then_idx < lines.len() {
-                                lines[elif_then_idx].to_string()
-                            } else {
-                                String::new()
-                            },
-                            message: "Expected 'then' after elif condition".to_string(),
-                        });
-                    }
-                    elif_then_idx += 1;
-                    elif_line[5..].trim().to_string()
-                };
+                let elif_next = if elif_then_idx < lines.len() { Some(lines[elif_then_idx]) } else { None };
+                let (elif_condition, elif_consumed) = Self::parse_condition_line(elif_line, 5, i + 1, elif_next)?;
+                if elif_consumed { elif_then_idx += 1; }
 
                 // Collect elif block lines
                 let mut elif_lines: Vec<&str> = Vec::new();
