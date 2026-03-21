@@ -213,6 +213,54 @@ impl ScriptExecutor {
     /// Execute an if/then/elif/else/fi block
     ///
     /// Returns (output, exit_code, next_line_index)
+    fn parse_if_blocks<'a>(
+        lines: &[&'a str],
+        then_idx: usize,
+    ) -> Result<(Vec<&'a str>, ElifBlocks<'a>, Option<Vec<&'a str>>, Option<usize>), ScriptError> {
+        let mut i = then_idx;
+        let mut then_block: Vec<&str> = Vec::new();
+        let mut elif_blocks: ElifBlocks = Vec::new();
+        let mut else_block: Option<Vec<&str>> = None;
+        let mut fi_idx = None;
+
+        while i < lines.len() {
+            let line = lines[i];
+            if line == "fi" {
+                fi_idx = Some(i);
+                break;
+            } else if line.starts_with("elif ") || line == "elif" {
+                let mut elif_then_idx = i + 1;
+                let elif_next = if elif_then_idx < lines.len() { Some(lines[elif_then_idx]) } else { None };
+                let (elif_condition, elif_consumed) = Self::parse_condition_line(line, 5, i + 1, elif_next)?;
+                if elif_consumed { elif_then_idx += 1; }
+                let mut elif_lines: Vec<&str> = Vec::new();
+                i = elif_then_idx;
+                while i < lines.len() {
+                    let bl = lines[i];
+                    if bl == "fi" || bl.starts_with("elif ") || bl == "elif" || bl == "else" { break; }
+                    elif_lines.push(bl);
+                    i += 1;
+                }
+                elif_blocks.push((elif_condition, elif_lines));
+                continue;
+            } else if line == "else" {
+                let mut else_lines: Vec<&str> = Vec::new();
+                i += 1;
+                while i < lines.len() {
+                    if lines[i] == "fi" { break; }
+                    else_lines.push(lines[i]);
+                    i += 1;
+                }
+                else_block = Some(else_lines);
+                continue;
+            } else {
+                then_block.push(line);
+            }
+            i += 1;
+        }
+        Ok((then_block, elif_blocks, else_block, fi_idx))
+    }
+
     fn parse_condition_line(line: &str, keyword_len: usize, line_num: usize, next_line: Option<&str>) -> Result<(String, bool), ScriptError> {
         if let Some(semicolon_pos) = line.find(';') {
             let after_semicolon = line[semicolon_pos + 1..].trim();
@@ -254,66 +302,7 @@ impl ScriptExecutor {
         let (condition, consumed_next) = Self::parse_condition_line(if_line, 3, start_idx + 1, next)?;
         if consumed_next { then_idx += 1; }
 
-        // Find the end of the if block and all elif/else clauses
-        let mut i = then_idx;
-        let mut then_block: Vec<&str> = Vec::new();
-        let mut elif_blocks: ElifBlocks = Vec::new();
-        let mut else_block: Option<Vec<&str>> = None;
-        let mut fi_idx = None;
-
-        while i < lines.len() {
-            let line = lines[i];
-
-            if line == "fi" {
-                fi_idx = Some(i);
-                break;
-            } else if line.starts_with("elif ") || line == "elif" {
-                // Process elif: similar to if
-                let elif_line = line;
-                let mut elif_then_idx = i + 1;
-                let elif_next = if elif_then_idx < lines.len() { Some(lines[elif_then_idx]) } else { None };
-                let (elif_condition, elif_consumed) = Self::parse_condition_line(elif_line, 5, i + 1, elif_next)?;
-                if elif_consumed { elif_then_idx += 1; }
-
-                // Collect elif block lines
-                let mut elif_lines: Vec<&str> = Vec::new();
-                i = elif_then_idx;
-                while i < lines.len() {
-                    let elif_block_line = lines[i];
-                    if elif_block_line == "fi"
-                        || elif_block_line.starts_with("elif ")
-                        || elif_block_line == "elif"
-                        || elif_block_line == "else"
-                    {
-                        break;
-                    }
-                    elif_lines.push(elif_block_line);
-                    i += 1;
-                }
-
-                elif_blocks.push((elif_condition, elif_lines));
-                continue;
-            } else if line == "else" {
-                // Collect else block lines
-                let mut else_lines: Vec<&str> = Vec::new();
-                i += 1;
-                while i < lines.len() {
-                    let else_block_line = lines[i];
-                    if else_block_line == "fi" {
-                        break;
-                    }
-                    else_lines.push(else_block_line);
-                    i += 1;
-                }
-                else_block = Some(else_lines);
-                continue;
-            } else {
-                // Part of the then block
-                then_block.push(line);
-            }
-
-            i += 1;
-        }
+        let (then_block, elif_blocks, else_block, fi_idx) = Self::parse_if_blocks(lines, then_idx)?;
 
         if fi_idx.is_none() {
             return Err(ScriptError::SyntaxError {
