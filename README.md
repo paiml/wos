@@ -1,4 +1,5 @@
 <div align="center">
+[![CI](https://github.com/paiml/wos/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/wos/actions/workflows/ci.yml)
 
 <p align="center">
   <img src=".github/wos-hero.svg" alt="WOS - WebAssembly Operating System" width="800">
