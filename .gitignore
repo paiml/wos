@@ -60,3 +60,4 @@ desktop.ini
 .pmat/context.idx/
 .pmat/workspace.idx/
 .pmat/deps-cache.json
+**/.pmat/
