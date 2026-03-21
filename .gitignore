@@ -53,3 +53,10 @@ tests/e2e/screenshots/*.png
 Thumbs.db
 desktop.ini
 .cargo/config.toml
+
+# PMAT
+.pmat/backup/
+.pmat-qa/
+.pmat/context.idx/
+.pmat/workspace.idx/
+.pmat/deps-cache.json
