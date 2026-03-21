@@ -1797,6 +1797,20 @@ impl WosWasm {
     }
 
     /// Execute a pipeline of commands
+    fn expand_stage(&mut self, cmd_name: &str, args: &[String]) -> (String, Vec<String>) {
+        let expanded_cmd = self.expand_variables(cmd_name);
+        let expanded_args: Vec<String> = args.iter().map(|arg| self.expand_variables(arg)).collect();
+        let subst_cmd = self.expand_command_substitution(&expanded_cmd);
+        let subst_args: Vec<String> = expanded_args.iter().map(|arg| self.expand_command_substitution(arg)).collect();
+        let arith_cmd = self.expand_arithmetic(&subst_cmd);
+        let arith_args: Vec<String> = subst_args.iter().map(|arg| self.expand_arithmetic(arg)).collect();
+        let mut globbed_args = Vec::new();
+        for arg in &arith_args {
+            globbed_args.extend(self.expand_glob(arg));
+        }
+        (arith_cmd, globbed_args)
+    }
+
     fn execute_pipeline(&mut self, pipeline: &wos_shared::Pipeline) -> String {
         let mut output = String::new();
         let mut _last_exit_code = 0;
@@ -1831,31 +1845,7 @@ impl WosWasm {
                 continue;
             }
 
-            // Expand variables in command name and args
-            let expanded_cmd = self.expand_variables(cmd_name);
-            let expanded_args: Vec<String> =
-                args.iter().map(|arg| self.expand_variables(arg)).collect();
-
-            // Expand command substitutions in command name and args
-            let subst_cmd = self.expand_command_substitution(&expanded_cmd);
-            let subst_args: Vec<String> = expanded_args
-                .iter()
-                .map(|arg| self.expand_command_substitution(arg))
-                .collect();
-
-            // Expand arithmetic in command name and args
-            let arith_cmd = self.expand_arithmetic(&subst_cmd);
-            let arith_args: Vec<String> = subst_args
-                .iter()
-                .map(|arg| self.expand_arithmetic(arg))
-                .collect();
-
-            // Expand glob patterns in arguments
-            let mut globbed_args: Vec<String> = Vec::new();
-            for arg in &arith_args {
-                let expanded = self.expand_glob(arg);
-                globbed_args.extend(expanded);
-            }
+            let (arith_cmd, globbed_args) = self.expand_stage(cmd_name, args);
 
             // Process input redirection (<) - read from file and use as stdin
             let mut stdin_override = output.clone();
