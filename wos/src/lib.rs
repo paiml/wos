@@ -653,112 +653,185 @@ impl WosWasm {
         result
     }
 
+    /// Handle ${VAR:-default}, ${VAR:=default}, ${VAR:?error}, ${VAR:+alternate} expansions.
+    fn expand_default_alternate(
+        &mut self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        var_name: &str,
+        var_value: Option<&String>,
+        op: char,
+    ) -> String {
+        chars.next(); // consume operator char ('-', '=', '?', '+')
+        let operand = self.collect_until_close_brace(chars);
+        match op {
+            '-' => match var_value {
+                Some(v) if !v.is_empty() => v.clone(),
+                _ => operand,
+            },
+            '=' => match var_value {
+                Some(v) if !v.is_empty() => v.clone(),
+                _ => {
+                    self.variables.insert(var_name.to_string(), operand.clone());
+                    operand
+                }
+            },
+            '?' => match var_value {
+                Some(v) if !v.is_empty() => v.clone(),
+                _ if operand.is_empty() => {
+                    format!("bash: {}: parameter null or not set", var_name)
+                }
+                _ => format!("bash: {}: {}", var_name, operand),
+            },
+            '+' => match var_value {
+                Some(v) if !v.is_empty() => operand,
+                _ => String::new(),
+            },
+            _ => String::new(),
+        }
+    }
+
+    /// Handle ${VAR:offset} and ${VAR:offset:length} substring expansion.
+    fn expand_substring(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        var_value: Option<&String>,
+        consume_leading_space: bool,
+    ) -> String {
+        if consume_leading_space {
+            chars.next(); // consume the leading space
+        }
+        let offset_str = self.collect_until(chars, &[':', '}']);
+        let offset: isize = offset_str.trim().parse().unwrap_or(0);
+
+        let length = if chars.peek() == Some(&':') {
+            chars.next(); // consume ':'
+            let length_str = self.collect_until_close_brace(chars);
+            length_str.parse().ok()
+        } else {
+            chars.next(); // consume '}'
+            None
+        };
+
+        if let Some(value) = var_value {
+            self.substring_expansion(value, offset, length)
+        } else {
+            String::new()
+        }
+    }
+
+    /// Handle ${VAR/pat/rep}, ${VAR//pat/rep}, ${VAR/#pat/rep}, ${VAR/%pat/rep} substitution.
+    fn expand_substitution(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        var_value: Option<&String>,
+    ) -> String {
+        let mut is_global = false;
+        let mut anchor_start = false;
+        let mut anchor_end = false;
+
+        if chars.peek() == Some(&'/') {
+            chars.next();
+            is_global = true;
+        } else if chars.peek() == Some(&'#') {
+            chars.next();
+            anchor_start = true;
+        } else if chars.peek() == Some(&'%') {
+            chars.next();
+            anchor_end = true;
+        }
+
+        let (pattern, replacement) = self.collect_pattern_replacement(chars);
+
+        let Some(value) = var_value else {
+            return String::new();
+        };
+
+        if anchor_start {
+            if value.starts_with(&pattern) {
+                replacement.clone() + &value[pattern.len()..]
+            } else {
+                value.clone()
+            }
+        } else if anchor_end {
+            if value.ends_with(&pattern) {
+                value[..value.len() - pattern.len()].to_string() + &replacement
+            } else {
+                value.clone()
+            }
+        } else if is_global {
+            value.replace(&pattern, &replacement)
+        } else {
+            value.replacen(&pattern, &replacement, 1)
+        }
+    }
+
+    /// Handle ${VAR^}, ${VAR^^}, ${VAR,}, ${VAR,,} case modification.
+    fn expand_case_modification(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        var_value: Option<&String>,
+        to_upper: bool,
+    ) -> String {
+        let double = if to_upper {
+            chars.peek() == Some(&'^')
+        } else {
+            chars.peek() == Some(&',')
+        };
+        if double {
+            chars.next(); // consume second modifier
+        }
+        self.collect_until_close_brace(chars); // consume to }
+
+        let Some(value) = var_value else {
+            return String::new();
+        };
+
+        if double {
+            if to_upper {
+                value.to_uppercase()
+            } else {
+                value.to_lowercase()
+            }
+        } else {
+            let mut chars_iter = value.chars();
+            if let Some(first) = chars_iter.next() {
+                let modified: String = if to_upper {
+                    first.to_uppercase().collect()
+                } else {
+                    first.to_lowercase().collect()
+                };
+                modified + chars_iter.as_str()
+            } else {
+                String::new()
+            }
+        }
+    }
+
     /// Handle parameter expansion operators like ${VAR:-default}, ${VAR#pattern}, etc.
     fn handle_parameter_expansion(
         &mut self,
         chars: &mut std::iter::Peekable<std::str::Chars>,
         var_name: &str,
     ) -> String {
-        let var_value = self.variables.get(var_name);
+        let var_value = self.variables.get(var_name).cloned();
 
         let first_op = chars.next(); // Consume operator character
 
         match first_op {
             Some(':') => {
-                // Could be :-, :=, :?, :+, or :offset:length
                 if let Some(&second_ch) = chars.peek() {
                     match second_ch {
-                        '-' => {
-                            // ${VAR:-default} - use default if unset or empty
-                            chars.next(); // consume '-'
-                            let default = self.collect_until_close_brace(chars);
-                            // Use value if set and non-empty, otherwise default
-                            match var_value {
-                                Some(v) if !v.is_empty() => v.clone(),
-                                _ => default,
-                            }
-                        }
-                        '=' => {
-                            // ${VAR:=default} - assign default if unset or empty
-                            chars.next(); // consume '='
-                            let default = self.collect_until_close_brace(chars);
-                            // Use value if set and non-empty, otherwise assign and use default
-                            match var_value {
-                                Some(v) if !v.is_empty() => v.clone(),
-                                _ => {
-                                    // Assign the default value to the variable
-                                    self.variables.insert(var_name.to_string(), default.clone());
-                                    default
-                                }
-                            }
-                        }
-                        '?' => {
-                            // ${VAR:?error} - error if unset or empty
-                            chars.next(); // consume '?'
-                            let error_msg = self.collect_until_close_brace(chars);
-                            // Use value if set and non-empty, otherwise error
-                            match var_value {
-                                Some(v) if !v.is_empty() => v.clone(),
-                                _ if error_msg.is_empty() => {
-                                    format!("bash: {}: parameter null or not set", var_name)
-                                }
-                                _ => format!("bash: {}: {}", var_name, error_msg),
-                            }
-                        }
-                        '+' => {
-                            // ${VAR:+alternate} - use alternate if set and non-empty
-                            chars.next(); // consume '+'
-                            let alternate = self.collect_until_close_brace(chars);
-                            // Use alternate if set and non-empty
-                            match var_value {
-                                Some(v) if !v.is_empty() => alternate,
-                                _ => String::new(),
-                            }
-                        }
-                        ' ' => {
-                            // ${VAR: offset} - space before offset for substring expansion
-                            // This handles both positive and negative offsets after the space
-                            chars.next(); // consume the space
-                            let offset_str = self.collect_until(chars, &[':', '}']);
-                            let offset: isize = offset_str.trim().parse().unwrap_or(0);
-
-                            let length = if chars.peek() == Some(&':') {
-                                chars.next(); // consume ':'
-                                let length_str = self.collect_until_close_brace(chars);
-                                length_str.parse().ok()
-                            } else {
-                                chars.next(); // consume '}'
-                                None
-                            };
-
-                            if let Some(value) = var_value {
-                                self.substring_expansion(value, offset, length)
-                            } else {
-                                String::new()
-                            }
-                        }
+                        '-' | '=' | '?' | '+' => self.expand_default_alternate(
+                            chars,
+                            var_name,
+                            var_value.as_ref(),
+                            second_ch,
+                        ),
+                        ' ' => self.expand_substring(chars, var_value.as_ref(), true),
                         _ if second_ch.is_ascii_digit() || second_ch == '-' => {
-                            // ${VAR:offset} or ${VAR:offset:length} - substring expansion
-                            let offset_str = self.collect_until(chars, &[':', '}']);
-                            let offset: isize = offset_str.trim().parse().unwrap_or(0);
-
-                            let length = if chars.peek() == Some(&':') {
-                                chars.next(); // consume ':'
-                                let length_str = self.collect_until_close_brace(chars);
-                                length_str.parse().ok()
-                            } else {
-                                chars.next(); // consume '}'
-                                None
-                            };
-
-                            if let Some(value) = var_value {
-                                self.substring_expansion(value, offset, length)
-                            } else {
-                                String::new()
-                            }
+                            self.expand_substring(chars, var_value.as_ref(), false)
                         }
                         _ => {
-                            // Unknown operator after :
                             self.collect_until_close_brace(chars);
                             String::new()
                         }
@@ -768,136 +841,29 @@ impl WosWasm {
                 }
             }
             Some('#') => {
-                // Could be # (shortest prefix) or ## (longest prefix)
                 if chars.peek() == Some(&'#') {
-                    chars.next(); // consume second '#'
+                    chars.next();
                     let pattern = self.collect_until_close_brace(chars);
-                    if let Some(value) = var_value {
-                        self.remove_longest_prefix(value, &pattern)
-                    } else {
-                        String::new()
-                    }
+                    var_value.map_or(String::new(), |v| self.remove_longest_prefix(&v, &pattern))
                 } else {
                     let pattern = self.collect_until_close_brace(chars);
-                    if let Some(value) = var_value {
-                        self.remove_shortest_prefix(value, &pattern)
-                    } else {
-                        String::new()
-                    }
+                    var_value.map_or(String::new(), |v| self.remove_shortest_prefix(&v, &pattern))
                 }
             }
             Some('%') => {
-                // Could be % (shortest suffix) or %% (longest suffix)
                 if chars.peek() == Some(&'%') {
-                    chars.next(); // consume second '%'
+                    chars.next();
                     let pattern = self.collect_until_close_brace(chars);
-                    if let Some(value) = var_value {
-                        self.remove_longest_suffix(value, &pattern)
-                    } else {
-                        String::new()
-                    }
+                    var_value.map_or(String::new(), |v| self.remove_longest_suffix(&v, &pattern))
                 } else {
                     let pattern = self.collect_until_close_brace(chars);
-                    if let Some(value) = var_value {
-                        self.remove_shortest_suffix(value, &pattern)
-                    } else {
-                        String::new()
-                    }
+                    var_value.map_or(String::new(), |v| self.remove_shortest_suffix(&v, &pattern))
                 }
             }
-            Some('/') => {
-                // Pattern substitution: /pattern/replacement, //pattern/replacement, /#pattern/replacement, /%pattern/replacement
-                let mut is_global = false;
-                let mut anchor_start = false;
-                let mut anchor_end = false;
-
-                if chars.peek() == Some(&'/') {
-                    chars.next(); // consume second '/'
-                    is_global = true;
-                } else if chars.peek() == Some(&'#') {
-                    chars.next(); // consume '#'
-                    anchor_start = true;
-                } else if chars.peek() == Some(&'%') {
-                    chars.next(); // consume '%'
-                    anchor_end = true;
-                }
-
-                let (pattern, replacement) = self.collect_pattern_replacement(chars);
-
-                if let Some(value) = var_value {
-                    if anchor_start {
-                        // Replace only at beginning
-                        if value.starts_with(&pattern) {
-                            replacement.clone() + &value[pattern.len()..]
-                        } else {
-                            value.clone()
-                        }
-                    } else if anchor_end {
-                        // Replace only at end
-                        if value.ends_with(&pattern) {
-                            value[..value.len() - pattern.len()].to_string() + &replacement
-                        } else {
-                            value.clone()
-                        }
-                    } else if is_global {
-                        value.replace(&pattern, &replacement)
-                    } else {
-                        value.replacen(&pattern, &replacement, 1)
-                    }
-                } else {
-                    String::new()
-                }
-            }
-            Some('^') => {
-                // Case modification - uppercase
-                if chars.peek() == Some(&'^') {
-                    chars.next(); // consume second '^'
-                    self.collect_until_close_brace(chars); // consume to }
-                    if let Some(value) = var_value {
-                        value.to_uppercase()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    self.collect_until_close_brace(chars); // consume to }
-                    if let Some(value) = var_value {
-                        let mut chars_iter = value.chars();
-                        if let Some(first) = chars_iter.next() {
-                            first.to_uppercase().collect::<String>() + chars_iter.as_str()
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    }
-                }
-            }
-            Some(',') => {
-                // Case modification - lowercase
-                if chars.peek() == Some(&',') {
-                    chars.next(); // consume second ','
-                    self.collect_until_close_brace(chars); // consume to }
-                    if let Some(value) = var_value {
-                        value.to_lowercase()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    self.collect_until_close_brace(chars); // consume to }
-                    if let Some(value) = var_value {
-                        let mut chars_iter = value.chars();
-                        if let Some(first) = chars_iter.next() {
-                            first.to_lowercase().collect::<String>() + chars_iter.as_str()
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    }
-                }
-            }
+            Some('/') => self.expand_substitution(chars, var_value.as_ref()),
+            Some('^') => self.expand_case_modification(chars, var_value.as_ref(), true),
+            Some(',') => self.expand_case_modification(chars, var_value.as_ref(), false),
             _ => {
-                // Unknown operator
                 self.collect_until_close_brace(chars);
                 String::new()
             }
@@ -1799,16 +1765,103 @@ impl WosWasm {
     /// Execute a pipeline of commands
     fn expand_stage(&mut self, cmd_name: &str, args: &[String]) -> (String, Vec<String>) {
         let expanded_cmd = self.expand_variables(cmd_name);
-        let expanded_args: Vec<String> = args.iter().map(|arg| self.expand_variables(arg)).collect();
+        let expanded_args: Vec<String> =
+            args.iter().map(|arg| self.expand_variables(arg)).collect();
         let subst_cmd = self.expand_command_substitution(&expanded_cmd);
-        let subst_args: Vec<String> = expanded_args.iter().map(|arg| self.expand_command_substitution(arg)).collect();
+        let subst_args: Vec<String> = expanded_args
+            .iter()
+            .map(|arg| self.expand_command_substitution(arg))
+            .collect();
         let arith_cmd = self.expand_arithmetic(&subst_cmd);
-        let arith_args: Vec<String> = subst_args.iter().map(|arg| self.expand_arithmetic(arg)).collect();
+        let arith_args: Vec<String> = subst_args
+            .iter()
+            .map(|arg| self.expand_arithmetic(arg))
+            .collect();
         let mut globbed_args = Vec::new();
         for arg in &arith_args {
             globbed_args.extend(self.expand_glob(arg));
         }
         (arith_cmd, globbed_args)
+    }
+
+    /// Apply a pipeline operator (|, &&, ||, ;) to update pipeline state.
+    /// Returns (output, exit_code, should_accumulate, should_execute_next).
+    fn apply_pipeline_operator(
+        operator: Option<&wos_shared::Operator>,
+        executed: bool,
+        final_output: &(String, i32),
+        current_output: &str,
+        should_accumulate: bool,
+        last_exit_code: i32,
+        should_execute_next: bool,
+    ) -> (String, i32, bool, bool) {
+        if !executed {
+            return Self::apply_skipped_operator(
+                operator,
+                current_output,
+                should_accumulate,
+                last_exit_code,
+                should_execute_next,
+            );
+        }
+
+        match operator {
+            None => {
+                let out = if should_accumulate {
+                    Self::append_output(current_output, &final_output.0)
+                } else {
+                    final_output.0.clone()
+                };
+                (out, final_output.1, should_accumulate, true)
+            }
+            Some(wos_shared::Operator::Pipe) => {
+                (final_output.0.clone(), final_output.1, false, true)
+            }
+            Some(wos_shared::Operator::And) => {
+                let out = Self::append_output(current_output, &final_output.0);
+                (out, final_output.1, true, final_output.1 == 0)
+            }
+            Some(wos_shared::Operator::Or) => {
+                let out = Self::append_output(current_output, &final_output.0);
+                (out, final_output.1, true, final_output.1 != 0)
+            }
+            Some(wos_shared::Operator::Semicolon) => {
+                let out = Self::append_output(current_output, &final_output.0);
+                (out, final_output.1, true, true)
+            }
+        }
+    }
+
+    /// Apply operator when command was skipped — preserves existing state.
+    /// Returns (output, exit_code, should_accumulate, should_execute_next).
+    fn apply_skipped_operator(
+        operator: Option<&wos_shared::Operator>,
+        current_output: &str,
+        should_accumulate: bool,
+        last_exit_code: i32,
+        should_execute_next: bool,
+    ) -> (String, i32, bool, bool) {
+        match operator {
+            Some(wos_shared::Operator::Semicolon) => {
+                (current_output.to_string(), last_exit_code, true, true)
+            }
+            // And/Or/Pipe/None: preserve current state
+            _ => (
+                current_output.to_string(),
+                last_exit_code,
+                should_accumulate,
+                should_execute_next,
+            ),
+        }
+    }
+
+    /// Append new output to existing output with newline separator.
+    fn append_output(current: &str, new: &str) -> String {
+        if current.is_empty() {
+            new.to_string()
+        } else {
+            format!("{}\n{}", current, new)
+        }
     }
 
     fn execute_pipeline(&mut self, pipeline: &wos_shared::Pipeline) -> String {
@@ -1956,79 +2009,20 @@ impl WosWasm {
                 cmd_output
             };
 
-            // Process the result if command was executed
-            if executed {
-                match stage.operator {
-                    None => {
-                        // Last command in pipeline
-                        if should_accumulate {
-                            if !output.is_empty() {
-                                output.push('\n');
-                            }
-                            output.push_str(&final_output.0);
-                        } else {
-                            output = final_output.0;
-                        }
-                        _last_exit_code = final_output.1;
-                    }
-                    Some(wos_shared::Operator::Pipe) => {
-                        output = final_output.0;
-                        _last_exit_code = final_output.1;
-                        should_accumulate = false;
-                    }
-                    Some(wos_shared::Operator::And) => {
-                        if !output.is_empty() {
-                            output.push('\n');
-                        }
-                        output.push_str(&final_output.0);
-                        _last_exit_code = final_output.1;
-                        should_accumulate = true;
-                        // AND: execute next only if this succeeded
-                        should_execute_next = _last_exit_code == 0;
-                    }
-                    Some(wos_shared::Operator::Or) => {
-                        if !output.is_empty() {
-                            output.push('\n');
-                        }
-                        output.push_str(&final_output.0);
-                        _last_exit_code = final_output.1;
-                        should_accumulate = true;
-                        // OR: execute next only if this failed
-                        should_execute_next = _last_exit_code != 0;
-                    }
-                    Some(wos_shared::Operator::Semicolon) => {
-                        if !output.is_empty() {
-                            output.push('\n');
-                        }
-                        output.push_str(&final_output.0);
-                        _last_exit_code = final_output.1;
-                        should_accumulate = true;
-                        // Semicolon: always execute next
-                        should_execute_next = true;
-                    }
-                }
-            } else {
-                // Command was skipped
-                match stage.operator {
-                    None => {
-                        // Last command skipped, nothing to do
-                    }
-                    Some(wos_shared::Operator::Semicolon) => {
-                        // Semicolon resets: always execute next
-                        should_execute_next = true;
-                        should_accumulate = true;
-                    }
-                    Some(wos_shared::Operator::And) | Some(wos_shared::Operator::Or) => {
-                        // Keep the current should_execute_next state
-                        // This handles chains like: cmd1 && cmd2 && cmd3
-                        // If cmd2 is skipped (cmd1 failed), cmd3 should also be skipped
-                    }
-                    Some(wos_shared::Operator::Pipe) => {
-                        // Pipe after skipped command - this is complex
-                        // For now, keep skipping
-                    }
-                }
-            }
+            // Process operator to update pipeline state
+            let state = Self::apply_pipeline_operator(
+                stage.operator.as_ref(),
+                executed,
+                &final_output,
+                &output,
+                should_accumulate,
+                _last_exit_code,
+                should_execute_next,
+            );
+            output = state.0;
+            _last_exit_code = state.1;
+            should_accumulate = state.2;
+            should_execute_next = state.3;
         }
 
         // Save exit code for $? expansion
@@ -2040,9 +2034,17 @@ impl WosWasm {
     /// Execute a single command and return (output, exit_code)
     fn normalize_script_path(cmd_name: &str) -> String {
         if let Some(rel_path) = cmd_name.strip_prefix("./") {
-            if rel_path.starts_with('/') { rel_path.to_string() } else { format!("/{rel_path}") }
+            if rel_path.starts_with('/') {
+                rel_path.to_string()
+            } else {
+                format!("/{rel_path}")
+            }
         } else if let Some(rel_path) = cmd_name.strip_prefix("../") {
-            if rel_path.starts_with('/') { rel_path.to_string() } else { format!("/{rel_path}") }
+            if rel_path.starts_with('/') {
+                rel_path.to_string()
+            } else {
+                format!("/{rel_path}")
+            }
         } else {
             cmd_name.to_string()
         }
@@ -2050,41 +2052,41 @@ impl WosWasm {
 
     fn dispatch_builtin(&mut self, cmd_name: &str, args: &[String], stdin: &str) -> String {
         match cmd_name {
-                "help" => self.cmd_help(),
-                "ps" => self.cmd_ps(args.to_vec()),
-                "ls" => self.cmd_ls(args.to_vec()),
-                "cat" => self.cmd_cat(args.to_vec(), stdin),
-                "head" => self.cmd_head(args.to_vec(), stdin),
-                "tail" => self.cmd_tail(args.to_vec(), stdin),
-                "pwd" => self.cmd_pwd(),
-                "touch" => self.cmd_touch(args.to_vec()),
-                "mkdir" => self.cmd_mkdir(args.to_vec()),
-                "rm" => self.cmd_rm(args.to_vec()),
-                "mv" => self.cmd_mv(args.to_vec()),
-                "echo" => self.cmd_echo(args.to_vec()),
-                "grep" => self.cmd_grep(args.to_vec(), stdin),
-                "wc" => self.cmd_wc(args.to_vec(), stdin),
-                "vim" => self.cmd_vim(args.to_vec()),
-                "bash" => self.cmd_bash(args.to_vec()),
-                "source" => self.cmd_source(args.to_vec()),
-                "unset" => self.cmd_unset(args.to_vec()),
-                "test" => self.cmd_test(args.to_vec()),
-                "[" => self.cmd_bracket(args.to_vec()),
-                "version" => wos_version(),
-                "state" => self.cmd_state(),
-                "reset" => {
-                    self.reset();
-                    "System reset complete".to_string()
-                }
-                "true" => self.cmd_true(args.to_vec()),
-                "false" => self.cmd_false(args.to_vec()),
-                "apr" => self.cmd_apr(args.to_vec()),
-                "vm" => self.cmd_vm(args.to_vec()),
-                _ => format!(
-                    "Unknown command: {}\nType 'help' for available commands",
-                    cmd_name
-                ),
+            "help" => self.cmd_help(),
+            "ps" => self.cmd_ps(args.to_vec()),
+            "ls" => self.cmd_ls(args.to_vec()),
+            "cat" => self.cmd_cat(args.to_vec(), stdin),
+            "head" => self.cmd_head(args.to_vec(), stdin),
+            "tail" => self.cmd_tail(args.to_vec(), stdin),
+            "pwd" => self.cmd_pwd(),
+            "touch" => self.cmd_touch(args.to_vec()),
+            "mkdir" => self.cmd_mkdir(args.to_vec()),
+            "rm" => self.cmd_rm(args.to_vec()),
+            "mv" => self.cmd_mv(args.to_vec()),
+            "echo" => self.cmd_echo(args.to_vec()),
+            "grep" => self.cmd_grep(args.to_vec(), stdin),
+            "wc" => self.cmd_wc(args.to_vec(), stdin),
+            "vim" => self.cmd_vim(args.to_vec()),
+            "bash" => self.cmd_bash(args.to_vec()),
+            "source" => self.cmd_source(args.to_vec()),
+            "unset" => self.cmd_unset(args.to_vec()),
+            "test" => self.cmd_test(args.to_vec()),
+            "[" => self.cmd_bracket(args.to_vec()),
+            "version" => wos_version(),
+            "state" => self.cmd_state(),
+            "reset" => {
+                self.reset();
+                "System reset complete".to_string()
             }
+            "true" => self.cmd_true(args.to_vec()),
+            "false" => self.cmd_false(args.to_vec()),
+            "apr" => self.cmd_apr(args.to_vec()),
+            "vm" => self.cmd_vm(args.to_vec()),
+            _ => format!(
+                "Unknown command: {}\nType 'help' for available commands",
+                cmd_name
+            ),
+        }
     }
 
     fn execute_single_command(
