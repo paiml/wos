@@ -1,133 +1,22 @@
+# Sovereign CI — calls reusable workflow from paiml/.github
+# Change once in paiml/.github → applies to all repos
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
   workflow_dispatch:
 
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test
-    runs-on: [self-hosted, clean-room]
-    steps:
-      - uses: actions/checkout@v4
+  ci:
+    uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
+    with:
+      repo: ${{ github.event.repository.name }}
+    secrets: inherit
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Cache cargo registry and build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      - name: Run tests
-        run: cargo test --workspace
-
-  lint:
-    name: Lint
-    runs-on: [self-hosted, clean-room]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-          targets: wasm32-unknown-unknown
-
-      - name: Cache cargo registry and build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-lint-
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run clippy
-        run: cargo clippy --workspace -- -D warnings
-
-  coverage:
-    name: Coverage
-    runs-on: [self-hosted, clean-room]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry and build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-cov-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-cov-
-
-      - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --locked
-
-      - name: Generate coverage
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
-        continue-on-error: true
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: lcov.info
-          fail_ci_if_error: false
-
-  security:
-    name: Security
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-audit-
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-
-      - name: Run security audit
-        run: cargo audit
-
-  gate:
-    name: gate
-    runs-on: [self-hosted, clean-room]
-    if: always()
-    needs: [test, lint, coverage, security]
-    steps:
-      - name: Check all jobs
-        run: |
-          if [ "${{ needs.test.result }}" = "failure" ] || [ "${{ needs.lint.result }}" = "failure" ]; then
-            exit 1
-          fi
