@@ -121,3 +121,16 @@ jobs:
 
       - name: Run security audit
         run: cargo audit
+
+  gate:
+    name: unified / gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [test, lint, coverage, security]
+    steps:
+      - name: Check all jobs
+        run: |
+          if echo '${{ toJson(needs) }}' | jq -e 'to_entries | map(select(.value.result != "success" and .value.result != "skipped")) | length > 0' > /dev/null 2>&1; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
