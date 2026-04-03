@@ -709,3 +709,9 @@ WOS is a **tiny but functional educational OS** (~5000 lines) demonstrating real
 - Microkernel architecture (minimal TCB)
 - Educational focus (simplified but correct)
 - Production deployment (https://interactive.paiml.com/wos/)
+
+## Contract-First Development
+
+All code changes require a prior contract (provable-contract YAML or pmat work contract.json).
+NEVER write code before defining the contract. Run `pmat comply check` before completing any task.
+CB-1400 enforces agent contract existence; verification_level must be satisfied before merge.
